@@ -1,0 +1,164 @@
+[package]
+name = "fichub"
+version = "0.1.0"
+edition = "2024"
+description = "Self-hosted fanfiction download server (fichub.net replacement)"
+# The web server (src/main.rs) is the binary `cargo run` should pick when no
+# --bin is given. The [[bin]] entries below are one-shot CLI tools. Explicit
+# default-run keeps `cargo run` (and the hermes verify boot phase) from
+# erroring on multiple binaries.
+default-run = "fichub"
+
+[workspace]
+members = [
+    "crates/consensus",
+]
+resolver = "2"
+
+[dependencies]
+# Web framework & runtime
+axum = { version = "0.8", features = ["multipart"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.7", features = ["cors", "compression-gzip", "trace", "fs"] }
+
+# Database
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "postgres", "chrono", "uuid", "migrate", "tls-rustls-ring", "derive", "macros"] }
+
+# Redis
+redis = { version = "1.4", features = ["aio", "tokio-comp"] }
+maxminddb = "0.30"
+
+# HTTP client
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "cookies"] }
+
+# HTML parsing
+scraper = "0.27"
+
+# Fanfiction scraping library (general-purpose, AGPL-3.0)
+fanfic-scrapers = { path = "scrapers" }
+
+# Forum engine core (generic, AGPL-3.0)
+forum-core = { path = "forum_core" }
+
+# EPUB generation
+epub-builder = "0.8"
+
+# Template engine
+tera = "2"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Config
+dotenvy = "0.15"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+
+# Metrics
+axum-prometheus = "0.10"
+
+# UUIDs
+uuid = { version = "1", features = ["v4"] }
+
+# Hashing
+md-5 = "0.11"
+sha2 = "0.11"
+
+# Date/time
+chrono = { version = "0.4", default-features = false, features = ["serde", "std"] }
+
+# Compression (zip)
+zip = { version = "8", package = "zip" }
+
+# Async traits
+async-trait = "0.1"
+
+# Error ergonomics (already in the dependency graph via axum internals)
+thiserror = "2"
+
+# Path handling
+sanitize-filename = "0.5"
+
+# Hashing/encoding
+hex = "0.4"
+regex-lite = "0.1"
+rand = "0.8"
+ipnetwork = "0.20"
+urlencoding = "2"
+
+fichub-consensus = { path = "crates/consensus", default-features = false, features = ["sqlx-store"] }
+# Stored-secret encryption (AES-256-GCM for user-supplied site credentials)
+aes-gcm = "0.10"
+base64 = "0.22"
+anyhow = "1"
+url = "2"
+
+# ActivityPub federation (pure-Rust RSA, no OpenSSL sys dep)
+rsa = { version = "0.9", features = ["pem"] }
+
+
+# v2: Auth
+jsonwebtoken = "9"
+bcrypt = "0.16"
+axum-extra = { version = "0.10", features = ["typed-header"] }
+
+# Email (Send-to-Kindle)
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "tokio1"] }
+quick-xml = "0.41.0"
+docx-rs = "0.4"
+
+[[bin]]
+name = "compute-stats"
+path = "src/bin/compute_stats.rs"
+
+[[bin]]
+name = "compute-leaderboards"
+path = "src/bin/compute_leaderboards.rs"
+
+[[bin]]
+name = "bot-scorer"
+path = "src/bin/bot_scorer.rs"
+
+[[bin]]
+name = "backfill-scores"
+path = "src/bin/backfill_scores.rs"
+
+[[bin]]
+name = "backfill_body_search"
+path = "src/bin/backfill_body_search.rs"
+
+[[bin]]
+name = "seed-roadmap"
+path = "src/bin/seed_roadmap.rs"
+
+[[bin]]
+name = "saved-search-watcher"
+path = "src/bin/saved_search_watcher.rs"
+
+[[bin]]
+name = "trust-promote"
+path = "src/bin/trust_promote.rs"
+
+[[bin]]
+name = "weekly-digest"
+path = "src/bin/weekly_digest.rs"
+
+[dev-dependencies]
+# Testing
+axum-test = "16"
+
+# Integration tests unzip the user-export archive with the same crate the
+# server uses (already in [dependencies]; this just makes it linkable from
+# tests/ without touching the lockfile).
+zip = { version = "8", package = "zip" }
+
+[features]
+# Implicit matrix factorization (ALS) strategy. OFF by default: the `mf`
+# strategy then registers a stub that reports "not enough data", so configs
+# mentioning `mf` degrade gracefully instead of crashing. Enable with:
+#   cargo build --features rec-mf
+rec-mf = []

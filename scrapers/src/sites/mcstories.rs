@@ -1,0 +1,323 @@
+//! MCStories.com native adapter (adult-gated mind-control fiction).
+//!
+//! Story URL: `https://mcstories.com/StoryTitle/index.html`.
+//! - title: `h3.title`
+//! - author(s): `h3.byline a` (may be multiple)
+//! - description: `section.synopsis p` joined with blank lines
+//! - tags: `div.storyCodes a`
+//! - dates: `h3.dateline` "Added "/"Updated " (`%d %B %Y`)
+//! - chapters: `table.index tr td a` (or `div.chapter a`)
+//! - body: `article#mcstories` (strip h3 title/chapter/byline)
+//!
+//! Adult gate: `is_adult` confirmation via `SiteCredentials::with_adult()`.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use async_trait::async_trait;
+use regex_lite::Regex;
+use scraper::{Html, Selector};
+
+use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
+use super::http;
+
+pub struct MCStoriesScraper {
+    adult_ok: AtomicBool,
+}
+
+impl Default for MCStoriesScraper {
+    fn default() -> Self {
+        Self {
+            adult_ok: AtomicBool::new(false),
+        }
+    }
+}
+
+impl MCStoriesScraper {
+    fn story_id(url: &str) -> Option<String> {
+        let m = Regex::new(r"mcstories\.com/([a-zA-Z0-9_-]+)/").ok()?;
+        m.captures(url)?.get(1).map(|m| m.as_str().to_string())
+    }
+}
+
+#[async_trait]
+impl SiteScraper for MCStoriesScraper {
+    fn can_handle(&self, url: &str) -> bool {
+        let host_ok = url.contains("mcstories.com/");
+        let not_index = !url.contains("/Titles/") && !url.contains("/Authors/")
+            && !url.contains("/Tags/") && !url.contains("/ReadersPicks/");
+        host_ok && not_index
+    }
+
+    fn requires_login(&self) -> bool {
+        true
+    }
+
+    async fn login(
+        &self,
+        _client: &reqwest::Client,
+        creds: &SiteCredentials,
+    ) -> Result<(), ScrapeError> {
+        if creds.is_adult {
+            self.adult_ok.store(true, Ordering::Relaxed);
+            Ok(())
+        } else {
+            Err(ScrapeError::AuthRequired("mcstories: is_adult not set".into()))
+        }
+    }
+
+    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+        if !self.adult_ok.load(Ordering::Relaxed) {
+            return Err(ScrapeError::AuthRequired("mcstories: adult gate".into()));
+        }
+        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("mcstories: bad url".into()))?;
+        // Normalize to index.html.
+        let index_url = if url.ends_with("/index.html") {
+            url.to_string()
+        } else {
+            let base = url.trim_end_matches('/');
+            let last_seg = base.rsplit('/').next().unwrap_or("");
+            if last_seg.contains(".html") {
+                // StoryTitle1.html → index.
+                format!("{}/index.html", base.trim_end_matches(last_seg).trim_end_matches('/'))
+            } else {
+                format!("{}/index.html", base)
+            }
+        };
+        let html = http::fetch(client, &index_url).await?;
+
+        if html.contains("Page Not Found.") {
+            return Err(ScrapeError::NotFound);
+        }
+
+        let (title, authors, author_urls, desc, tags, published, updated) = {
+            let doc = Html::parse_document(&html);
+            let mut title = String::new();
+            let mut authors: Vec<String> = Vec::new();
+            let mut author_urls: Vec<String> = Vec::new();
+            let mut desc = String::new();
+            let mut tags: Vec<String> = Vec::new();
+            let mut published = 0i64;
+            let mut updated = 0i64;
+
+            if let Ok(t_sel) = Selector::parse("h3.title") {
+                title = doc
+                    .select(&t_sel)
+                    .next()
+                    .map(|el| el.text().collect::<String>().trim().to_string())
+                    .unwrap_or_default();
+            }
+
+            if let Ok(a_sel) = Selector::parse("h3.byline a[href]") {
+                for a in doc.select(&a_sel) {
+                    authors.push(a.text().collect::<String>().trim().to_string());
+                    if let Some(h) = a.value().attr("href") {
+                        let url = if h.starts_with("http") {
+                            h.to_string()
+                        } else {
+                            format!("https://mcstories.com{h}")
+                        };
+                        author_urls.push(url);
+                    }
+                }
+            }
+
+            if let Ok(s_sel) = Selector::parse("section.synopsis p") {
+                let paras: Vec<String> = doc
+                    .select(&s_sel)
+                    .map(|p| p.text().collect::<String>().trim().to_string())
+                    .collect();
+                desc = paras.join("\n\n");
+            }
+
+            if let Ok(c_sel) = Selector::parse("div.storyCodes a") {
+                for a in doc.select(&c_sel) {
+                    tags.push(a.text().collect::<String>().trim().to_string());
+                }
+            }
+
+            if let Ok(d_sel) = Selector::parse("h3.dateline") {
+                for d in doc.select(&d_sel) {
+                    let text = d.text().collect::<String>();
+                    if let Some(date) = text.strip_prefix("Added ") {
+                        published = parse_dt(date.trim());
+                    } else if let Some(date) = text.strip_prefix("Updated ") {
+                        updated = parse_dt(date.trim());
+                    }
+                }
+            }
+
+            (title, authors, author_urls, desc, tags, published, updated)
+        };
+
+        if title.is_empty() {
+            return Err(ScrapeError::ParseError("mcstories: no title".into()));
+        }
+
+        // Chapters.
+        let mut chapters = 0i32;
+        {
+            let doc = Html::parse_document(&html);
+            if let Ok(t_sel) = Selector::parse("table.index tr td a[href]") {
+                chapters = doc.select(&t_sel).count() as i32;
+            }
+            if chapters == 0 {
+                if let Ok(d_sel) = Selector::parse("div.chapter a[href]") {
+                    chapters = doc.select(&d_sel).count() as i32;
+                }
+            }
+        }
+        if chapters == 0 {
+            chapters = 1;
+        }
+
+        let now = chrono::Utc::now().timestamp_millis();
+        Ok(FicMetadata {
+            url_id: format!("mcs_{}", story_id),
+            title,
+            author: authors.join(", "),
+            chapters,
+            words: 0,
+            desc,
+            published: if published > 0 { published } else { now },
+            updated: if updated > 0 { updated } else { now },
+            status: "complete".to_string(),
+            source: index_url,
+            source_id: 0,
+            author_id: 0,
+            author_url: author_urls.first().cloned().unwrap_or_default(),
+            author_local_id: story_id,
+            content_hash: None,
+            extra_meta: Some(format!("tags={};", tags.join(","))),
+            raw_extended_meta: None,
+        })
+    }
+
+    async fn fetch_chapters(
+        &self,
+        client: &reqwest::Client,
+        meta: &FicMetadata,
+    ) -> Result<Vec<Chapter>, ScrapeError> {
+        let html = http::fetch(client, &meta.source).await?;
+
+        let links: Vec<(String, String)> = {
+            let doc = Html::parse_document(&html);
+            let mut out = Vec::new();
+            if let Ok(sel) = Selector::parse("table.index tr td a[href]") {
+                for a in doc.select(&sel) {
+                    let title = a.text().collect::<String>().trim().to_string();
+                    if let Some(h) = a.value().attr("href") {
+                        let url = if h.starts_with("http") {
+                            h.to_string()
+                        } else {
+                            format!("https://mcstories.com{h}")
+                        };
+                        out.push((title, url));
+                    }
+                }
+            }
+            if out.is_empty() {
+                if let Ok(sel) = Selector::parse("div.chapter a[href]") {
+                    for a in doc.select(&sel) {
+                        let title = a.text().collect::<String>().trim().to_string();
+                        if let Some(h) = a.value().attr("href") {
+                            let url = if h.starts_with("http") {
+                                h.to_string()
+                            } else {
+                                format!("https://mcstories.com{h}")
+                            };
+                            out.push((title, url));
+                        }
+                    }
+                }
+            }
+            out
+        };
+
+        if links.is_empty() {
+            return Err(ScrapeError::ParseError("mcstories: no chapters".into()));
+        }
+
+        let mut chapters = Vec::new();
+        for (i, (title, url)) in links.into_iter().enumerate() {
+            let content = fetch_chapter_text(client, &url).await;
+            chapters.push(Chapter {
+                chapter_id: i as i32 + 1,
+                title: if title.is_empty() {
+                    format!("Chapter {}", i + 1)
+                } else {
+                    title
+                },
+                content,
+            });
+        }
+        Ok(chapters)
+    }
+
+    async fn extract_tags(
+        &self,
+        _client: &reqwest::Client,
+        _url: &str,
+    ) -> Result<Vec<crate::ExtractedTag>, ScrapeError> {
+        Ok(vec![])
+    }
+}
+
+fn parse_dt(s: &str) -> i64 {
+    for fmt in ["%d %B %Y", "%d %b %Y", "%Y-%m-%d"] {
+        if let Ok(d) = chrono::NaiveDate::parse_from_str(s, fmt) {
+            if let Some(dt) = d.and_hms_opt(0, 0, 0) {
+                return dt.and_utc().timestamp_millis();
+            }
+        }
+    }
+    0
+}
+
+async fn fetch_chapter_text(client: &reqwest::Client, url: &str) -> String {
+    let Ok(html) = http::fetch(client, url).await else {
+        return String::new();
+    };
+    let doc = Html::parse_document(&html);
+    if let Ok(sel) = Selector::parse("article#mcstories") {
+        if let Some(el) = doc.select(&sel).next() {
+            return el.inner_html();
+        }
+    }
+    String::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn can_handle_matches() {
+        let s = MCStoriesScraper::default();
+        assert!(s.can_handle("https://mcstories.com/StoryTitle/"));
+        assert!(s.can_handle("https://mcstories.com/StoryTitle/index.html"));
+        assert!(!s.can_handle("https://mcstories.com/Titles/"));
+        assert!(!s.can_handle("https://www.fanfiction.net/s/123"));
+    }
+
+    #[test]
+    fn parses_story_id() {
+        assert_eq!(MCStoriesScraper::story_id("https://mcstories.com/StoryTitle/index.html"), Some("StoryTitle".to_string()));
+        assert_eq!(MCStoriesScraper::story_id("https://x.com/foo"), None);
+    }
+
+    #[test]
+    fn parses_dates() {
+        assert!(parse_dt("1 January 2024") > 0);
+        assert!(parse_dt("15 February 2024") > 0);
+        assert_eq!(parse_dt("garbage"), 0);
+    }
+
+    #[test]
+    fn extracts_chapter_body() {
+        let html = r#"<html><body><article id="mcstories"><p>Story text.</p></article></body></html>"#;
+        let doc = Html::parse_document(html);
+        let sel = Selector::parse("article#mcstories").unwrap();
+        let s = doc.select(&sel).next().map(|el| el.inner_html()).unwrap_or_default();
+        assert!(s.contains("Story text."));
+    }
+}

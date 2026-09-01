@@ -1,0 +1,22 @@
+[book]
+authors = ["FicHub Community"]
+language = "en"
+src = "src"
+title = "FicHub Docs"
+
+[build]
+build-dir = "book"
+create-missing = true
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "light"
+git-repository-url = "https://opencommit.eu/MagicZhang/fichub"
+additional-js = ["fichub-header.js"]
+# Theme files live under docs/theme/ (mdBook resolves additional-css paths
+# relative to the book source dir's parent — i.e. docs/). ficnexus-docs.css
+# restyles mdBook to the archive's AO3-parity look; the injected header JS
+# links docs back into the app.
+additional-css = ["theme/ficnexus-docs.css"]
+
+[output.epub]

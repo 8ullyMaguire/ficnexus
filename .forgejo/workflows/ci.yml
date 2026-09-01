@@ -1,0 +1,77 @@
+# Forgejo Actions CI — runs on https://opencommit.eu/MagicZhang/fichub pushes.
+#
+# Notes:
+# - DB-gated integration tests are #[ignore]'d upstream, so plain
+#   `cargo test --lib` skips them (no Postgres service needed here).
+# - fmt/clippy are advisory (|| true / continue-on-error) until existing
+#   drift is cleaned up; flip them to hard-fail once green.
+# - catthehacker/ubuntu:act-latest ships Node 20 but NO Rust toolchain,
+#   so rustup is installed explicitly and `$HOME/.cargo/env` is sourced in
+#   every Rust step (don't rely on $GITHUB_PATH propagation).
+name: CI
+
+on: [push]
+
+jobs:
+  rust:
+    name: Rust (fmt · clippy · test)
+    runs-on: ubuntu-latest
+    container:
+      image: catthehacker/ubuntu:act-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq pkg-config libssl-dev curl > /dev/null
+
+      - name: Install Rust toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --profile minimal --default-toolchain stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-
+
+      - name: cargo fmt --check (advisory)
+        run: . "$HOME/.cargo/env" && cargo fmt --check || true
+
+      - name: cargo clippy (advisory)
+        continue-on-error: true
+        run: . "$HOME/.cargo/env" && cargo clippy --workspace -- -D warnings
+
+      - name: cargo test --lib
+        env:
+          # Dummy values: lib tests are unit-level; anything needing real
+          # services is #[ignore]-gated and skipped without them.
+          DATABASE_URL: postgres://ci:ci@localhost:5432/unused
+          REDIS_URL: redis://localhost:6379
+        run: . "$HOME/.cargo/env" && cargo test --lib
+
+  frontend:
+    name: Frontend (vitest · svelte-check)
+    runs-on: ubuntu-latest
+    container:
+      image: catthehacker/ubuntu:act-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests (threads pool — forks pool hangs on NFS-like mounts)
+        run: npx vitest run --pool=threads
+
+      - name: Type/template check
+        run: npx svelte-check

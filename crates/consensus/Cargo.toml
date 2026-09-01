@@ -1,0 +1,19 @@
+[package]
+name = "fichub-consensus"
+version = "0.1.0"
+edition = "2024"
+description = "Generic Elo/MaxDiff consensus engine for feature ranking"
+license = "AGPL-3.0-or-later"
+repository = "https://opencommit.eu/MagicZhang/fichub.git"
+readme = "README.md"
+
+[dependencies]
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "postgres", "chrono", "uuid", "migrate", "tls-rustls-ring", "derive", "macros"], optional = true }
+async-trait = "0.1"
+tokio = { version = "1", features = ["sync", "rt-multi-thread", "macros"] }
+
+[features]
+default = ["sqlx-store"]
+sqlx-store = ["dep:sqlx"]

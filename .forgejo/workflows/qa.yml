@@ -1,0 +1,34 @@
+name: qa
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  qa:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Environment doctor
+        run: ./qa.sh --doctor
+
+      - name: Deterministic QA (no LLM, no cloud)
+        run: ./qa.sh --skip-browser
+
+      - name: Fail if any open P0/P1 from this commit
+        run: |
+          OPEN=$(node qa/report.js --metrics | python3 -c "import sys,json; d=json.load(sys.stdin); print(sum(r['n'] for r in d['open_by_severity'] if r['severity'] in ('p0','p1')))")
+          if [ "$OPEN" != "0" ]; then
+            echo "OPEN P0/P1 BUGS: $OPEN"; node qa/report.js; exit 1
+          fi
+          echo "no open P0/P1 — merge allowed"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-artifacts
+          path: qa/artifacts/
+          retention-days: 7
