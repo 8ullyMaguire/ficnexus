@@ -367,21 +367,25 @@ without deleting code paths.
 
 ## 7. Milestones (each independently shippable)
 
-1. **M1 — unified store + read sidecar**: `translations` table,
+1. **M1 — unified store + read sidecar** (shipped — 074 schema, worker, reader/request/forum sidecar):
+   `translations` table,
    `TranslationType` registry, `resolve_chain()`, batch + enqueue
    endpoints, queue worker + LLM prompt, `TranslatedText` component,
    reader + requests + forum threads show machine text. No proposals yet —
    machine rows are enough to prove the flywheel.
-2. **M2 — proposals subsystem**: `proposals`/`proposal_votes` tables,
+2. **M2 — proposals subsystem** (shipped — routes/service/queue page + voting + supersede):
+   `proposals`/`proposal_votes` tables,
    service + apply dispatch, queue API, `/curator/proposals` page,
    improve→supersede→revote, modlog wiring, migrate the existing
    `curator_content` fix-proposals + `forum_edit_proposals` review flows
    onto it (or keep them as kinds — recommended: fold, one queue = product
    rule).
-3. **M3 — machine rows enter the queue**: LLM rows auto-create
+3. **M3 — machine rows enter the queue** (shipped — worker auto-proposes, xp awards daily-capped, report flagging):
+   LLM rows auto-create
    `source='llm'` proposals; curators approve/dismiss/replace; points
    (xp_source_defs rows + awards + daily caps); report-a-bad-translation.
-4. **M4 — UI strings + docs + everything else**: ui_translations
+4. **M4 — UI strings + docs + everything else** (in progress — i18n loader DB override shipped via `GET /api/translations/{locale}`; remaining: populate overrides at scale, comments/reviews/answer pitches coverage, coverage-matrix progress UI):
+   ui_translations
    populated via the same pipeline; i18n loader override; docs sections;
    comments/reviews/answer pitches; coverage-matrix progress UI
    ("requests board: 62% translated to es").
