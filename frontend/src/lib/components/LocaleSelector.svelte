@@ -3,7 +3,7 @@
   import { auth } from '$lib/stores/auth.svelte';
   import { listLocales } from '$lib/api/social';
   import type { Locale } from '$lib/api/social-types';
-  import { i18n, setLocale, STORAGE_KEY, type LocaleCode } from '$lib/i18n/index.svelte';
+  import { i18n, setLocale, STORAGE_KEY } from '$lib/i18n/index.svelte';
 
   let locales = $state<Locale[]>([]);
   let selectedLocale = $state('en');
@@ -28,9 +28,6 @@
     // updates the reactive store + localStorage; the PUT below syncs the
     // server-side preference (best effort).
     if (setLocale(code)) {
-      // Pull any curator-approved UI string overrides for this locale from
-      // the translations pipeline (best-effort; static dict serves meanwhile).
-      if (code !== 'en') void i18n.loadOverrides(code as LocaleCode);
       saving = true;
       try {
         const res = await fetch('/api/auth/locale', {
