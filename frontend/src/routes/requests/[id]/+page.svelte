@@ -14,6 +14,7 @@
   import { buildSearchQuery } from '$lib/api/search';
   import AnswerRow from '$lib/ui/requests/AnswerRow.svelte';
   import ArchivistCall from '$lib/ui/requests/ArchivistCall.svelte';
+  import TranslatePageButton from '$lib/components/TranslatePageButton.svelte';
 
   const uiMode = $derived(getPref('uiMode'));
 
@@ -421,6 +422,11 @@
       <button class="btn btn-small btn-danger" onclick={removeRequest}>{t('requests.deleteRequest')}</button>
     {/if}
   {/if}
+
+  <!-- Machine-translation queue (M7) -->
+  <div class="ask-box">
+    <TranslatePageButton />
+  </div>
 </div>
 
 {#if uiMode === 'archive'}

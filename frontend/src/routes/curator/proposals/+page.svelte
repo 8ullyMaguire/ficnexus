@@ -11,6 +11,7 @@
     type Proposal,
   } from '$lib/api/proposals';
   import ArchiveButton from '$lib/ui/archive/ArchiveButton.svelte';
+  import ProposalDiff from '$lib/components/ProposalDiff.svelte';
 
   let items = $state<Proposal[]>([]);
   let loading = $state(true);
@@ -130,6 +131,12 @@
             <span class="status s-{p.status}">{p.status}</span>
           </div>
           <div class="prop-body">{translateText(p).slice(0, 600)}</div>
+          {#if p.kind === 'translate' || p.kind === 'ui_string'}
+            {@const pl = p.payload as Record<string, unknown>}
+            {@const orig = typeof pl?.original === 'string' ? pl.original : ''}
+            {@const prop = typeof pl?.text === 'string' ? pl.text : translateText(p)}
+            <ProposalDiff original={orig} proposed={prop} field={typeof pl?.field === 'string' ? pl.field : undefined} />
+          {/if}
           <div class="prop-foot">
             <span class="who">{p.proposer ?? 'system'} · {new Date(p.created_at).toLocaleDateString()} · {votes}/{p.quorum ?? '?'} votes ({p.approves ?? 0}+ / {p.dismisses ?? 0}−)</span>
             {#if p.status === 'pending'}

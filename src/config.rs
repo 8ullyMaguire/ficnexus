@@ -186,6 +186,22 @@ pub struct Config {
     pub translate_auto_approve_machine: bool,
     /// Supported target locales for translation UI
     pub translate_locales: Vec<String>,
+    /// Prompt once to set reading locale on first visit (default true)
+    pub translate_reading_locale_ask: bool,
+    /// SPA dictionary override from DB (default true)
+    pub translate_ui_strings: bool,
+    /// Keep machine rows visible after dismissal (default false)
+    pub translate_keep_machine_on_dismiss: bool,
+    /// Points awarded when a human-translation proposal is approved (M6)
+    pub translate_points_approved: i64,
+    /// Points awarded when an approved translation is improved then re-approved
+    pub translate_points_improved: i64,
+    /// Points for curators reviewing a translation proposal (M6)
+    pub translate_points_reviewed: i64,
+    /// Points for flagging a bad machine translation (M6)
+    pub translate_points_flag: i64,
+    /// Daily cap on translation-related points per user (M6)
+    pub translate_points_daily_cap: i64,
     // ── Universal curator proposals (translation-everything.md §3) ──────
     /// Pending votes required before a translate/ui_string proposal resolves.
     pub proposal_quorum_translate: i64,
@@ -631,6 +647,28 @@ impl Config {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>();
+        let translate_reading_locale_ask = std::env::var("TRANSLATE_READING_LOCALE_ASK")
+            .unwrap_or_else(|_| "true".to_string())
+            .parse::<bool>()
+            .unwrap_or(true);
+        let translate_ui_strings = std::env::var("TRANSLATE_UI_STRINGS")
+            .unwrap_or_else(|_| "true".to_string())
+            .parse::<bool>()
+            .unwrap_or(true);
+        let translate_keep_machine_on_dismiss = std::env::var("TRANSLATE_KEEP_MACHINE_ON_DISMISS")
+            .unwrap_or_else(|_| "false".to_string())
+            .parse::<bool>()
+            .unwrap_or(false);
+        let translate_points_approved = std::env::var("TRANSLATE_POINTS_APPROVED")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(15);
+        let translate_points_improved = std::env::var("TRANSLATE_POINTS_IMPROVED")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(25);
+        let translate_points_reviewed = std::env::var("TRANSLATE_POINTS_REVIEWED")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+        let translate_points_flag = std::env::var("TRANSLATE_POINTS_FLAG")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+        let translate_points_daily_cap = std::env::var("TRANSLATE_POINTS_DAILY_CAP")
+            .ok().and_then(|s| s.parse().ok()).unwrap_or(100);
 
         // ── Universal curator proposals (§3 of translation-everything.md) ──
         let proposal_quorum_translate = std::env::var("PROPOSAL_QUORUM_TRANSLATE")
@@ -863,6 +901,14 @@ impl Config {
             translate_badge_machine,
             translate_auto_approve_machine,
             translate_locales,
+            translate_reading_locale_ask,
+            translate_ui_strings,
+            translate_keep_machine_on_dismiss,
+            translate_points_approved,
+            translate_points_improved,
+            translate_points_reviewed,
+            translate_points_flag,
+            translate_points_daily_cap,
             proposal_quorum_translate,
             proposal_quorum_content_fix,
             proposal_quorum_post_edit,
@@ -1007,8 +1053,12 @@ mod tests {
             "FORUM_CURATOR_LEVEL", "FORUM_ADMIN_LEVEL", "FORUM_EXP_PER_LEVEL",
             "FORUM_EXP_TOPIC_CREATE", "FORUM_EXP_POST_CREATE",
             "FORUM_EXP_MOD_RECEIVED", "FORUM_EXP_MOD_DAILY_CAP",
-            "AGENT_EXTRACT_MAX_SNAPSHOT_CHARS",
-            "FORUM_PUBLIC_READ",
+            "AGENT_EXTRACT_MAX_SNAPSHOT_CHARS", "FORUM_PUBLIC_READ",
+            "TRANSLATE_READING_LOCALE_ASK", "TRANSLATE_UI_STRINGS",
+            "TRANSLATE_KEEP_MACHINE_ON_DISMISS",
+            "TRANSLATE_POINTS_APPROVED", "TRANSLATE_POINTS_IMPROVED",
+            "TRANSLATE_POINTS_REVIEWED", "TRANSLATE_POINTS_FLAG",
+            "TRANSLATE_POINTS_DAILY_CAP",
         ];
         for key in &keys {
             // SAFETY: Test-only env var cleanup under ENV_LOCK, single-threaded.
@@ -1114,6 +1164,15 @@ mod tests {
         assert_eq!(config.forum_exp_post_create, 2);
         assert_eq!(config.forum_exp_mod_received, 1);
         assert_eq!(config.forum_exp_mod_daily_cap, 3);
+        // Translation points defaults (M6)
+        assert!(config.translate_reading_locale_ask);
+        assert!(config.translate_ui_strings);
+        assert!(!config.translate_keep_machine_on_dismiss);
+        assert_eq!(config.translate_points_approved, 15);
+        assert_eq!(config.translate_points_improved, 25);
+        assert_eq!(config.translate_points_reviewed, 2);
+        assert_eq!(config.translate_points_flag, 1);
+        assert_eq!(config.translate_points_daily_cap, 100);
     }
 
     #[test]

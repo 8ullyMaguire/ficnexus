@@ -4,6 +4,7 @@
   // id when the slug is stale (topic title edited elsewhere, legacy link
   // carrying an old slug, or slug unknown to the server yet).
   import TopicThread from '$lib/components/forum/TopicThread.svelte';
+import TranslatePageButton from '$lib/components/TranslatePageButton.svelte';
   import { getForumTopicBySlug, getForumTopic, markTopicRead, getForumTopic as getTopicDetail } from '$lib/api/forum';
   import { t } from '$lib/i18n/index.svelte';
   import { getPref } from '$lib/prefs';
@@ -88,6 +89,7 @@
     {:else}
       <blockquote class="archive-empty"><p>{t('forum.loading')}</p></blockquote>
     {/if}
+    <TranslatePageButton />
   </div>
 </main>
 {:else}

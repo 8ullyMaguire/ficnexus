@@ -15,7 +15,8 @@ import FicSuggestionsPanel from '$lib/components/FicSuggestionsPanel.svelte';
  import ReactionBar from '$lib/components/ReactionBar.svelte';
  import MetadataEditModal from '$lib/components/MetadataEditModal.svelte';
  import ArchiveWork from '$lib/ui/archive/ArchiveWork.svelte';
-import ArchiveBreadcrumbs from '$lib/ui/archive/ArchiveBreadcrumbs.svelte';
+ import ArchiveBreadcrumbs from '$lib/ui/archive/ArchiveBreadcrumbs.svelte';
+import TranslatePageButton from '$lib/components/TranslatePageButton.svelte';
  import { formatWords, detectSite, stripHtml, relativeTime } from '$lib/util';
 
  let { data } = $props();
@@ -639,6 +640,9 @@ import ArchiveBreadcrumbs from '$lib/ui/archive/ArchiveBreadcrumbs.svelte';
 <a class="action-btn" href="/">{t('fic.loginToRate')}</a>
  {/if}
 </div>
+
+<!-- Machine-translation queue for unread visible text (M7) -->
+<TranslatePageButton />
 
 <!-- Comments (threaded + reactions) -->
 <div id="comments" class="work-comments-section">
