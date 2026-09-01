@@ -160,3 +160,57 @@ describe('initI18n', () => {
     expect(code).toBe('en');
   });
 });
+
+describe('DB UI-string overrides', () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    i18n.overrides = {};
+  });
+
+  it('loadOverrides flattens namespaces and overrides t() for the locale', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        err: 0,
+        translations: { nav: { discover: 'Entdecken!' }, search: { results: '{count} Treffer' } },
+      }),
+    }) as unknown as typeof fetch;
+
+    await i18n.loadOverrides('de');
+    i18n.setLocale('de');
+    expect(t('nav.discover')).toBe('Entdecken!');
+    expect(t('search.results', { count: 3 })).toBe('3 Treffer');
+    // Unknown key still falls through to English / raw key.
+    expect(t('no.such.key')).toBe('no.such.key');
+  });
+
+  it('non-English locales are unaffected when overrides fail', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error('offline')) as unknown as typeof fetch;
+    await i18n.loadOverrides('es');
+    i18n.setLocale('es');
+    // Static Spanish dictionary still serves.
+    expect(t('nav.discover')).toBe(dictionaries.es['nav.discover']);
+  });
+
+  it('English never gets overrides applied', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ err: 0, translations: { nav: { discover: 'OVERRIDE' } } }),
+    }) as unknown as typeof fetch;
+    await i18n.loadOverrides('en');
+    i18n.setLocale('en');
+    expect(t('nav.discover')).toBe(dictionaries.en['nav.discover']);
+  });
+
+  it('initI18n pulls overrides for the resolved non-English locale', async () => {
+    const fetchSpy = vi.fn().mockRejectedValue(new Error('offline'));
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    localStorage.removeItem('fichub_locale');
+    initI18n({ userLocale: 'es', browserLanguages: [] });
+    // Wait a microtask for the fire-and-forget load.
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('/api/translations/es');
+  });
+});
