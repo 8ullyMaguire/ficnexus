@@ -381,8 +381,7 @@ without deleting code paths.
 3. **M3 — machine rows enter the queue**: LLM rows auto-create
    `source='llm'` proposals; curators approve/dismiss/replace; points
    (xp_source_defs rows + awards + daily caps); report-a-bad-translation.
-4. **M4 — UI strings + docs + everything else** (in progress — i18n loader DB override shipped; coverage-matrix progress UI shipped as `/curator/coverage` + `GET /api/translate/coverage`; remaining: comments/reviews/answer pitches coverage, populate overrides at scale):
-   ui_translations
+4. **M4 — UI strings + docs + everything else**: ui_translations
    populated via the same pipeline; i18n loader override; docs sections;
    comments/reviews/answer pitches; coverage-matrix progress UI
    ("requests board: 62% translated to es").

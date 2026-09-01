@@ -213,3 +213,31 @@ export function clearTranslationCache(): void {
   resultCache.clear();
   localeBatches.clear();
 }
+
+/** Aggregate coverage for one locale from the global matrix endpoint. */
+export interface LocaleCoverage {
+  approved?: number;
+  machine?: number;
+}
+
+export interface CoverageMatrixResponse {
+  err: number;
+  msg?: string;
+  coverage: Record<string, LocaleCoverage>;
+  total_targets: number;
+}
+
+/**
+ * Global translation coverage matrix: per-locale approved/machine target
+ * counts plus the total distinct targets known to the pipeline.
+ * Used by the curator coverage board ("62% translated to es").
+ */
+export async function coverageMatrix(): Promise<{ coverage: Record<string, LocaleCoverage>; totalTargets: number }> {
+  try {
+    const res = await request<CoverageMatrixResponse>('/api/translate/coverage');
+    if (res.err === 0) return { coverage: res.coverage ?? {}, totalTargets: res.total_targets ?? 0 };
+  } catch {
+    // Silently fail
+  }
+  return { coverage: {}, totalTargets: 0 };
+}

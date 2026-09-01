@@ -1,0 +1,26 @@
+# Rust / build artifacts
+/target
+/bin/
+**/target/
+
+# Environment / secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Editor
+*.swp
+*.swo
+*~
+tmp/
+
+# Caches
+/cache/
+
+# Frontend build artifacts
+frontend/build/
+frontend/node_modules/
+frontend/.svelte-kit/
+build/
+.svelte-kit/

@@ -232,6 +232,7 @@
             <div class="archive-dropdown-menu" role="menu">
               <a class="archive-dd-item" href="/curator/flags" role="menuitem">Flags</a>
               <a class="archive-dd-item" href="/curator/proposals" role="menuitem">Queue</a>
+              <a class="archive-dd-item" href="/curator/coverage" role="menuitem">Coverage</a>
               <a class="archive-dd-item" href="/work-proposals" role="menuitem">Proposals</a>
               <a class="archive-dd-item" href="/curator/authors" role="menuitem">Authors</a>
             </div>
