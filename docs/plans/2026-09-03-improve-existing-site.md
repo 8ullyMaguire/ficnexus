@@ -12,8 +12,15 @@ Incremental improvements to the current codebase (no rewrite), ordered by impact
 
 ## Status
 
-- [ ] 1. Meta tags
-- [ ] 2. Sitemap + robots.txt
-- [ ] 3. Cookie consent toast
-- [ ] 4. Anonymous library device cookie
-- [ ] 5. Homepage focus
+- [x] 1. Meta tags — commit 90020f1 (`works/[urlId]` full OG/Twitter/canonical set; homepage, search, fandoms, trending, tags, authors titles)
+- [x] 2. Sitemap + robots.txt — commit 9a292a9 (`/sitemaps/index.xml`, `/sitemaps/works-{shard}.xml` × 36, `PUBLIC_BASE_URL` config, `robots.txt` in `frontend/static/`)
+- [x] 3. Cookie consent toast — commit 9fa5086 (`consent.svelte.ts` store + `ConsentToast.svelte` in ArchiveLayout; accept → 1-year `fh_consent` cookie, reject → sessionStorage only, links `/privacy`)
+- [ ] 4. Anonymous library device cookie — gate `fh_dev` on `consentGranted()`; merge into account on register/login
+- [ ] 5. Homepage focus — paste-URL box + trending above dashboard widgets
+
+## Notes
+
+- Repo had zero git history; baseline commit 56e3bee created first (also fixed `.gitignore`: `frontend/.svelte-kit/`, `frontend/build/`, `tmp/`, `books/`, `qa/`, `cache/`).
+- Backend is the Axum server (`src/server.rs` `build_router`) — sitemaps are served there, not the SvelteKit SPA (SPA can't emit per-fic URLs for crawlers).
+- Stray root-level `+page.svelte` / `ProposalDiff.svelte` files (copies of curator consensus page + diff component) were swept into the baseline; candidate for cleanup.
+- `reader-lib.test.ts` (18 tests) fails with `localStorage.clear()` undefined under this sandbox's jsdom — pre-existing, unrelated to these changes.
