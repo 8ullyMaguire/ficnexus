@@ -38,6 +38,11 @@
     if (e.key === 'Enter') doSearch();
   }
 </script>
+<svelte:head>
+  <title>Authors — FicHub</title>
+  <meta name="description" content="Browse author profiles and their works on FicHub." />
+</svelte:head>
+
 
 {#if uiMode === 'archive'}
   <!-- AO3-style People Search -->

@@ -8,6 +8,11 @@
   const uiMode = $derived(getPref('uiMode'));
 </script>
 
+<svelte:head>
+  <title>FicHub — Read & download fanfiction from 100+ sites</title>
+  <meta name="description" content="Paste any fanfic URL to read it here or download it as EPUB, MOBI, PDF and more. Bookmarks, follows, update notifications — no account required to start." />
+</svelte:head>
+
 {#if uiMode === 'archive'}
   <ArchiveHome />
 {/if}

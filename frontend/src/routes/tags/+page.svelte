@@ -198,6 +198,11 @@
     Object.values(tagsByType).reduce((sum, arr) => sum + arr.length, 0)
   );
 </script>
+<svelte:head>
+  <title>Browse Tags — FicHub</title>
+  <meta name="description" content="Browse tags across all fandoms on FicHub." />
+</svelte:head>
+
 
 {#if uiMode === 'archive'}
   <!-- AO3-style tag cloud -->

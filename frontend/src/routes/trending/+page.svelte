@@ -50,6 +50,11 @@
     return names[typeId] || t('trending.other');
   }
 </script>
+<svelte:head>
+  <title>Trending — FicHub</title>
+  <meta name="description" content="What the FicHub community is reading and downloading right now." />
+</svelte:head>
+
 
 {#if uiMode === 'archive'}
 <!-- ── Archive mode ─────────────────────────────────────────── -->

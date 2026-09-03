@@ -22,6 +22,20 @@ import TranslatePageButton from '$lib/components/TranslatePageButton.svelte';
  let { data } = $props();
  const urlId = $derived(decodeURIComponent(data.urlId));
 
+ // ── SEO: per-fic <head> metadata ────────────────────────────────────────
+ // Crawler-visible title/description/OG tags. Filled once `fic` loads.
+ const metaDescription = $derived.by(() => {
+  if (!fic?.meta) return 'Download and read fanfiction from 100+ sites.';
+  const raw = stripHtml(fic.meta.description || '');
+  const trimmed = raw.replace(/\\s+/g, ' ').trim();
+  if (!trimmed) return `Read ${fic.meta.title} by ${fic.meta.author} on FicHub.`;
+  return trimmed.length > 155 ? trimmed.slice(0, 152).trimEnd() + '…' : trimmed;
+ });
+ const canonicalUrl = $derived.by(() => {
+  if (typeof window === 'undefined') return '';
+  return `${window.location.origin}/works/${encodeURIComponent(urlId)}`;
+ });
+
  let fic = $state<ExportResponse | null>(null);
  let loading = $state(true);
  let showMetaEdit = $state(false);
@@ -547,6 +561,21 @@ import TranslatePageButton from '$lib/components/TranslatePageButton.svelte';
      }));
    }
  </script>
+
+<svelte:head>
+  <title>{fic?.meta ? `${fic.meta.title} — ${fic.meta.author} | FicHub` : 'FicHub'}</title>
+  <meta name="description" content={metaDescription} />
+  {#if canonicalUrl}
+  <link rel="canonical" href={canonicalUrl} />
+  <meta property="og:title" content={fic?.meta ? `${fic.meta.title} — ${fic.meta.author}` : 'FicHub'} />
+  <meta property="og:description" content={metaDescription} />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content={canonicalUrl} />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content={fic?.meta ? `${fic.meta.title} — ${fic.meta.author}` : 'FicHub'} />
+  <meta name="twitter:description" content={metaDescription} />
+  {/if}
+</svelte:head>
 
 {#if loading}
 <div class="card">

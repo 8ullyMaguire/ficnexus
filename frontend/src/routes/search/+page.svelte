@@ -4,6 +4,7 @@
   import { goto } from '$app/navigation';
   import { search, fetchSearchSuggestions, type SearchResult, type SearchFacets, type SearchSuggestion } from '$lib/api/search';
   import ArchiveWorkSearchForm from '$lib/ui/archive/ArchiveWorkSearchForm.svelte';
+
   import WorkBlurb from '$lib/ui/archive/WorkBlurb.svelte';
   import {
     buildSearchQuery as buildArchiveQuery,
@@ -115,6 +116,11 @@
     archiveFormState = newState;
   }
 </script>
+<svelte:head>
+  <title>Search — FicHub</title>
+  <meta name="description" content="Search fanfiction across 100+ sites by fandom, tag, rating, word count and more on FicHub." />
+</svelte:head>
+
 
 <div class="search-page">
   <!-- Results -->

@@ -43,6 +43,11 @@
     return a.localeCompare(b);
   }));
 </script>
+<svelte:head>
+  <title>Browse Fandoms — FicHub</title>
+  <meta name="description" content="Browse all fandoms on FicHub — anime, books, cartoons, comics, games, movies and TV." />
+</svelte:head>
+
 
 {#if uiMode === 'archive'}
   <!-- AO3-style alphabetical fandom index -->
