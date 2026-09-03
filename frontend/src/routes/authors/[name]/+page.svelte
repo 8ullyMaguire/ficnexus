@@ -1,0 +1,336 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { getAuthorByName, updateAuthorProfile } from '$lib/api/series';
+  import type { AuthorDetail, AuthorOrphan, AuthorWork } from '$lib/api/series';
+  import { auth } from '$lib/stores/auth.svelte';
+  import { formatWords, stripHtml } from '$lib/util';
+  import { getPref } from '$lib/prefs';
+
+  let { data } = $props();
+  const authorName = $derived(decodeURIComponent(data.name));
+
+  let author = $state<AuthorDetail | null>(null);
+  let works = $state<AuthorWork[]>([]);
+  let orphans = $state<AuthorOrphan[]>([]);
+  let loading = $state(true);
+  let error = $state('');
+  let editingProfile = $state(false);
+  let editBio = $state('');
+  let editAvatar = $state('');
+  let editBadge = $state('');
+  let isOwner = $state(false);
+  let authorId: number | null = $state(null);
+
+  // Archive mode = AO3-style rendering (HTML-safe bio, badges, fav tags).
+  const uiMode = $derived.by(() => {
+    try {
+      return getPref('uiMode');
+    } catch {
+      return 'modern';
+    }
+  });
+  const isArchive = $derived(uiMode === 'archive');
+
+  // Default avatar shown when the author has no avatar_url
+  const DEFAULT_AVATAR = 'https://archiveofourown.org/images/cons/avatar.gif';
+
+  onMount(async () => {
+    await auth.init();
+    await load();
+  });
+
+  async function load() {
+    loading = true;
+    error = '';
+    try {
+      const res = await getAuthorByName(authorName);
+      if (res.err !== 0) {
+        error = 'Could not load author.';
+        return;
+      }
+      author = res.author;
+      works = res.works ?? [];
+      orphans = res.orphans ?? [];
+      isOwner = auth.isLoggedIn && author?.name === auth.username;
+      if (author?.id) authorId = author.id;
+    } catch {
+      error = 'Network error loading author.';
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function saveProfile() {
+    if (!authorId) return;
+    const updates: { avatar_url?: string; bio?: string; badge_text?: string } = {};
+    if (editAvatar.trim()) updates.avatar_url = editAvatar;
+    if (editBio.trim()) updates.bio = editBio;
+    if (editBadge.trim()) updates.badge_text = editBadge;
+    try {
+      const res = await updateAuthorProfile(authorId, updates);
+      if (res.err === 0) {
+        editingProfile = false;
+        await load();
+      }
+    } catch {
+      error = 'Failed to save profile.';
+    }
+  }
+
+  function startEditingProfile() {
+    editingProfile = true;
+    editBio = author?.bio ?? '';
+    editAvatar = author?.avatar_url ?? '';
+    editBadge = author?.badge_text ?? '';
+  }
+
+  function workHref(w: AuthorWork | AuthorOrphan): string {
+    if (w.url_id) return `/works/${encodeURIComponent(w.url_id)}`;
+    return w.work_id ? `/work/${w.work_id}` : '#';
+  }
+
+  // AO3 renders author bios as sanitized HTML (userstuff). In archive mode we
+  // render the bio as-is (trusted content from AO3); otherwise we strip tags
+  // so plain-text bios are safe in the modern UI.
+  function renderBio(): string {
+    if (!author?.bio) return '';
+    return isArchive ? author.bio : stripHtml(author.bio);
+  }
+</script>
+
+{#if loading}
+  <div class="card">
+    <p class="muted"><span class="spinner"></span> Loading author…</p>
+  </div>
+{:else if error}
+  <div class="card error-card">
+    <strong class="error-text">⚠️ {error}</strong>
+  </div>
+{:else if author}
+  <div class="author-page">
+    <div class="author-header card">
+      <!-- Avatar (AO3-style: circular, fallback to default) -->
+      <div class="avatar-wrapper">
+        {#if author.avatar_url}
+          <img class="avatar" src={author.avatar_url} alt={`${author.name} avatar`} loading="lazy" />
+        {:else}
+          <img class="avatar avatar-fallback" src={DEFAULT_AVATAR} alt={`${author.name} avatar`} loading="lazy" />
+        {/if}
+      </div>
+
+      <div class="author-heading">
+        <h1>✍️ {author.name}</h1>
+
+        <!-- Badges / user title (AO3 shows an "About" blurb; we surface a
+             freeform badge_text user title + earned badge icons) -->
+        <div class="author-badges">
+          {#if author.badge_text}
+            <span class="badge-text">{author.badge_text}</span>
+          {/if}
+          {#if author.badges && author.badges.length > 0}
+            <span class="badge-icons" title="Earned badges">
+              {#each author.badges as b (b.badge_type)}
+                <span class="badge-icon" title={b.name}>{b.icon}</span>
+              {/each}
+            </span>
+          {/if}
+        </div>
+
+        <div class="stats-row">
+          <span class="stat">{author.work_count} {author.work_count === 1 ? 'work' : 'works'}</span>
+          <span class="stat">{formatWords(author.total_words)} words</span>
+        </div>
+
+        {#if author.top_tags.length > 0}
+          <div class="tags">
+            {#each author.top_tags.slice(0, 12) as t (t.name)}
+              <a class="tag-chip" href={`/search?q=${encodeURIComponent(t.name)}`}>{t.name}</a>
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Favorite tags (AO3-style: tags the author follows) -->
+        {#if author.favorite_tags && author.favorite_tags.length > 0}
+          <div class="fav-tags">
+            <span class="muted">Favorite tags:</span>
+            {#each author.favorite_tags as t (t.name)}
+              <a class="tag-chip tag-chip--fav" href={`/search?q=${encodeURIComponent(t.name)}`}>{t.name}</a>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </div>
+
+    <!-- Edit Profile (owner-only) -->
+    {#if isOwner && editingProfile}
+      <div class="card profile-edit-form">
+        <h3>Edit Profile</h3>
+        <dl>
+          <div class="dl-row">
+            <dt><label for="edit-avatar">Avatar URL</label></dt>
+            <dd><input id="edit-avatar" type="url" bind:value={editAvatar} placeholder="https://..." /></dd>
+          </div>
+          <div class="dl-row">
+            <dt><label for="edit-bio">Bio</label></dt>
+            <dd><textarea id="edit-bio" bind:value={editBio} rows="3" placeholder="Tell us about yourself..."></textarea></dd>
+          </div>
+          <div class="dl-row">
+            <dt><label for="edit-badge">Badge Text</label></dt>
+            <dd><input id="edit-badge" type="text" bind:value={editBadge} placeholder="e.g. 'Top Author'" /></dd>
+          </div>
+        </dl>
+        <p class="submit actions">
+          <button class="btn" onclick={saveProfile}>Save</button>
+          <button class="btn btn-secondary" onclick={() => editingProfile = false}>Cancel</button>
+        </p>
+      </div>
+    {:else if isOwner}
+      <button class="btn btn-secondary" onclick={startEditingProfile}>Edit Profile</button>
+    {/if}
+
+    <!-- Bio (HTML-safe in archive mode, plain text otherwise) -->
+    {#if author.bio}
+      <div class="card author-bio">
+        {#if isArchive}
+          {@html author.bio}
+        {:else}
+          <p>{renderBio()}</p>
+        {/if}
+      </div>
+    {/if}
+
+    {#if works.length === 0 && orphans.length === 0}
+      <div class="card"><p class="muted">No works by this author yet.</p></div>
+    {:else}
+      <div class="works-grid">
+        {#each works as w (w.work_id)}
+          <a class="card work-card" href={workHref(w)}>
+            <strong class="work-title">{w.canonical_title}</strong>
+            <p class="muted desc">{stripHtml(w.description).slice(0, 160)}{w.description.length > 160 ? '…' : ''}</p>
+            <span class="muted work-meta">
+              {formatWords(w.words)} words · {w.chapters} ch · {w.status}
+            </span>
+          </a>
+        {/each}
+        {#each orphans as o (o.url_id)}
+          <a class="card work-card" href={workHref(o)}>
+            <strong class="work-title">{o.canonical_title}</strong>
+            <p class="muted desc">{formatWords(o.words)} words · {o.chapters} ch · {o.status}</p>
+          </a>
+        {/each}
+      </div>
+    {/if}
+
+    <p class="muted back-link"><a href="/">← Back to home</a></p>
+  </div>
+{/if}
+
+<style>
+  .author-page {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 1rem;
+  }
+  .author-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  .avatar-wrapper {
+    flex-shrink: 0;
+  }
+  .avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid var(--color-border);
+  }
+  .avatar-fallback {
+    opacity: 0.7;
+  }
+  .author-heading {
+    flex: 1;
+  }
+  .author-heading h1 {
+    margin: 0 0 0.5rem;
+    font-size: 1.6rem;
+  }
+  .author-badges {
+    margin: 0.25rem 0 0.5rem;
+  }
+  .badge-text {
+    display: inline-block;
+    font-weight: 600;
+    color: var(--color-primary);
+    margin-right: 0.5rem;
+  }
+  .badge-icons {
+    display: inline-block;
+  }
+  .badge-icon {
+    display: inline-block;
+    font-size: 1.2rem;
+    margin-right: 0.15rem;
+  }
+  .stats-row {
+    display: flex;
+    gap: 1.2rem;
+    font-weight: 600;
+    color: var(--color-muted);
+    margin-bottom: 0.5rem;
+  }
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .tag-chip {
+    font-size: 0.78rem;
+    padding: 0.2rem 0.55rem;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-primary);
+    text-decoration: none;
+  }
+  .tag-chip--fav {
+    color: var(--color-warning);
+  }
+  .fav-tags {
+    margin-top: 0.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: center;
+  }
+  .fav-tags .muted {
+    font-size: 0.85rem;
+  }
+  .works-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 0.8rem;
+    margin-top: 1rem;
+  }
+  .work-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    text-decoration: none;
+    color: inherit;
+  }
+  .work-title {
+    font-size: 1.02rem;
+  }
+  .desc {
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  .work-meta {
+    font-size: 0.8rem;
+  }
+  .back-link {
+    margin-top: 1.5rem;
+  }
+</style>

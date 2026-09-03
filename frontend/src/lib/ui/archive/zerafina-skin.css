@@ -1,0 +1,346 @@
+/* =============================================================================
+ * zerafina-skin.css
+ * =============================================================================
+ * The full Zerafina skin — the default, rich AO3-style styling for the archive
+ * interface.  This file is always loaded (via a <link> in ArchiveLayout) but
+ * its rules are scoped under the `skin-zerafina` body class so they only take
+ * effect when the user has selected the "Zerafina" skin in Settings.
+ *
+ * When "AO3 Default" is selected instead, the body gets class
+ * `skin-ao3-default` and only the minimal AO3 reference CSS (dropdown colours,
+ * red nav bar, search styling) from ArchiveHeader is active.
+ *
+ * Dropdown colour palette (must match AO3 exactly):
+ *   background:        #ddd
+ *   gradient:          linear-gradient(to bottom, rgba(221,221,221,.98), rgba(204,204,204,.98))
+ *   accent:            #900  (red navbar, links)
+ *   text:              #111
+ *   hover background:  #fff (rgba(255,255,255,.25))
+ *
+ * These are also defined as CSS custom properties so the AO3 header CSS can
+ * reference them without hard-coding (see ArchiveHeader.svelte <style>).
+ * ========================================================================== */
+
+/* ── Skin CSS custom properties ──────────────────────────────────────── */
+:root {
+  --archive-accent: #990000;
+  --archive-accent-visited: #660066;
+  --archive-link: #990000;
+  --archive-link-visited: #660066;
+  --archive-bg: #ffffff;
+  --archive-bg-raised: #f5f5f5;
+  --archive-text: #2a2a2a;
+  --archive-muted: #666666;
+  --archive-border: #dddddd;
+  --archive-max-width: 1100px;
+}
+
+/* ── Body skin classes ─────────────────────────────────────────────────
+ * ArchiveLayout adds either `skin-zerafina` or `skin-ao3-default` to
+ * <body> on mount and whenever the skin preference changes.
+ * ------------------------------------------------------------------- */
+
+/* Zerafina (default): applies the full CSS variables above. */
+body.skin-zerafina {
+  --archive-accent: #990000;
+  --archive-accent-visited: #660066;
+  --archive-link: #990000;
+  --archive-link-visited: #660066;
+  --archive-bg: #ffffff;
+  --archive-bg-raised: #f5f5f5;
+  --archive-text: #2a2a2a;
+  --archive-muted: #666666;
+  --archive-border: #dddddd;
+}
+
+/* AO3 Default: pure AO3 palette (white bg, red accents, dark text). */
+body.skin-ao3-default {
+  --archive-accent: #990000;
+  --archive-accent-visited: #660066;
+  --archive-link: #990000;
+  --archive-link-visited: #660066;
+  --archive-bg: #ffffff;
+  --archive-bg-raised: #f5f5f5;
+  --archive-text: #2a2a2a;
+  --archive-muted: #666666;
+  --archive-border: #dddddd;
+}
+
+/* ── Stats icons ──────────────────────────────────────────────────────
+ * Small decorative icons for stats lines (comments, kudos, etc.)
+ * rendered via ::before on .stat-meta elements.
+ * ------------------------------------------------------------------- */
+body.skin-zerafina .stat-meta::before,
+body.skin-ao3-default .stat-meta::before {
+  font-family: 'Georgia', 'Times New Roman', serif;
+  font-weight: bold;
+  margin-right: 0.3em;
+  color: var(--archive-muted);
+}
+
+body.skin-zerafina .stat-comments::before,
+body.skin-ao3-default .stat-comments::before {
+  content: '💬';
+}
+
+body.skin-zerafina .stat-kudos::before,
+body.skin-ao3-default .stat-kudos::before {
+  content: '👍';
+}
+
+body.skin-zerafina .stat-bookmarks::before,
+body.skin-ao3-default .stat-bookmarks::before {
+  content: '🔖';
+}
+
+body.skin-zerafina .stat-words::before,
+body.skin-ao3-default .stat-words::before {
+  content: '📝';
+}
+
+body.skin-zerafina .stat-chapters::before,
+body.skin-ao3-default .stat-chapters::before {
+  content: '📖';
+}
+
+body.skin-zerafina .stat-hits::before,
+body.skin-ao3-default .stat-hits::before {
+  content: '👁';
+}
+
+/* ── Tag boxes ────────────────────────────────────────────────────────
+ * AO3-style tag rendering: inline-block, pill-shaped, muted red border.
+ * ------------------------------------------------------------------- */
+body.skin-zerafina .tag,
+body.skin-ao3-default .tag {
+  display: inline-block;
+  background: var(--archive-bg);
+  border: 1px solid var(--archive-border);
+  border-radius: 9999px;
+  padding: 0.1em 0.6em;
+  font-size: 0.85em;
+  color: var(--archive-muted);
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+body.skin-zerafina .tag.tag-category,
+body.skin-ao3-default .tag.tag-category {
+  border-color: var(--archive-accent);
+  color: var(--archive-link);
+  font-weight: 600;
+}
+
+body.skin-zerafina .tag.tag-warning,
+body.skin-ao3-default .tag.tag-warning {
+  background: var(--archive-bg-raised);
+  border-color: var(--archive-accent);
+  color: var(--archive-link);
+}
+
+body.skin-zerafina .tag.tag-freeform,
+body.skin-ao3-default .tag.tag-freeform {
+  border-color: var(--archive-border);
+  color: var(--archive-text);
+}
+
+/* Tag soup container (list of tags) */
+body.skin-zerafina .tag-soup,
+body.skin-ao3-default .tag-soup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25em;
+  margin: 0.4em 0;
+}
+
+/* ── Dropdown colours (AO3 header CSS) ────────────────────────────────
+ * These override the component-level .menu styles when the full skin
+ * is active, ensuring pixel-perfect match to AO3 reference.
+ * ------------------------------------------------------------------- */
+body.skin-zerafina #header .menu,
+body.skin-zerafina #header #small_login {
+  background: #ddd;
+  background-image: linear-gradient(
+    to bottom,
+    rgba(221, 221, 221, 0.98) 0%,
+    rgba(204, 204, 204, 0.98) 100%
+  );
+  box-shadow: 1px 1px 3px -1px #444;
+  border: none;
+  padding: 0.25em 0;
+  z-index: 55;
+  width: 20em;
+}
+
+body.skin-zerafina #header .dropdown .menu a {
+  background: transparent;
+  display: block;
+  padding: 0.75em 0.5em 0.5em;
+  color: #111;
+  text-decoration: none;
+}
+
+body.skin-zerafina #header .dropdown .menu a:hover,
+body.skin-zerafina #header .dropdown .menu a:focus {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+body.skin-zerafina #header a,
+body.skin-zerafina #header a:visited,
+body.skin-zerafina #header .primary .open a,
+body.skin-zerafina #header .primary .dropdown:hover a,
+body.skin-zerafina #header .primary .dropdown a:focus {
+  color: #111;
+}
+
+body.skin-zerafina #header .actions a:hover,
+body.skin-zerafina #header .actions a:focus,
+body.skin-zerafina #header .dropdown:hover a,
+body.skin-zerafina #header .open a {
+  background: #ddd;
+}
+
+/* Primary nav red bar */
+body.skin-zerafina #header .primary {
+  background: #900;
+  width: 100%;
+  box-shadow: inset 0 -6px 10px rgba(0, 0, 0, 0.35),
+    1px 1px 3px -1px rgba(0, 0, 0, 0.25);
+}
+
+body.skin-zerafina #header .primary a {
+  color: #fff;
+  padding: 0.429em 0.75em;
+}
+
+/* Login hover */
+body.skin-zerafina #login .open a:hover,
+body.skin-zerafina #login .open a:focus {
+  background: #eee;
+}
+
+/* ── AO3 search box styling ─────────────────────────────────────────── */
+body.skin-zerafina #header .search {
+  float: right;
+  color: #2a2a2a;
+  margin-right: 0.25em;
+}
+
+body.skin-zerafina #header #search .text {
+  margin: 0.2857em 0.429em;
+  padding: 0.25em 0.5em;
+  border: none;
+  border-radius: 3px 0 0 3px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #2a2a2a;
+  font-family: inherit;
+  font-size: 0.85em;
+  outline: none;
+}
+
+body.skin-zerafina #header #search .button {
+  padding: 0.2857em 0.75em;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: #2a2a2a;
+  background: rgba(255, 255, 255, 0.95);
+  border: none;
+  border-radius: 0 3px 3px 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+body.skin-zerafina #header #search .button:hover {
+  background: #f0f0f0;
+}
+
+/* ── Stats line styling ─────────────────────────────────────────────── */
+.stats-line {
+  font-size: 0.85em;
+  color: var(--archive-muted);
+  line-height: 1.4;
+  margin: 0.4em 0;
+}
+
+.stats-line .stat-meta {
+  display: inline-block;
+  margin-right: 0.8em;
+}
+
+/* ── Work blurb enhancements (zerafina full styling) ────────────────── */
+body.skin-zerafina .blurb-meta {
+  font-size: 0.82em;
+  color: var(--archive-muted);
+  line-height: 1.4;
+  margin: 0.2em 0 0;
+}
+
+body.skin-zerafina .blurb-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6em;
+  font-size: 0.82em;
+  color: var(--archive-muted);
+  margin-top: 0.2em;
+}
+
+body.skin-zerafina .blurb-stats .stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15em;
+}
+
+/* ── AO3 Default skin: minimal overrides ──────────────────────────────
+ * When AO3 Default is selected, we strip away the richer zerafina extras
+ * (no stat icons, no tag styling) and keep only the bare AO3 reference
+ * header.  The component CSS in ArchiveHeader.svelte handles the rest.
+ * ------------------------------------------------------------------- */
+body.skin-ao3-default .stats-line {
+  font-size: 0.9em;
+}
+
+body.skin-ao3-default .tag-box {
+  display: inline-block;
+  border: 1px solid var(--archive-border);
+  padding: 0.1em 0.5em;
+  font-size: 0.85em;
+  color: var(--archive-muted);
+}
+
+/* ── Mobile responsive (≤768px) ─────────────────────────────────────── */
+@media (max-width: 768px) {
+  .archive-navbar-inner {
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding: 0 0.5rem;
+  }
+  .archive-nav-link {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.85em;
+  }
+  .archive-top-row {
+    flex-wrap: wrap;
+  }
+  .archive-top-inner {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .archive-dropdown-menu,
+  .archive-login-menu,
+  .archive-user-menu {
+    max-width: 92vw;
+    right: 0;
+    left: auto;
+  }
+  .archive-main {
+    padding: 0.5rem;
+  }
+  .archive-content {
+    padding: 0.75rem 0.6rem;
+  }
+  .archive-table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "seed": [
+    {
+      "id": "site-support-more-sources",
+      "title": "Add more supported fanfic sites",
+      "summary": "Support MediaMiner.org, ScribbleHub, Literotica, SpiritFanfiction, AlternateHistory, fimfiction.net, tthfanfic.org, and FanficParadise forums.",
+      "source_issues": [51, 48, 44, 36, 17, 4, 39]
+    },
+    {
+      "id": "update-refresh-reliability",
+      "title": "Reliable story updates & cache refresh",
+      "summary": "Files don't refresh when a fic is updated without new chapters; provide a way to invalidate cache for a story and auto-check for updates.",
+      "source_issues": [54, 30, 18, 23, 28, 26, 14, 1, 3, 46]
+    },
+    {
+      "id": "export-format-breadth",
+      "title": "More export formats: Markdown, text, ODT, DOCX",
+      "summary": "Add Markdown, plain text, ODT and DOCX export options in addition to EPUB/PDF/MOBI/HTML.",
+      "source_issues": [29]
+    },
+    {
+      "id": "html-export-fidelity",
+      "title": "Fix HTML export formatting bugs",
+      "summary": "HTML exports mangle dashes (em/en -> hyphen), drop chapter titles, lose underline/formatting, and include garbage tags.",
+      "source_issues": [32, 22, 42, 47]
+    },
+    {
+      "id": "epub-quality",
+      "title": "Improve EPUB quality",
+      "summary": "Fix random spaces, support book-style paragraph indentation, and preserve chapter ordering when chapters are inserted out of sequence.",
+      "source_issues": [6, 21, 45, 46]
+    },
+    {
+      "id": "download-reliability",
+      "title": "Fix download failures & blank exports",
+      "summary": "Address blank downloads, PDF export failures on fanfiction.net, 503 errors, and 'response was not valid' conversion errors.",
+      "source_issues": [50, 57, 49, 40, 53, 52]
+    },
+    {
+      "id": "api-cors",
+      "title": "Enable CORS on API for userscripts",
+      "summary": "Return Access-Control-Allow-Origin: * on API endpoints so bookmarklets and userscripts can call FicHub directly.",
+      "source_issues": [41]
+    },
+    {
+      "id": "api-cover-images",
+      "title": "Expose cover images via API",
+      "summary": "Add cover image support to the API for frontends and third-party apps.",
+      "source_issues": [35]
+    },
+    {
+      "id": "series-download",
+      "title": "Download entire series (AO3)",
+      "summary": "Support downloading a whole AO3 series, not just individual works.",
+      "source_issues": [25]
+    },
+    {
+      "id": "bulk-mirroring",
+      "title": "Bulk mirroring / database import",
+      "summary": "Allow bulk mirroring of databases and batch submission of stories FicHub has trouble with.",
+      "source_issues": [8, 10]
+    },
+    {
+      "id": "wayback-support",
+      "title": "Wayback Machine fallback",
+      "summary": "Use Wayback Machine to fetch stories from already-supported sites when the live site blocks or fails.",
+      "source_issues": [37, 27]
+    },
+    {
+      "id": "threadmarks-xenforo",
+      "title": "XenForo threadmark support",
+      "summary": "Handle Apocrypha, Side Story, and Informational threadmarks on SpaceBattles/Sufficient Velocity and XenForo forums.",
+      "source_issues": [33, 38, 39]
+    },
+    {
+      "id": "metadata-description",
+      "title": "Book description & metadata improvements",
+      "summary": "Include story descriptions in exports and fix wrong author associations.",
+      "source_issues": [19, 7, 2]
+    },
+    {
+      "id": "contributing-docs",
+      "title": "Contributing guide & docs",
+      "summary": "Explain how to contribute to the project and document setup requirements.",
+      "source_issues": [43, 9]
+    },
+    {
+      "id": "cosmetic-fixes",
+      "title": "Cosmetic fixes",
+      "summary": "Fix timezone display and chapter numbering issues.",
+      "source_issues": [13, 15, 16]
+    }
+  ]
+}

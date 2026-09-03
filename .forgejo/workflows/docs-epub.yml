@@ -1,0 +1,42 @@
+name: Build Docs EPUB
+
+on:
+  push:
+    paths:
+      - 'docs/src/**'
+      - 'docs/book.toml'
+  pull_request:
+    paths:
+      - 'docs/src/**'
+      - 'docs/book.toml'
+
+jobs:
+  build-epub:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pandoc
+        run: sudo apt-get update && sudo apt-get install -y pandoc
+
+      - name: Build EPUB from mdbook sources
+        run: |
+          cd docs/src
+          pandoc \
+            --metadata title="FicHub Documentation" \
+            --metadata author="FicHub Community" \
+            --metadata lang=en \
+            --toc --toc-depth=2 \
+            -f markdown -t epub \
+            -o ../FicHub_Docs.epub \
+            intro.md what-is-fichub.md downloading.md searching.md \
+            bookmarks.md ratings.md comments.md recommendations.md \
+            profile.md features.md faq.md
+
+      - name: Upload EPUB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FicHub_Docs
+          path: docs/FicHub_Docs.epub
+          retention-days: 30

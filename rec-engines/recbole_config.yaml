@@ -1,0 +1,33 @@
+# RecBole config — offline leaderboard experiments (NOT the default runtime).
+# Run with: python -m recbole.quick_start --config_files=recbole_config.yaml
+#
+# FicHub integration: export rec_user_signals to 'recbole.data' in
+# user-item-interaction format (user_id, item_id, rating, timestamp), then
+# point the `external` strategy at a RecBole-serving wrapper.
+
+experiment:
+  dataset: fichub
+  model: BPR
+  load_col:
+    inter: [user_id, item_id, rating]
+  save_rec: true
+
+model:
+  embedding_size: 64
+  hidden_size: [256, 128, 64]
+  num_layers: 2
+
+evaluation:
+  eval_args:
+    group_by: user
+    order: RO
+    split: {'RS': [0.8, 0.1, 0.1]}
+    mode: full
+  metrics: [Recall, NDCG, MRR]
+  valid_metric: NDCG@10
+
+training:
+  epochs: 50
+  batch_size: 1024
+  learning_rate: 0.001
+  stopper_step: 5

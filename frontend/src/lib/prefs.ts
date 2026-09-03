@@ -1,0 +1,139 @@
+// Default-preference persistence (quick-wins item 5).
+//
+// v1 is localStorage-only, keyed under a single JSON blob so the whole
+// prefs object round-trips in one read/write. Each field is optional —
+// missing keys fall back to the built-in default, so old blobs (or a
+// partial user edit) degrade gracefully.
+
+export type ArchiveSkin = 'zerafina' | 'ao3';
+
+/** Visibility levels for profile display settings. */
+export type VisibilityLevel = 'public' | 'followers' | 'private';
+
+export interface UserPrefs {
+  /** Last/desired download format: 'epub' | 'html' | 'txt' | 'md' | 'mobi' | 'pdf' | 'azw3' | 'docx' | 'fb2' | 'kepub'. */
+  defaultFormat?: string;
+  /** Search: hide works marked read (status = 'completed'). */
+  hideRead?: boolean;
+  /** Search: hide works the user bookmarked. */
+  hideBookmarked?: boolean;
+  /** Search: only show bookmarked works ("My library"). */
+  libraryOnly?: boolean;
+  /** Web reader theme: 'light' | 'sepia' | 'dark'. */
+  readerTheme?: 'light' | 'sepia' | 'dark';
+  /** Interface style: 'archive' (AO3-style) or 'modern' (default SvelteKit UI). */
+  uiMode?: 'archive' | 'modern';
+  /** Archive skin: 'zerafina' (default, rich styling) or 'ao3' (minimal AO3 default). */
+  archiveSkin?: ArchiveSkin;
+  /** User's preferred time zone (IANA tz database, e.g. 'America/New_York'). Empty string falls back to browser tz. */
+  timezone?: string;
+  /** Profile display visibility: who can see your profile, works, reading history. */
+  profileVisibility?: {
+    profile: VisibilityLevel;
+    works: VisibilityLevel;
+    reading_history: VisibilityLevel;
+  };
+  /** Reading locale for translated content display (e.g., 'es', 'de', 'fr', 'pt-BR', 'zh'). Empty = follow UI locale. */
+  readingLocale?: string;
+}
+
+const STORAGE_KEY = 'fichub_prefs_v1';
+
+const DEFAULTS: UserPrefs = {
+  defaultFormat: 'epub',
+  hideRead: false,
+  hideBookmarked: false,
+  libraryOnly: false,
+  readerTheme: 'light',
+  uiMode: 'archive',
+  archiveSkin: 'zerafina',
+  timezone: '',
+  profileVisibility: {
+    profile: 'public',
+    works: 'public',
+    reading_history: 'private',
+  },
+  readingLocale: '',
+};
+
+/** Read the prefs blob; never throws (corrupt JSON → defaults). */
+export function loadPrefs(): UserPrefs {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { ...DEFAULTS };
+    const parsed = JSON.parse(raw) as UserPrefs;
+    return { ...DEFAULTS, ...parsed };
+  } catch {
+    return { ...DEFAULTS };
+  }
+}
+
+/** Persist the whole blob (only the fields set are stored). */
+export function savePrefs(prefs: UserPrefs): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    // Storage full / private mode — prefs are a nicety, never fatal.
+  }
+}
+
+/** Read one pref with its default. */
+export function getPref<K extends keyof UserPrefs>(key: K): NonNullable<UserPrefs[K]> {
+  // ── Archive-only (2026-08-30): the modern UI was removed. uiMode always
+  // resolves to 'archive' regardless of stored value or ?ui= param, so every
+  // page renders the AO3-style archive surface and the modern branches are
+  // dead code. Keep the field in the type so old stored prefs parse.
+  if (key === 'uiMode') return 'archive' as NonNullable<UserPrefs[K]>;
+  const prefs = loadPrefs();
+  const value = prefs[key];
+  return (value === undefined ? DEFAULTS[key] : value) as NonNullable<UserPrefs[K]>;
+}
+
+/** Set one pref and persist. */
+export function setPref<K extends keyof UserPrefs>(key: K, value: UserPrefs[K]): void {
+  if (key === 'uiMode') return; // archive-only; ignore modern writes
+  const prefs = loadPrefs();
+  prefs[key] = value;
+  savePrefs(prefs);
+}
+
+/**
+ * Apply a `?ui=archive|modern` URL parameter to prefs.
+ * Called by the root layout on every navigation. The modern value is
+ * ignored — the archive UI is the only UI.
+ */
+export function applyUiParam(url: URL): void {
+  const ui = url.searchParams.get('ui');
+  if (ui === 'archive') {
+    setPref('uiMode', 'archive');
+  }
+  // 'modern' is intentionally ignored (archive-only).
+}
+
+/** Set the archive skin and persist. */
+export function setArchiveSkin(skin: ArchiveSkin): void {
+  setPref('archiveSkin', skin);
+}
+
+/**
+ * Persist a single preference via the key/value backend AND localStorage.
+ * This bridges the gap where prefs.ts is localStorage-only but some
+ * settings (timezone, profile visibility) need server-side persistence.
+ */
+export async function persistPref<K extends keyof UserPrefs>(
+  key: K,
+  value: UserPrefs[K],
+): Promise<boolean> {
+  setPref(key, value);
+  try {
+    const res = await fetch('/api/me/prefs', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify([{ key, value: JSON.stringify(value) }]),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

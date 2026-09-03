@@ -1,0 +1,31 @@
+[package]
+name = "forum-core"
+version = "0.1.0"
+edition = "2024"
+description = "Generic, embeddable forum engine core: categories, topics, posts, votes, follows, read-state and bans as a clean async domain model with a feature-gated Postgres (sqlx) store and a moderation hook trait."
+license = "AGPL-3.0-or-later"
+readme = "README.md"
+repository = "https://opencommit.eu/MagicZhang/forum-core"
+keywords = ["forum", "community", "discussion", "postgres", "sqlx"]
+categories = ["database", "web-programming"]
+
+[features]
+default = ["postgres"]
+# Postgres (sqlx) store implementation. The pure domain (model, store trait,
+# moderation state machine, FTS helper) compiles without it.
+postgres = ["dep:sqlx", "sqlx/json"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+chrono = { version = "0.4", default-features = false, features = ["serde", "std", "clock"] }
+thiserror = "2"
+tracing = "0.1"
+# sqlx 0.9 (matches FicHub's root Cargo.lock). Optional: only pulled in with
+# the `postgres` feature so the pure domain has zero DB dependency. The
+# `json` feature wires serde_json::Value ↔ JSONB.
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "postgres", "chrono", "uuid", "migrate", "macros", "json"], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }

@@ -1,0 +1,2169 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>FicHub Docs</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="theme/ficnexus-docs-92f596dc.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "light";
+            window.path_to_searchindex_js = "searchindex-eeaeca7c.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-d9f53dff.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">FicHub Docs</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://opencommit.eu/MagicZhang/fichub" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="welcome-to-fichub"><a class="header" href="#welcome-to-fichub">Welcome to FicHub!</a></h1>
+<p>FicHub is a free, open-source way to <strong>download and discover fanfiction</strong> from
+AO3, FanFiction.net, and more — converted into clean EPUB, HTML, or PDF files
+you can read on any device, even offline.</p>
+<h2 id="what-you-can-do-here"><a class="header" href="#what-you-can-do-here">What you can do here</a></h2>
+<ul>
+<li><strong>Download</strong> stories from multiple sites as EPUB, HTML, PDF, TXT, and more</li>
+<li><strong>Search</strong> with filters that go beyond what the source sites offer</li>
+<li><strong>Bookmark</strong> favorites, <strong>rate</strong> stories, and <strong>comment</strong> with other readers</li>
+<li><strong>Discover</strong> new reads through recommendations and the leaderboard</li>
+<li><strong>Level up</strong> — earn XP, climb 100 levels, unlock features on the Ability Tree</li>
+<li><strong>Customize</strong> — compose recipe blends, pick theme presets, tune your dashboard</li>
+<li><strong>Join the forum</strong> — talk with other readers in categories/topics, follow
+threads, and search the discussion</li>
+</ul>
+<h2 id="new-here"><a class="header" href="#new-here">New here?</a></h2>
+<p>Head straight to the <a href="#quickstart">Quickstart</a> — you’ll download your
+first story in under a minute.</p>
+<h2 id="the-rest-of-this-guide"><a class="header" href="#the-rest-of-this-guide">The rest of this guide</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Chapter</th><th>What it covers</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="#what-is-fichub">What is FicHub?</a></td><td>The big picture, supported sites, how it works</td></tr>
+<tr><td><a href="#quickstart">Quickstart</a></td><td>Get up and running in 5 minutes</td></tr>
+<tr><td><a href="#how-to-download-fics">How to Download Fics</a></td><td>Formats, bookmarklet, troubleshooting</td></tr>
+<tr><td><a href="#finding-great-stories">Finding Great Stories</a></td><td>The full search guide — boolean, fields, filters</td></tr>
+<tr><td><a href="#saving-your-favorites">Saving Your Favorites</a></td><td>Bookmarks, notes, privacy</td></tr>
+<tr><td><a href="#rating-stories">Rating Stories</a></td><td>Likes/dislikes and how they feed recommendations</td></tr>
+<tr><td><a href="#chatting-about-fics">Chatting About Fics</a></td><td>Comments and community rules</td></tr>
+<tr><td><a href="#getting-recommendations">Getting Recommendations</a></td><td>Personalized discovery</td></tr>
+<tr><td><a href="#your-profile--leaderboard">Your Profile &amp; Leaderboard</a></td><td>Levels, exp, roles, badges</td></tr>
+<tr><td><a href="#cool-features">Cool Features</a></td><td>Everything FicHub can do</td></tr>
+<tr><td><a href="#faq">FAQ</a></td><td>Common questions and troubleshooting</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<p><em>FicHub is made with by the community, for the community.</em></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="quickstart"><a class="header" href="#quickstart">Quickstart</a></h1>
+<p>Everything you need to go from zero to reading in about five minutes.</p>
+<h2 id="1-download-your-first-story-no-account-needed"><a class="header" href="#1-download-your-first-story-no-account-needed">1. Download your first story (no account needed)</a></h2>
+<ol>
+<li>Copy a story URL from your favorite site. For example:
+<pre><code>https://archiveofourown.org/works/12345678
+</code></pre>
+</li>
+<li>Open FicHub and click the <strong>Download</strong> tab.</li>
+<li>Paste the URL into the box and click <strong>Download</strong>.</li>
+<li>When the story info appears, pick a format:
+<ul>
+<li><strong>EPUB</strong> — best for Kindle, Kobo, phones, tablets</li>
+<li><strong>HTML</strong> — read in any browser</li>
+<li><strong>PDF</strong> — printing or sharing</li>
+<li><strong>TXT</strong> — plain text, works everywhere</li>
+</ul>
+</li>
+</ol>
+<p>That’s it — you’re reading. No account, no email, no ads.</p>
+<h2 id="2-create-an-account-unlocks-the-community"><a class="header" href="#2-create-an-account-unlocks-the-community">2. Create an account (unlocks the community)</a></h2>
+<p>Click <strong>Register</strong> in the top-right corner and pick a username + password.</p>
+<p>With an account you can:</p>
+<ul>
+<li><strong>Bookmark</strong> stories to read later</li>
+<li><strong>Rate</strong> stories (helps recommendations)</li>
+<li><strong>Comment</strong> and chat with other readers</li>
+<li><strong>Post in the forum</strong> — start a topic or reply in any category</li>
+<li><strong>Get recommendations</strong> based on what you read</li>
+<li><strong>Earn exp (experience)</strong> and climb the leaderboard; leveling unlocks
+moderation powers</li>
+</ul>
+<h2 id="3-save-your-first-bookmark"><a class="header" href="#3-save-your-first-bookmark">3. Save your first bookmark</a></h2>
+<ol>
+<li>Open a story page (click the title in search results).</li>
+<li>Click the <strong>♡ heart</strong> button.</li>
+<li>Add a note (optional) and hit <strong>Save</strong>.</li>
+</ol>
+<h2 id="4-find-something-great"><a class="header" href="#4-find-something-great">4. Find something great</a></h2>
+<p>Click the <strong>Search</strong> tab and try a few things:</p>
+<ul>
+<li><code>harry potter</code> — simple search (words combine with AND)</li>
+<li><code>"slow burn"</code> — quoted phrase, matches the exact phrase</li>
+<li><code>fluff OR humor</code> — either word</li>
+<li><code>angst -fluff</code> — angst but NOT fluff</li>
+<li><code>title:harry author:rowling</code> — field-specific</li>
+</ul>
+<p>Then use the <strong>filter chips</strong> (Complete Only, 100k+ Words, No Warnings…) and the
+<strong>facet sidebar</strong> (Fandoms, Characters, Relationships…) to narrow it down.
+Full guide: <a href="#finding-great-stories">Finding Great Stories</a>.</p>
+<h2 id="5-read-offline-everywhere"><a class="header" href="#5-read-offline-everywhere">5. Read offline, everywhere</a></h2>
+<p>Every download is a self-contained file. Copy it to your phone, tablet,
+e-reader, or laptop and read anywhere — no internet required.</p>
+<hr>
+<h2 id="cheat-sheet"><a class="header" href="#cheat-sheet">Cheat sheet</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>I want to…</th><th>Do this</th></tr>
+</thead>
+<tbody>
+<tr><td>Download a story</td><td><strong>Download</strong> tab → paste URL → pick format</td></tr>
+<tr><td>Search stories</td><td><strong>Search</strong> tab → type query → refine with chips/facets</td></tr>
+<tr><td>Save a story</td><td>Open story page → click <strong>♡</strong></td></tr>
+<tr><td>Rate a story</td><td>Open story page → click 1 to 5 stars</td></tr>
+<tr><td>Comment</td><td>Open story page → scroll to <strong>Comments</strong></td></tr>
+<tr><td>Find similar stories</td><td><strong>Recommendations</strong> tab → paste a URL you liked</td></tr>
+<tr><td>See my activity</td><td>Click your <strong>username</strong> → profile</td></tr>
+<tr><td>See top readers</td><td><strong>Leaderboard</strong> tab</td></tr>
+<tr><td>Talk with the community</td><td><strong>Forum</strong> tab → pick a category → post or reply</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="still-stuck"><a class="header" href="#still-stuck">Still stuck?</a></h2>
+<p>Check the <a href="#faq">FAQ</a>, or ask the community on
+<a href="https://discord.gg/AmE93m23dW">Discord</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="what-is-fichub"><a class="header" href="#what-is-fichub">What is FicHub?</a></h1>
+<p>FicHub is like a magic bookshelf for fanfiction. It takes stories from different websites and puts them all in one place.</p>
+<h2 id="the-problem"><a class="header" href="#the-problem">The Problem</a></h2>
+<p>Fanfiction is amazing, but it’s scattered across many websites:</p>
+<ul>
+<li><strong>Archive of Our Own (AO3)</strong> — the biggest fanfiction archive</li>
+<li><strong>FanFiction.net</strong> — one of the oldest fanfiction sites</li>
+<li><strong>FictionPress</strong> — for original fiction</li>
+<li><strong>SpaceBattles &amp; SufficientVelocity</strong> — forum-based stories</li>
+</ul>
+<p>Each site has its own format, its own search, and its own rules. Finding a good story can feel like searching for treasure without a map!</p>
+<h2 id="the-solution-fichub"><a class="header" href="#the-solution-fichub">The Solution: FicHub</a></h2>
+<p>FicHub does three things:</p>
+<ol>
+<li><strong>Brings stories together</strong> — paste any link and FicHub downloads it</li>
+<li><strong>Makes them easy to read</strong> — converts to EPUB, HTML, or PDF so you can read on any device</li>
+<li><strong>Helps you find more</strong> — smart search, recommendations, and bookmarks</li>
+<li><strong>Builds community</strong> — a forum with categories, topics, follows, and
+moderation, plus comments, Fic Requests, and transparent moderation</li>
+<li><strong>Levels you up</strong> — earn XP, climb 100 levels, unlock features on the
+Ability Tree, customize your dashboard with widgets and themes</li>
+<li><strong>Stays honest</strong> — a public moderation log shows every staff action, and
+usage analytics are non-PII (anonymous client IDs only, never IPs)</li>
+</ol>
+<h2 id="how-does-it-work"><a class="header" href="#how-does-it-work">How does it work?</a></h2>
+<p>When you paste a story link, FicHub:</p>
+<ol>
+<li>Goes to the website and grabs the story</li>
+<li>Cleans up the formatting</li>
+<li>Wraps it into a neat file you can download</li>
+<li>Saves it so you can read it anytime — even offline!</li>
+</ol>
+<h2 id="what-sites-does-fichub-support"><a class="header" href="#what-sites-does-fichub-support">What sites does FicHub support?</a></h2>
+<p>FicHub ships <strong>native adapters for 107+ fanfiction sites</strong> (full
+FanFicFare adapter parity) with no Python dependency — the FanFicFare CLI
+fallback is optional and off by default.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Site</th><th>Supported?</th></tr>
+</thead>
+<tbody>
+<tr><td>Archive of Our Own (AO3)</td><td>Full support</td></tr>
+<tr><td>FanFiction.net</td><td>Full support</td></tr>
+<tr><td>FictionPress</td><td>Full support</td></tr>
+<tr><td>SpaceBattles</td><td>Full support</td></tr>
+<tr><td>SufficientVelocity</td><td>Full support</td></tr>
+<tr><td>RoyalRoad</td><td>Full support</td></tr>
+<tr><td>ScribbleHub</td><td>Full support</td></tr>
+<tr><td>FimFiction</td><td>Full support</td></tr>
+<tr><td>Literotica</td><td>Full support</td></tr>
+<tr><td>Wattpad</td><td>Full support</td></tr>
+<tr><td>DeviantArt</td><td>Full support</td></tr>
+<tr><td>Quotev</td><td>Full support</td></tr>
+<tr><td>…and 95+ more</td><td>native adapters</td></tr>
+</tbody>
+</table>
+</div>
+<p>The full list lives in the <a href="../../README.html">repo docs</a> — archives,
+XenForo forums, eFiction archives (45+), web-novel sites, and more.</p>
+<h2 id="is-fichub-free"><a class="header" href="#is-fichub-free">Is FicHub free?</a></h2>
+<p>Yes! FicHub is 100% free and open-source. That means anyone can check the code and make sure it’s safe. No hidden fees, no ads, no tricks.</p>
+<hr>
+<p><em>Ready to try it? Head to the <a href="#how-to-download-fics">Download</a> page!</em></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="how-to-download-fics"><a class="header" href="#how-to-download-fics">How to Download Fics</a></h1>
+<p>Downloading a story takes about ten seconds. Here’s the complete guide,
+including formats and troubleshooting.</p>
+<h2 id="the-basic-flow"><a class="header" href="#the-basic-flow">The basic flow</a></h2>
+<ol>
+<li><strong>Copy a story URL</strong> from your browser’s address bar. Any of these work:
+<pre><code>https://archiveofourown.org/works/12345678
+https://www.fanfiction.net/s/12345678/1/Story-Name
+https://forums.spacebattles.com/threads/story-name.1234567/
+</code></pre>
+</li>
+<li><strong>Go to the Download tab</strong> — it’s the first item in the menu.</li>
+<li><strong>Paste the URL</strong> into the box labeled “Paste a fanfiction URL”
+(Ctrl+V on Windows/Linux, Cmd+V on Mac).</li>
+<li><strong>Click Download.</strong></li>
+</ol>
+<p>After a few seconds the story’s info and download buttons appear. Pick your
+format and you’re done.</p>
+<h2 id="choosing-a-format"><a class="header" href="#choosing-a-format">Choosing a format</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Format</th><th>Best for</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>EPUB</strong></td><td>Kindle, Kobo, Apple Books, Google Play Books, phones, tablets</td></tr>
+<tr><td><strong>HTML</strong></td><td>Reading in a browser, any device</td></tr>
+<tr><td><strong>MOBI</strong></td><td>Older Kindle devices</td></tr>
+<tr><td><strong>PDF</strong></td><td>Printing, sharing</td></tr>
+<tr><td><strong>AZW3</strong></td><td>Newer Kindles (better than MOBI)</td></tr>
+<tr><td><strong>TXT</strong></td><td>Simple text, works everywhere</td></tr>
+<tr><td><strong>Markdown</strong></td><td>Developers, note-taking apps</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Tip:</strong> EPUB is the most portable — it works on almost everything.</p>
+<h2 id="pro-tips"><a class="header" href="#pro-tips">Pro tips</a></h2>
+<ul>
+<li><strong>Bookmarklet</strong>: drag the “FicHub ↗” link to your bookmarks bar. Then when
+you’re on any story page, click it to jump straight to FicHub with the URL
+already filled in.</li>
+<li><strong>Multi-chapter stories</strong>: FicHub grabs <em>all</em> chapters automatically.</li>
+<li><strong>Works offline</strong>: downloaded files are self-contained — no internet needed
+to read them later.</li>
+<li><strong>Downloads are logged &amp; rate-limited</strong>: normal readers never notice, but
+the service rate-limits downloads per IP to keep bots out. If you’re
+downloading many fics in a row, add a few seconds between them.</li>
+</ul>
+<h2 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h2>
+<p><strong>“Something went wrong”</strong></p>
+<ul>
+<li>Double-check the URL — it must be a valid, public story link.</li>
+<li>Some stories are restricted (locked to logged-in users on AO3).</li>
+<li>Try again in a minute — the source site might be busy.</li>
+</ul>
+<p><strong>“Not available for download”</strong></p>
+<ul>
+<li>The story may be restricted by the author, or blocked by the source site.</li>
+<li>FicHub can only download public stories.</li>
+</ul>
+<p><strong>“Unknown Title”</strong></p>
+<ul>
+<li>The source site may be blocking the request or busy. Wait a minute and retry.</li>
+</ul>
+<hr>
+<p><em>Next: <a href="#finding-great-stories">Finding Great Stories with Search</a></em></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="finding-great-stories"><a class="header" href="#finding-great-stories">Finding Great Stories</a></h1>
+<p>FicHub’s search is way more powerful than AO3’s. You can combine boolean operators,
+quoted phrases, field-specific searches, and exclusions — then refine with facets and
+filters. Here’s everything you can do!</p>
+<h2 id="basic-search"><a class="header" href="#basic-search">Basic Search</a></h2>
+<p>Click the <strong>Search</strong> tab in the menu. Type what you’re looking for and press Enter.</p>
+<p>You can search for:</p>
+<ul>
+<li>Story titles</li>
+<li>Authors</li>
+<li>Descriptions</li>
+<li>Tags</li>
+</ul>
+<h2 id="boolean-query-syntax"><a class="header" href="#boolean-query-syntax">Boolean Query Syntax</a></h2>
+<p>Type a query in the search box to combine terms with operators. Everything is
+<strong>case-insensitive</strong>, and multiple words with no operator are combined with <strong>AND</strong>
+automatically.</p>
+<h3 id="and--or--not"><a class="header" href="#and--or--not">AND / OR / NOT</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Operator</th><th>Example</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>AND</code></td><td><code>harry AND slytherin</code></td><td>Both terms must appear</td></tr>
+<tr><td><code>OR</code></td><td><code>fluff OR humor</code></td><td>At least one term must appear</td></tr>
+<tr><td><code>NOT</code></td><td><code>angst NOT fluff</code></td><td>First term appears, second must not</td></tr>
+<tr><td><code>-</code> (minus)</td><td><code>angst -fluff</code></td><td>Excludes the term after the minus</td></tr>
+<tr><td>Implicit AND</td><td><code>harry potter</code></td><td>Same as <code>harry AND potter</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>You can mix them freely: <code>(fluff OR humor) AND angst -sad</code></p>
+<h3 id="quoted-phrases"><a class="header" href="#quoted-phrases">Quoted Phrases</a></h3>
+<p>Put quotes around a phrase to match it as a whole:</p>
+<pre><code>"slow burn"
+"enemies to lovers" AND angst
+</code></pre>
+<h3 id="parentheses"><a class="header" href="#parentheses">Parentheses</a></h3>
+<p>Group terms to control precedence, just like math:</p>
+<pre><code>(fluff OR humor) AND angst
+"slow burn" OR (hurt AND comfort)
+</code></pre>
+<h3 id="fielded-search"><a class="header" href="#fielded-search">Fielded Search</a></h3>
+<p>Narrow a term to a specific field:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Field</th><th>Example</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>title:</code></td><td><code>title:harry</code></td><td>Matches the story title</td></tr>
+<tr><td><code>author:</code></td><td><code>author:rowling</code></td><td>Matches the author name</td></tr>
+<tr><td><code>fandom:</code></td><td><code>fandom:harry potter</code></td><td>Matches a fandom tag</td></tr>
+<tr><td><code>character:</code></td><td><code>character:hermione</code></td><td>Matches a character tag</td></tr>
+<tr><td><code>relationship:</code></td><td><code>relationship:draco/hermione</code></td><td>Matches a relationship tag</td></tr>
+</tbody>
+</table>
+</div>
+<p>Fielded searches work alongside boolean operators:</p>
+<pre><code>title:harry AND author:rowling
+fandom:"harry potter" -character:draco
+</code></pre>
+<h3 id="search-examples"><a class="header" href="#search-examples">Search Examples</a></h3>
+<p><strong>“Find me complete Harry Potter fics over 100k words with no warnings”</strong>
+→ Type <code>fandom:"harry potter"</code> in the search box, click “Complete Only” and “100k+”
+chips, click “No Warnings”</p>
+<p><strong>“Find Hurt/Comfort OR Angst fics”</strong>
+→ Type <code>"hurt/comfort" OR angst</code> in the search box</p>
+<p><strong>“Find popular fics with lots of comments”</strong>
+→ Click “Popular (50+ kudos)” and “Has Comments (10+)” chips</p>
+<h2 id="quick-filter-chips"><a class="header" href="#quick-filter-chips">Quick Filter Chips</a></h2>
+<p>Below the search bar, you’ll see quick filter buttons. Click one to instantly filter results:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Chip</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>No Warnings</strong></td><td>Hides stories with content warnings</td></tr>
+<tr><td><strong>Complete Only</strong></td><td>Only finished stories</td></tr>
+<tr><td><strong>100k+ Words</strong></td><td>Epic-length stories</td></tr>
+<tr><td><strong>Short (&lt;5k)</strong></td><td>Quick reads</td></tr>
+<tr><td><strong>Multi-chapter (20+)</strong></td><td>Long ongoing stories</td></tr>
+<tr><td><strong>Has Comments (10+)</strong></td><td>Stories people are talking about</td></tr>
+<tr><td><strong>Popular (50+ kudos)</strong></td><td>Fan favorites</td></tr>
+</tbody>
+</table>
+</div>
+<p>You can click multiple chips to combine them!</p>
+<h2 id="facets--filter-chips"><a class="header" href="#facets--filter-chips">Facets &amp; Filter Chips</a></h2>
+<p>After you search, a <strong>facet sidebar</strong> shows the most common Fandoms, Characters,
+Relationships, Warnings, Categories, Freeforms, and Statuses among your results.
+Click a facet value to narrow your search to it.</p>
+<p>Your active filters appear as <strong>removable chips</strong> above the results — click the <strong>×</strong>
+on any chip to remove just that filter, or <strong>✕ Clear all</strong> to reset everything.</p>
+<h2 id="suggested-filters"><a class="header" href="#suggested-filters">Suggested Filters</a></h2>
+<p>After a search, a <strong>Suggested</strong> row shows popular tags (and, when you’re signed in,
+tags matching your bookmarks — marked <strong>for you</strong>). Click a suggestion to add it
+as a filter. Suggestions you already filtered by are hidden, and the row disappears
+if the suggestion service is unavailable.</p>
+<h2 id="advanced-filters"><a class="header" href="#advanced-filters">Advanced Filters</a></h2>
+<p>Click <strong>▸ Show Advanced Filters</strong> to see all the options:</p>
+<h3 id="tags"><a class="header" href="#tags">Tags</a></h3>
+<ul>
+<li><strong>Must Have Tags (AND)</strong> — story must have ALL these tags (format: <code>1:Fandom, 2:Character</code>)</li>
+<li><strong>Any Of These Tags (OR)</strong> — story must have at least ONE of these tags</li>
+<li><strong>Exclude Tags</strong> — hide stories with these tags</li>
+<li><strong>Main-Character Attribute</strong> — <code>main_char_attr=Character|Attribute</code> finds
+stories where the <strong>main character</strong> (the first-listed character) has a
+specific attribute tag. Example: <code>Harry Potter|Dark Harry Potter</code> finds fics
+<strong>starring</strong> Harry with the Dark tag — not fics where Harry is a side
+character and the Dark tag belongs to someone else.</li>
+<li><strong>Primary Tag</strong> — find stories where a tag is the MAIN tag</li>
+<li><strong>Tag IDs</strong> — search by numeric tag IDs</li>
+</ul>
+<p>Tag type IDs: <code>1</code>=Fandom, <code>2</code>=Character, <code>3</code>=Relationship, <code>4</code>=Freeform, <code>5</code>=Warning,
+<code>6</code>=Category</p>
+<h3 id="numbers"><a class="header" href="#numbers">Numbers</a></h3>
+<ul>
+<li><strong>Min/Max Words</strong> — filter by story length</li>
+<li><strong>Min/Max Chapters</strong> — filter by chapter count</li>
+<li><strong>Min Comments</strong> — only stories with lots of discussion</li>
+<li><strong>Min Kudos</strong> — only highly-rated stories</li>
+</ul>
+<h3 id="other"><a class="header" href="#other">Other</a></h3>
+<ul>
+<li><strong>Source Site</strong> — pick a specific website</li>
+<li><strong>Completion Status</strong> — complete, in progress, or all</li>
+<li><strong>Sort By</strong> — relevance, date, word count, or kudos</li>
+<li><strong>Date Range</strong> — stories updated in a specific time period</li>
+<li><strong>Relationship Characters</strong> — type character names (comma-separated) to find
+relationships that include them, e.g. <code>Draco Malfoy, Hermione Granger</code></li>
+</ul>
+<h3 id="try-it-now"><a class="header" href="#try-it-now">Try it now</a></h3>
+<ul>
+<li><a href="/search?q=%28fluff%20OR%20humor%29%20AND%20angst">Run a boolean search: <code>(fluff OR humor) AND angst</code></a></li>
+<li><a href="/search?q=harry%20potter&amp;main_char_attr=Harry%20Potter%7CDark%20Harry%20Potter">Find dark-Harry fics: main-character attribute</a></li>
+<li><a href="/ask">Ask the Archive in plain English</a></li>
+</ul>
+<hr>
+<p><em>Next: <a href="#saving-your-favorites">Saving Your Favorites</a></em></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="saving-your-favorites"><a class="header" href="#saving-your-favorites">Saving Your Favorites</a></h1>
+<p>Found a story you love? Save it so you never lose it. Bookmarks are tied to
+your account, so you’ll need to be logged in (see the <a href="#quickstart">Quickstart</a>).</p>
+<h2 id="how-to-bookmark"><a class="header" href="#how-to-bookmark">How to Bookmark</a></h2>
+<ol>
+<li><strong>Log in</strong> to your FicHub account (click “Login” in the top right).</li>
+<li>Open a story — either from a search result or after downloading it.</li>
+<li>Click the <strong>♡ heart button</strong>.</li>
+<li>Add a note if you want (optional).</li>
+<li>Click <strong>Save</strong>.</li>
+</ol>
+<p>The story is now in your bookmarks.</p>
+<h2 id="viewing-your-bookmarks"><a class="header" href="#viewing-your-bookmarks">Viewing Your Bookmarks</a></h2>
+<p>Click the ** Bookmarks** link in the menu. From there you can:</p>
+<ul>
+<li>See when you saved each story</li>
+<li>Read your notes about each story</li>
+<li>Remove bookmarks you no longer want</li>
+</ul>
+<h2 id="making-bookmarks-private"><a class="header" href="#making-bookmarks-private">Making Bookmarks Private</a></h2>
+<p>When you add a bookmark, check the <strong>Private</strong> box. Only you will be able to
+see it. (Private bookmarks also don’t feed into public “for you” suggestions.)</p>
+<h2 id="removing-a-bookmark"><a class="header" href="#removing-a-bookmark">Removing a Bookmark</a></h2>
+<ol>
+<li>Go to your Bookmarks page.</li>
+<li>Find the story you want to remove.</li>
+<li>Click the <strong>✕ remove</strong> button.</li>
+</ol>
+<h2 id="why-bookmark"><a class="header" href="#why-bookmark">Why bookmark?</a></h2>
+<p>Bookmarks power FicHub’s recommendations: the more you bookmark, the better
+your “Recommended for you” row gets. See <a href="#getting-recommendations">Getting Recommendations</a>.</p>
+<hr>
+<p><em>Next: <a href="#rating-stories">Rating Stories</a></em></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="rating-stories"><a class="header" href="#rating-stories">Rating Stories</a></h1>
+<p>Let authors and other readers know what you think. Ratings are one of the
+signals FicHub uses to recommend stories to you.</p>
+<h2 id="how-to-rate"><a class="header" href="#how-to-rate">How to Rate</a></h2>
+<p>When you visit a story’s FicHub page, you’ll see a <strong>5-star rating widget</strong>:</p>
+<ul>
+<li>1 star — not for you</li>
+<li>4 stars — really good</li>
+<li>5 stars — loved it</li>
+</ul>
+<p>Click a star to cast your rating. You can change it anytime — your latest
+rating replaces the old one.</p>
+<p>You can also write an <strong>in-depth review</strong>: a title, a few sentences about why
+you recommend (or don’t) the story, alongside your star rating. Reviews are a
+richer signal for both other readers and the recommendation engine.</p>
+<h2 id="how-ratings-work"><a class="header" href="#how-ratings-work">How Ratings Work</a></h2>
+<ul>
+<li>Every story shows its <strong>average rating</strong> and <strong>how many people rated it</strong>.</li>
+<li>FicHub keeps the public side <strong>positive-only</strong>: we show how many readers
+loved a story, not how many disliked it. This keeps the atmosphere friendly
+for authors while still giving you honest signal.</li>
+<li>Higher-rated stories are recommended more often.</li>
+<li>Your ratings help FicHub suggest better stories to <em>you</em>.</li>
+</ul>
+<h2 id="be-kind"><a class="header" href="#be-kind">Be Kind!</a></h2>
+<p>Real people write these stories for free. Be honest in your ratings, but
+always be respectful. If a story isn’t for you, a low star count is enough —
+there’s no need for harsh words.</p>
+<hr>
+<p><em>Next: <a href="#chatting-about-fics">Chatting About Fics</a></em></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="chatting-about-fics"><a class="header" href="#chatting-about-fics">Chatting About Fics</a></h1>
+<p>Discuss stories with other readers. Comments are public and linked to your
+username, so you’ll need an account.</p>
+<blockquote>
+<p>Want a broader discussion? The <a href="/forum">community forum</a> has categories
+and topics for talking about anything — stories, recs, the site, and more.</p>
+</blockquote>
+<h2 id="how-to-comment"><a class="header" href="#how-to-comment">How to Comment</a></h2>
+<ol>
+<li>Go to a story’s FicHub page (click the title in search results).</li>
+<li>Scroll down to the <strong>Comments</strong> section.</li>
+<li>Type your comment (max 2,000 characters).</li>
+<li>Press <strong>Ctrl+Enter</strong> or click <strong>Post Comment</strong>.</li>
+</ol>
+<h2 id="what-can-you-comment-about"><a class="header" href="#what-can-you-comment-about">What can you comment about?</a></h2>
+<ul>
+<li>What you liked about the story</li>
+<li>Your favorite characters or moments</li>
+<li>Questions for other readers</li>
+<li>Theories about what happens next</li>
+</ul>
+<h2 id="community-rules"><a class="header" href="#community-rules">Community Rules</a></h2>
+<ol>
+<li><strong>Be kind</strong> — no bullying, harassment, or hate speech.</li>
+<li><strong>No spoilers without warning</strong> — use common courtesy.</li>
+<li><strong>Stay on topic</strong> — talk about the story, not unrelated things.</li>
+<li><strong>No spam</strong> — don’t post ads or unrelated links.</li>
+</ol>
+<p>Violations may result in your comment being removed.</p>
+<h2 id="who-can-see-my-comments"><a class="header" href="#who-can-see-my-comments">Who can see my comments?</a></h2>
+<p>Your comments are public and linked to your username. If you want to comment
+anonymously, you’d need to do that on the original site.</p>
+<hr>
+<p><em>Next: <a href="#getting-recommendations">Getting Recommendations</a></em></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="getting-recommendations"><a class="header" href="#getting-recommendations">Getting Recommendations</a></h1>
+<p>Not sure what to read next? FicHub has two ways to help.</p>
+<h2 id="how-recommendations-work"><a class="header" href="#how-recommendations-work">How Recommendations Work</a></h2>
+<p>FicHub looks at what other people who read the same stories as you also
+enjoyed. It’s like asking a friend “what should I read next?” — but based on
+thousands of readers.</p>
+<h2 id="1-from-the-recommendations-tab"><a class="header" href="#1-from-the-recommendations-tab">1. From the Recommendations Tab</a></h2>
+<ol>
+<li>Click the <strong>★ Recommendations</strong> tab.</li>
+<li>Paste a story URL you’ve enjoyed.</li>
+<li>Click <strong>Get Recommendations</strong>.</li>
+<li>See a list of similar stories!</li>
+</ol>
+<h2 id="2-from-a-story-page"><a class="header" href="#2-from-a-story-page">2. From a Story Page</a></h2>
+<p>When you view a story on FicHub, you’ll see recommendations at the bottom of
+the page.</p>
+<h2 id="personal-recommendations-home-page"><a class="header" href="#personal-recommendations-home-page">Personal recommendations (home page)</a></h2>
+<p>Sign in and bookmark (or download) a few fics. The home page then shows a
+<strong>“Recommended for you”</strong> row with a “Because you bookmarked: …” label — the
+more you bookmark, the better it gets.</p>
+<h2 id="suggesting-stories"><a class="header" href="#suggesting-stories">Suggesting Stories</a></h2>
+<p>Have a story you think others would love? Suggest it on the story page:</p>
+<ol>
+<li>Open any story page and scroll to the <strong>Similar fics</strong> section.</li>
+<li>Use the autocomplete to pick an in-archive story you think is similar, or
+paste the URL of a story from another site (FicHub will scrape and add it).</li>
+<li>Add a short comment about why it fits (optional).</li>
+<li>Click <strong>Suggest</strong>.</li>
+</ol>
+<p>Other users can then upvote or downvote your suggestion right on that story page.</p>
+<h2 id="voting-on-suggestions"><a class="header" href="#voting-on-suggestions">Voting on Suggestions</a></h2>
+<ul>
+<li><strong>Upvote</strong> — “Yes, this is a great recommendation!”</li>
+<li><strong>Downvote</strong> — “No, this doesn’t fit well”</li>
+</ul>
+<p>The best suggestions rise to the top of the per-fic list.</p>
+<h2 id="similar-tags-authors-collections--people"><a class="header" href="#similar-tags-authors-collections--people">Similar Tags, Authors, Collections &amp; People</a></h2>
+<p>Recommendations aren’t only for fics — <code>GET /api/v0/recommendations/entities</code>
+suggests <em>entities</em> too:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th><code>kind=</code></th><th>Finds</th><th>Based on</th></tr>
+</thead>
+<tbody>
+<tr><td><code>tag</code> / <code>fandom</code></td><td>Similar tags &amp; fandoms</td><td>Shared works (Jaccard over fic tags)</td></tr>
+<tr><td><code>author</code></td><td>Similar authors</td><td>The author co-occurrence graph (+ shared-tag overlap)</td></tr>
+<tr><td><code>collection</code></td><td>Similar reading lists</td><td>Shared works between public lists</td></tr>
+<tr><td><code>user</code></td><td>Readers like you</td><td>Shared positively-signalled works</td></tr>
+</tbody>
+</table>
+</div>
+<p>Every result comes with a human-readable reason (“readers of Author X also
+read this author”). No extra data collection — these reuse the graphs the
+recommendation engine already materializes.</p>
+<hr>
+<p><em>Next: <a href="#your-profile--leaderboard">Your Profile &amp; Leaderboard</a></em></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="translations--the-curator-queue"><a class="header" href="#translations--the-curator-queue">Translations &amp; the Curator Queue</a></h1>
+<p>FicNexus translates everything you see — fic bodies, requests, forum
+posts, comments, reviews, even the interface itself — into your language.
+Translation runs on three tiers, and the community is part of the loop.</p>
+<h2 id="how-it-works"><a class="header" href="#how-it-works">How it works</a></h2>
+<p>When you browse in a language other than the text’s original, FicNexus
+shows, in order of preference:</p>
+<ol>
+<li><strong>Community translation</strong> — reviewed and approved by curators. No
+marker needed; it is simply the best text we have.</li>
+<li><strong>Machine translation</strong> — produced once by the local model and
+<em>cached forever</em>. Look for the tiny <strong>machine translated</strong> tag next to
+a block. The model never runs twice for the same text and language, so
+you pay no extra wait.</li>
+<li><strong>The original</strong> — with a <strong>Translate this page</strong> button to kick off
+tier 2.</li>
+</ol>
+<p>Click any translated block to see the original side by side. Your choice
+is remembered for the session.</p>
+<h2 id="reading-language"><a class="header" href="#reading-language">Reading language</a></h2>
+<p>Your <em>interface</em> language (menus, labels) comes from your account
+preference. The <em>reading</em> language — what gets translated to what — is set
+independently in Settings, defaulting to your browser language. English
+readers are unaffected: the archive’s source language is English, so
+nothing is fetched for them.</p>
+<h2 id="improve-a-translation-and-earn-reputation"><a class="header" href="#improve-a-translation-and-earn-reputation">Improve a translation (and earn reputation)</a></h2>
+<p>Machine translation is a first draft, not the last word:</p>
+<ul>
+<li>Click <strong>improve</strong> on any machine-translated block. The editor opens
+with the machine text <em>already filled in</em> — you edit, you don’t
+retranslate.</li>
+<li>Submit, and your version enters the curator queue. Two curators
+(configurable) voting approve makes it the new approved translation —
+shown to everyone reading that language, from then on, without any
+model call.</li>
+<li>Approved contributions earn <strong>reputation points</strong> (see the
+<a href="/leaderboard">leaderboard</a>): 15 for an approval, 25 when your version
+replaces one that was already approved (curators <em>can</em> improve the
+improved — each change restarts the consensus vote, and the history of
+every version is kept).</li>
+<li>Seen something bad from the machine? <strong>Report it</strong> — that dismisses the
+machine draft immediately, asks for a fresh translation, and earns you a
+point for the first report on a block.</li>
+</ul>
+<h2 id="the-curator-queue--one-page-for-every-consensus-decision"><a class="header" href="#the-curator-queue--one-page-for-every-consensus-decision">The curator queue — one page for every consensus decision</a></h2>
+<p><code>Curator → Queue</code> in the navigation (curators and above) lists every
+pending proposal in the system: translations, machine drafts awaiting
+review, content fixes, metadata changes, non-author forum edits, work
+deletion requests, doc edits. Each row shows who proposed, the votes so
+far, and the quorum needed:</p>
+<ul>
+<li><strong>Approve / Dismiss</strong> votes resolve when quorum is reached.</li>
+<li><strong>Fast-decide</strong> ends a pending proposal immediately, with an audit
+note — for the obvious spam and the obvious gems.</li>
+<li>Every decision is written to the public <a href="/modlog">modlog</a>.</li>
+</ul>
+<p>Competing proposals for the same block (three users, three better
+versions) are grouped, and the first to build consensus wins; the others
+are marked superseded — no penalty, just a lost round.</p>
+<h2 id="instance-settings-self-hosted"><a class="header" href="#instance-settings-self-hosted">Instance settings (self-hosted)</a></h2>
+<p>Admins tune the whole pipeline per instance: the translation master
+switch, the model, chunk sizes, hourly budgets (global and per user),
+whether machine output goes through review or auto-approves
+(<code>TRANSLATE_AUTO_APPROVE_MACHINE=true</code> — “LLM translates, nobody votes”
+mode for tiny instances), per-kind quorums, and the reputation amounts.
+The full list lives in the repo’s <code>.env.example</code> under <code>TRANSLATE_*</code> and
+<code>PROPOSAL_*</code>.</p>
+<h2 id="search--privacy-note"><a class="header" href="#search--privacy-note">Search &amp; privacy note</a></h2>
+<p>Search always runs over the original text — translated versions are a
+reading layer, not a re-index. Machine translations are generated locally
+by the instance’s Ollama model; nothing is sent to third-party services.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="your-profile--leaderboard"><a class="header" href="#your-profile--leaderboard">Your Profile &amp; Leaderboard</a></h1>
+<p>Track your activity and climb the ranks.</p>
+<h2 id="your-profile"><a class="header" href="#your-profile">Your Profile</a></h2>
+<p>Click your username to see your profile. It shows:</p>
+<ul>
+<li><strong>Username</strong> — your display name</li>
+<li><strong>Level</strong> — your site-wide level (0–100), shown as a ⭐ chip next to your
+username in the top bar</li>
+<li><strong>Experience (exp)</strong> — points that drive your level; earn exp by posting
+and contributing (moderator and admin actions award exp too)</li>
+<li><strong>Role</strong> — your community role (Reader, Curator, Senior Curator, Admin)</li>
+<li><strong>Badges</strong> — achievements you’ve earned</li>
+<li><strong>Member Since</strong> — when you joined</li>
+</ul>
+<h2 id="leveling--experience"><a class="header" href="#leveling--experience">Leveling &amp; Experience</a></h2>
+<p>Levels and experience (exp) replaced the old reputation system as the
+site-wide progression. Key facts:</p>
+<ul>
+<li><strong>Levels run 0–100.</strong> Your level is the gate for community powers:
+moderating posts, fast-hiding content, forum moderation/metamoderation,
+and admin actions all require a minimum level.</li>
+<li><strong>Exp is earned by contributing</strong>: posting helpful content, proposing
+merges that get accepted, voting on proposals, and getting your comments
+liked all award exp. Moderator/admin actions record an idempotent
+<code>exp_events</code> audit trail so the same action never double-awards.</li>
+<li><strong>Role still exists</strong> as a legacy label (Reader / Curator / Senior
+Curator / Admin), but level-based gates are the active mechanism.</li>
+</ul>
+<h2 id="roles"><a class="header" href="#roles">Roles</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Role</th><th>What it means</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Reader</strong></td><td>Everyone starts here! Browse, download, and enjoy.</td></tr>
+<tr><td><strong>Curator</strong></td><td>Trusted members who help moderate tags and content.</td></tr>
+<tr><td><strong>Senior Curator</strong></td><td>Experienced moderators with extra powers.</td></tr>
+<tr><td><strong>Admin</strong></td><td>The team running FicHub.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="the-leaderboard"><a class="header" href="#the-leaderboard">The Leaderboard</a></h2>
+<p>Click <strong>Browse → Leaderboard</strong> in the menu to see the top contributors.</p>
+<p>Everyone starts at 0 exp. As you contribute to the community, your score
+goes up. Can you reach the top?</p>
+<hr>
+<p><em>Next: <a href="#cool-features">Cool Features</a></em></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="cool-features"><a class="header" href="#cool-features">Cool Features</a></h1>
+<p>Here’s everything FicHub can do!</p>
+<h2 id="help--keyboard-shortcuts-"><a class="header" href="#help--keyboard-shortcuts-">Help &amp; Keyboard Shortcuts ⌨</a></h2>
+<ul>
+<li><strong>Command palette (<code>Ctrl+K</code> / <code>Cmd+K</code>)</strong> — press anywhere on the site to
+jump to any page or search the docs. Type “dark harry” or “elo” and the
+palette surfaces the relevant docs section; hit Enter to open it.</li>
+<li><strong><code>?</code> help links</strong> — small <code>?</code> icons next to confusing things (search
+syntax, main-character attribute, the roadmap arena, Fic Requests answers,
+download formats) open the exact docs section in a popup without leaving
+the page.</li>
+<li><strong>Help modal</strong> — every docs section opens in-app; use the <strong>“Ask the
+docs”</strong> box at the top to ask a question in plain English (e.g. <em>“how do
+I find dark harry fics?”</em>) and FicHub retrieves the relevant section for
+you. “Open full docs ↗” takes you to the whole page.</li>
+<li><strong>Docs link back</strong> — every docs page has a <strong>← Back to FicHub</strong> bar plus
+contextual <strong>▶ Try it</strong> links that jump into the app with a prefilled
+action (e.g. a ready-made boolean search).</li>
+</ul>
+<h2 id="download-features"><a class="header" href="#download-features">Download Features</a></h2>
+<ul>
+<li><strong>Multi-chapter support</strong> — grabs all chapters at once</li>
+<li><strong>Multiple formats</strong> — EPUB, HTML, MOBI, PDF, AZW3, TXT, Markdown</li>
+<li><strong>Works offline</strong> — read without internet</li>
+<li><strong>Bookmarklet</strong> — one-click download from any story page</li>
+<li><strong>107+ supported sites</strong> — native adapters for every major fanfiction
+archive (AO3, FanFiction.net, RoyalRoad, ScribbleHub, FimFiction,
+Literotica, Wattpad, DeviantArt, SpaceBattles, and 95+ more), full
+FanFicFare adapter parity</li>
+<li><strong>Send-to-Kindle</strong> — email an EPUB of any fic straight to your Kindle
+address</li>
+<li><strong>OPDS catalog</strong> — subscribe to the archive from your e-reader app
+(<code>/opds/*</code>)</li>
+<li><strong>Site cache of gathered fics</strong> — every scraped fic body is persisted on
+the attached drive (<code>BODY_CACHE_DIR</code>, e.g. <code>/public/literature/fichub/bodies</code>),
+so repeat exports are instant and the site is a growing fanfiction archive.</li>
+<li><strong>Your credentials for login-requiring sites</strong> — on <code>/settings</code> you can
+optionally provide credentials for sites that require login (fanfics.me,
+fictionhunt, inkbunny, sofurry, dokuga) so downloads from those sites work.
+Opt-in only: you tick a consent box, credentials are encrypted at rest
+(AES-256-GCM) and auto-expire after 30 days. Your password is never
+returned by any endpoint and is only decrypted in memory at download time.</li>
+</ul>
+<h2 id="community--transparency"><a class="header" href="#community--transparency">Community &amp; Transparency</a></h2>
+<ul>
+<li><strong>Moderation Log</strong> — every moderator, curator, and admin action (bans, role
+changes, upload approvals, comment removals, tag merges, body-fix votes,
+…) is recorded in the modlog and <strong>visible to any logged-in user</strong> at
+<code>/modlog</code>. Moderation is completely transparent.</li>
+<li><strong>Usage Analytics</strong> — admins see non-PII aggregate usage (unique daily /
+weekly / monthly visitors, active vs view-only users, action timeline) at
+<code>/admin/analytics</code>. No IPs, no PII — anonymous client IDs only.</li>
+</ul>
+<h2 id="search-features-better-than-ao3"><a class="header" href="#search-features-better-than-ao3">Search Features (Better than AO3!)</a></h2>
+<ul>
+<li><strong>Boolean operators</strong> — <code>AND</code>, <code>OR</code>, <code>NOT</code>, and implicit AND between words</li>
+<li><strong>Quoted phrases</strong> — <code>"slow burn"</code> matches the phrase as a whole</li>
+<li><strong>Exclusion</strong> — <code>-angst</code> or <code>NOT angst</code> hides stories with that tag/term</li>
+<li><strong>Fielded search</strong> — <code>title:harry</code>, <code>author:rowling</code>, <code>fandom:...</code>,
+<code>character:...</code>, <code>relationship:...</code></li>
+<li><strong>Parentheses</strong> — group terms like <code>(fluff OR humor) AND angst</code></li>
+<li><strong>Faceted navigation</strong> — click fandom/character/relationship/warning
+values in the sidebar to narrow results</li>
+<li><strong>Filter chips</strong> — active filters shown as removable chips with × buttons</li>
+<li><strong>Relationship characters</strong> — find fics whose relationships include the
+characters you name</li>
+<li><strong>Primary tag filter</strong> — find stories where a tag is the MAIN tag</li>
+<li><strong>No warnings filter</strong> — hide all stories with warnings</li>
+<li><strong>Comment count filter</strong> — find stories people are talking about</li>
+<li><strong>Kudos filter</strong> — find only popular stories</li>
+<li><strong>Tag ID search</strong> — search by exact tag ID for precision</li>
+<li><strong>Chapter/word count filters</strong> — find short or long stories</li>
+<li><strong>Full-text search</strong> — searches titles, descriptions, AND tags</li>
+<li><strong>Search inside fic bodies</strong> (<code>/search/body</code>) — quote search for lines of
+dialogue or prose (“fics where a character says X”) across every cached
+fic body, with highlighted <code>&lt;mark&gt;</code> snippets in the results. No other
+scraper-only archive offers this.</li>
+<li><strong>Ask the Archive</strong> — type a natural-language request like “completed
+slow-burn Dramione over 50k, no major character death” and the LLM turns
+it into the right search filters for you (see /ask). If an ask comes up
+empty, one click turns it into a Fic Request for the community to answer.</li>
+</ul>
+<p>See <a href="#finding-great-stories">Finding Great Stories</a> for the full search syntax guide.</p>
+<h2 id="home-dashboard"><a class="header" href="#home-dashboard">Home Dashboard</a></h2>
+<ul>
+<li><strong>Personalized recommendations</strong> — sign in and bookmark (or download) a few
+fics; the home page shows “Recommended for you” stories with a
+“Because you bookmarked: …” label</li>
+<li><strong>Widget-composed dashboard</strong> (rank 5+) — drag widgets around a CSS grid;
+edit mode with a widget registry; default layout factory for new users</li>
+<li><strong>Trending this week</strong> — popular fics updated by reader activity</li>
+<li><strong>Compact download</strong> — paste a story URL right on the home page to start
+a download (opens the full Download tab)</li>
+</ul>
+<h2 id="social-features"><a class="header" href="#social-features">Social Features</a></h2>
+<ul>
+<li><strong>User accounts</strong> — create a free account</li>
+<li><strong>Bookmarks</strong> — save stories for later</li>
+<li><strong>5-star ratings</strong> — rate stories from 1 to 5 stars; ratings feed your recommendations</li>
+<li><strong>In-depth reviews</strong> — write a short review with your rating</li>
+<li><strong>Comments</strong> — discuss stories with other readers</li>
+<li><strong>Community forum</strong> — categories, topics, replies, follows, notifications, search, and moderation (see below)</li>
+<li><strong>Fic Requests</strong> — post a prompt (“fics like X”) and get works-only answers
+from the community — either a work id <strong>or a pasted fic URL</strong> (FicHub
+scrapes it and adds it to the archive). Upvote requests you’d like
+answered; you get notified when someone answers or you accept one.
+<strong>Ask × Requests</strong>: an Ask-the-Archive search that finds nothing turns
+into a request in one click, and every request page has an “Ask the
+Archive” box that finds matching fics already in the library — each with
+an “Add as answer” button.</li>
+</ul>
+<h3 id="fic-requests"><a class="header" href="#fic-requests">Fic Requests</a></h3>
+<p>Post a prompt (“fics like X”) on the <a href="/requests">requests board</a> and the
+community answers with <strong>works</strong> — either a work id or a <strong>pasted fic URL</strong>
+(FicHub scrapes it and adds it to the archive automatically). Upvote
+requests you’d like answered; you get a notification when someone answers,
+and the requester can accept the best answer to mark the request resolved.</p>
+<p>The board is wired into <strong>Ask the Archive</strong>: an ask that finds no results
+offers “Turn this into a request”, prefilling the prompt; and a request
+page’s “Ask the Archive” box surfaces fics already in the library that fit
+the prompt, each one click away from becoming an answer.</p>
+<h3 id="community-forum"><a class="header" href="#community-forum">Community Forum</a></h3>
+<p>The <a href="/forum">forum</a> is where the community talks — categories, topics, and
+replies, plus:</p>
+<ul>
+<li><strong>Follow topics</strong> and get notified when someone replies</li>
+<li><strong>Search</strong> the forum (full-text over topics + posts, with snippets)</li>
+<li><strong>Read state</strong> — the forum remembers where you left off in each topic
+(unread dots/badges)</li>
+<li><strong>Moderation points</strong> — trusted members earn points and can moderate
+posts from the queue (reports-as-signal, reason picker, curator
+fast-hide)</li>
+<li><strong>Metamoderation</strong> — moderator actions are audited anonymously and the
+community votes on whether each was fair</li>
+<li><strong>Levels</strong> — your level (see <a href="#your-profile--leaderboard">Your Profile &amp; Leaderboard</a>)
+gates moderation powers</li>
+<li><strong>Stable topic URLs</strong> — every topic gets a clean slug URL
+(<code>/forum/board/my-topic-title.42</code>) that doesn’t change, plus invites +
+registration applications + user blocks</li>
+</ul>
+<h3 id="similar-fic-suggestions"><a class="header" href="#similar-fic-suggestions">Similar-fic suggestions</a></h3>
+<p>On any fic page, suggest other in-archive stories (or paste a link to be
+scraped) that you think are similar; readers up/down-vote them so the best
+matches rise to the top.</p>
+<h3 id="follows"><a class="header" href="#follows">Follows</a></h3>
+<p>Follow fics, authors, and users; get an updates feed.</p>
+<ul>
+<li><strong>Reading lists &amp; shelves</strong> — curate bundles and track your reading status</li>
+<li><strong>Series &amp; author pages</strong> — browse an author’s bibliography and series in order</li>
+<li><strong>RSS/Atom feeds</strong> — subscribe to new arrivals and your follows in your feed reader</li>
+<li><strong>Recommendations</strong> — discover new stories</li>
+<li><strong>Leaderboards</strong> — see top contributors</li>
+<li><strong>User profiles</strong> — show your reading activity</li>
+<li><strong>Unified works</strong> — the same story from different sites shows up as one page</li>
+<li><strong>Curator proposals</strong> — community members can suggest merging duplicate works together</li>
+<li><strong>Work proposals</strong> — community-driven merge/split proposals for duplicate
+works, peer-voted</li>
+</ul>
+<h2 id="reading-features"><a class="header" href="#reading-features">Reading Features</a></h2>
+<ul>
+<li><strong>In-browser web reader</strong> — read right in FicHub with font size/theme controls,
+chapter navigation, scroll-position memory, and a “Next Up” panel that shows
+the next story in a series (real next-in-series from <code>series_works</code>), the top
+community suggestion, and what readers also bookmarked.</li>
+<li><strong>Offline reading (PWA)</strong> — open a story, then keep reading without internet</li>
+<li><strong>Blind Date</strong> — let FicHub surprise you with a random story</li>
+</ul>
+<h2 id="technical-features"><a class="header" href="#technical-features">Technical Features</a></h2>
+<ul>
+<li><strong>Fast</strong> — built in Rust for speed</li>
+<li><strong>Private</strong> — no tracking, no ads</li>
+<li><strong>Open source</strong> — anyone can check the code</li>
+<li><strong>Self-hosted</strong> — the community controls the server</li>
+<li><strong>Self-healing scrapers</strong> — scrape failures are tracked per domain with
+health + retry (see <a href="#self-healing--scrape-failure-telemetry">Self-Healing</a>)</li>
+</ul>
+<h2 id="progression-system"><a class="header" href="#progression-system">Progression System</a></h2>
+<ul>
+<li><strong>100 levels, 10 ranks</strong> — earn XP by reading, downloading, bookmarking,
+rating, reviewing, commenting, and contributing to the community. Your
+level (0–100) rises with XP; your rank (Reader → Curator → Admin) gates
+access to features.</li>
+<li><strong>Ability Tree</strong> (<code>/features</code>) — browse all 26+ gateable features, see
+which ones you’ve unlocked, activate/deactivate them individually.
+Onboarding banner for new users; level-up notifications.</li>
+<li><strong>Rank-gated features</strong> — widgets (rank 5+), recipe builder (rank 4+),
+theme editor (rank 1+), custom views (rank 7+), advanced admin tools
+(rank 8+). Your rank unlocks access; you choose what to turn on.</li>
+</ul>
+<h2 id="extension-platform"><a class="header" href="#extension-platform">Extension Platform</a></h2>
+<ul>
+<li><strong>Recipe Builder</strong> (<code>/settings/recipes</code>) — compose custom recommendation
+blends by adjusting strategy weights (cooccur, tag_graph, embeddings, etc.),
+setting filters (min words, exclude warnings), and adding boosts (tag/author
+weight multipliers). Activate a recipe to override your personal rec
+engine. Publish recipes to the gallery for others to install.</li>
+<li><strong>Plugin Manifest</strong> — unified <code>extensions</code> table for shareable recipes,
+themes, layouts, and views. Install from the gallery, version-tracked,
+level-gated.</li>
+<li><strong>Theme Design Tokens</strong> (<code>/settings/theme</code>) — customize every visual
+aspect of FicHub: accent colour, background, surface, text, muted text,
+font family, corner radius, density. 5 presets: Default Dark, Default
+Light, High Contrast, Sepia, Dyslexia-Friendly. Reader theme is
+separate (font, width, line height). Import/export as JSON. Live preview.</li>
+<li><strong>Custom Saved Views</strong> (rank 7+) — save any search as a named view, pin
+it to your dashboard, delete when you don’t need it.</li>
+</ul>
+<h2 id="trust-levels"><a class="header" href="#trust-levels">Trust Levels</a></h2>
+<p>Trust measures <em>participation safety</em> — a Discourse-style axis separate from
+your level and rank. It decides what you can write and how much your reports
+weigh; it never grants moderation power.</p>
+<ul>
+<li><strong>7 levels</strong> — TL0 New → TL1 Basic → TL2 Member → TL3 Regular → TL4 Elder →
+TL5 Community Moderator → TL6 Near-admin. Levels 0–4 are earned
+automatically from reading and participation (works/words read, days active,
+forum posts, reviews); TL5+ are granted by staff from the weekly digest.</li>
+<li><strong>What it gates</strong> — TL0 (brand-new accounts) can read everything but cannot
+flag or publish; <strong>TL2+ can publish</strong> skins, recipes, and themes to the
+shared galleries; <strong>TL5+ can resolve community reports</strong>.</li>
+<li><strong>Your dashboard</strong> (<code>/settings/trust</code>) — your current level, the metrics
+feeding it, exactly what the next level needs, and your capability gates.
+Also linked as <strong>Trust</strong> in the account bar.</li>
+<li><strong>Reports carry weight</strong> — when you file a report, its weight scales with
+your trust. Reports are auto-triaged per target: <code>pending</code>, <code>needs_admin</code>
+(contested), or <code>auto_hidden</code> (overwhelming weight — always reviewed by a
+human, never applied silently).</li>
+</ul>
+<h2 id="extension-marketplace"><a class="header" href="#extension-marketplace">Extension Marketplace</a></h2>
+<p>One gallery (<code>/marketplace</code>) for every shareable customization object:
+themes, skins, recipes, layouts, and views.</p>
+<ul>
+<li><strong>Browse &amp; install</strong> — filter by category, search by name, install in one
+click. Installs are deduplicated so popular extensions show real adoption.</li>
+<li><strong>Rate</strong> — 1–5 stars per extension; the gallery ranks by rating and installs.</li>
+<li><strong>Remix</strong> — copy any public extension into your own private draft and make
+it yours; slugs are unique per category so remixes never collide.</li>
+<li><strong>Publish (TL2+)</strong> — share your own creations. Publishing is trust-gated so
+the gallery stays high-signal; drafts stay private until you publish.</li>
+</ul>
+<h3 id="roadmap-consensus"><a class="header" href="#roadmap-consensus">Roadmap consensus</a></h3>
+<p>Vote on which features to build next (see /roadmap): the public consensus
+leaderboard shows how the community ranks every idea (Elo) plus the most
+controversial proposals. Voting is <strong>comparison-based</strong> — you pick the
+best (and worst) from a set of four ideas, and each comparison updates the
+ideas’ Elo ratings. Similar ideas are clustered automatically, so your
+vote counts toward the whole cluster.</p>
+<ul>
+<li><strong>Transparent moderation</strong> — the moderation log at <code>/modlog</code> shows every
+admin/curator action to any logged-in user</li>
+<li><strong>Curator/admin tooling</strong> — auto-tag review (approve/dismiss ML tag
+suggestions), upload moderation, blacklist, bots, comment triage, scrapers,
+translation review (approve/reject/edit machine translations), and
+metadata correction (fix a work’s title/author/status/description)</li>
+</ul>
+<h3 id="llm-powered-curation-tools-admin"><a class="header" href="#llm-powered-curation-tools-admin">LLM-powered curation tools (admin)</a></h3>
+<p>A local LLM (Ollama, nothing leaves the server) powers four admin tools that
+keep the archive honest:</p>
+<ul>
+<li><strong>Content scan</strong> (<code>/admin/content-scan</code>) — a nightly batch walks the cached
+fic bodies and classifies each as story prose vs. scrape noise, and detects
+violence/sexual/profanity the author didn’t tag. Curators confirm or
+dismiss each flag; confirmed noise flags can be fixed via the body-cache
+curation flow. Keeps the <code>no_warnings</code> search filter honest.</li>
+<li><strong>Search demand mining</strong> — zero-result search queries (last 30 days) are
+clustered into themes with suggestions, so curators see what readers want
+that the archive doesn’t have yet (“people want Hermione-centric HP fics”).</li>
+<li><strong>Crosspost dedupe</strong> — finds same-author works with different titles and
+asks the LLM whether each pair is the same story renamed; confirmed
+matches become merge proposals for the curator vote queue.</li>
+<li>All three run on-demand from the admin UI or via API
+(<code>/api/admin/content-scan</code>, <code>/api/admin/search-mining</code>,
+<code>/api/admin/dedupe/run</code>).</li>
+</ul>
+<h3 id="chat-bot-discord--telegram--matrix"><a class="header" href="#chat-bot-discord--telegram--matrix">Chat bot (Discord / Telegram / Matrix)</a></h3>
+<p><strong>fanfic-archivist</strong> brings FicHub into chat — Socrates-style recommendations
+right where you already talk about fic:</p>
+<ul>
+<li><strong>Recommendations</strong> — <code>!recs</code>, <code>!fresh</code>, <code>!gems</code>, <code>!roll</code> with pagination (<code>!next</code> / <code>!prev</code> / <code>!page 3</code>)</li>
+<li><strong>Cross-platform taste</strong> — AO3, fanfiction.net and RoyalRoad unified into one works model; history on one site feeds recs across all of them</li>
+<li><strong>Slash commands</strong> — <code>/search</code>, <code>/ask</code> (natural-language question about a fic’s content), <code>/quote</code>, <code>/download</code> (EPUB/MOBI/PDF straight to chat)</li>
+<li><strong>Library</strong> — bookmark, rate, kudos, block/unblock, updates on followed fics</li>
+<li><strong>Community</strong> — fic requests board, roadmap voting, links back to your web profile</li>
+</ul>
+<p>It’s a thin client over the FicHub REST API — it never touches the archive
+database directly. See <a href="#integrations">Integrations</a> for invite links,
+the linking flow, and the announcement post.</p>
+<hr>
+<p><em>Next: <a href="#faq">FAQ</a></em></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="integrations"><a class="header" href="#integrations">Integrations</a></h1>
+<p>FicHub is more than a website — it ships companion tools so you can browse,
+search and download stories from where you already hang out.</p>
+<h2 id="discord--telegram--matrix-bot-fanfic-archivist"><a class="header" href="#discord--telegram--matrix-bot-fanfic-archivist">Discord / Telegram / Matrix bot (fanfic-archivist)</a></h2>
+<p><strong>fanfic-archivist</strong> is a companion chat bot for FicHub. It is a <em>thin client</em>
+over the FicHub REST API — it never touches the archive database directly, and
+it shares FicHub’s Redis only for a transient pagination cache so <code>!next</code> /
+<code>!prev</code> don’t hammer the DB.</p>
+<h3 id="where-to-use-it"><a class="header" href="#where-to-use-it">Where to use it</a></h3>
+<ul>
+<li><strong>Discord channel</strong> — <a href="https://discord.com/channels/1390467506577346782/1538281679402180718">https://discord.com/channels/1390467506577346782/1538281679402180718</a> in <a href="https://discord.gg/AmE93m23dW">this server</a></li>
+<li><strong>Add the Discord bot to your own server</strong> — <a href="https://discord.com/oauth2/authorize?client_id=1427681624459317278&amp;permissions=116800&amp;scope=bot+applications.commands">https://discord.com/oauth2/authorize?client_id=1427681624459317278&amp;permissions=116800&amp;scope=bot+applications.commands</a></li>
+<li><strong>Telegram group</strong> — <a href="https://t.me/+khDXd6IKQYRjZmQ0">https://t.me/+khDXd6IKQYRjZmQ0</a></li>
+<li><strong>Matrix room</strong> — <a href="https://matrix.to/#/#archivist-bot:matrix.org">https://matrix.to/#/#archivist-bot:matrix.org</a></li>
+<li><strong>Code</strong> — <a href="../fanfic-archivist"><code>fanfic-archivist/</code></a> crate, standalone (not in the FicHub workspace)</li>
+</ul>
+<h3 id="what-it-does"><a class="header" href="#what-it-does">What it does</a></h3>
+<p>Socrates-style recommendations right in chat:</p>
+<ul>
+<li><strong>Recommendations from your reading history</strong> — <code>!recs</code>, <code>!fresh</code>, <code>!gems</code>, <code>!roll</code>, with pagination (<code>!next</code> / <code>!prev</code> / <code>!page 3</code>)</li>
+<li><strong>Cross-platform taste</strong> — AO3, fanfiction.net and RoyalRoad are unified into one works model, so your history on one site feeds recommendations across all of them. No “500 favs limit” wall.</li>
+<li><strong>Slash commands</strong> — <code>/search</code>, <code>/ask</code> (ask a question about a fic’s content in natural language), <code>/quote</code>, <code>/download</code> (EPUB/MOBI/PDF straight to Discord)</li>
+<li><strong>Library commands</strong> — bookmark, rate, kudos, block/unblock, updates on followed fics</li>
+<li><strong>Community</strong> — fic requests board, roadmap voting, links back to your web profile</li>
+</ul>
+<h3 id="auth--linking"><a class="header" href="#auth--linking">Auth / linking</a></h3>
+<ul>
+<li><code>/link &lt;username&gt; &lt;password&gt;</code> — exchanges credentials <strong>once</strong> via <code>POST /api/auth/login</code>, stores only the JWT in Redis (<code>archivist:token:&lt;discord_id&gt;</code>, TTL 30d, refreshed on use). Passwords are never persisted.</li>
+<li><code>/unlink</code>, <code>/whoami</code>.</li>
+</ul>
+<h3 id="honest-limitation"><a class="header" href="#honest-limitation">Honest limitation</a></h3>
+<p>The recommendation engine learns from what people like on the archive. Until a
+few users like a few fics, “personalized” recs won’t be proper — the more it’s
+used, the better it gets.</p>
+<h3 id="announcement"><a class="header" href="#announcement">Announcement</a></h3>
+<p>See the forum announcement: <a href="https://fichub.polarisocial.xyz/forum/board/the-fichub-discord-bot-socrates-style-recommendations-from-a-2.2">The FicHub Discord bot — Socrates-style recommendations from a self-hosted archive</a></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="transparency-moderation-log--usage-analytics"><a class="header" href="#transparency-moderation-log--usage-analytics">Transparency: Moderation Log &amp; Usage Analytics</a></h1>
+<p>FicHub believes in <strong>radical transparency</strong> for moderation and <strong>zero-PII</strong>
+privacy for analytics.</p>
+<h2 id="moderation-log-modlog"><a class="header" href="#moderation-log-modlog">Moderation Log (<code>/modlog</code>)</a></h2>
+<p>Every moderator, curator, and admin action is recorded in the <code>modlog</code> table
+and readable by <strong>any logged-in user</strong> — you don’t need to be staff to see
+what staff did.</p>
+<p>Recorded actions include:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Action</th><th>What it means</th></tr>
+</thead>
+<tbody>
+<tr><td><code>set_user_role</code></td><td>A user’s role was changed (e.g. to curator/admin)</td></tr>
+<tr><td><code>ban_user</code> / <code>unban_user</code></td><td>A user was banned or unbanned</td></tr>
+<tr><td><code>approve_upload</code> / <code>reject_upload</code></td><td>A manual fic submission was approved/rejected</td></tr>
+<tr><td><code>approve_translation</code> / <code>reject_translation</code></td><td>An ML translation was approved/rejected</td></tr>
+<tr><td><code>hide_comment</code> / <code>delete_comment</code></td><td>A comment was hidden or deleted</td></tr>
+<tr><td><code>forum_topic</code> / <code>forum_post</code></td><td>Forum topic/post hidden, locked, pinned, deleted, or moderated (reason + scope recorded)</td></tr>
+<tr><td><code>forum_ban</code></td><td>A forum scoped ban/timeout was applied or lifted (forum | category scope)</td></tr>
+<tr><td><code>report_auto_hide</code></td><td>A target was escalated to auto-hidden by overwhelming weighted reports (weight + reporter count recorded)</td></tr>
+<tr><td><code>trust_level_change</code></td><td>A user’s trust level was changed (from → to + reason recorded)</td></tr>
+<tr><td><code>blacklist_fic</code> / <code>blacklist_author</code></td><td>A fic or author was blacklisted</td></tr>
+<tr><td><code>create_alias</code> / <code>merge_tags</code> / <code>delete_tag</code></td><td>Tag curation actions</td></tr>
+<tr><td><code>resolve_flag</code></td><td>A tag flag was resolved</td></tr>
+<tr><td><code>propose_fix</code> / <code>vote_fix</code> / <code>delete_body</code></td><td>Curator body-fix workflow (peer-voted)</td></tr>
+</tbody>
+</table>
+</div>
+<p>Each entry shows the actor, the action, the target, when it happened, and any
+details. Use the action filter to narrow the list.</p>
+<p>API: <code>GET /api/modlog?limit=50&amp;action=ban_user</code> (any logged-in user).</p>
+<h2 id="trust-weighted-reports"><a class="header" href="#trust-weighted-reports">Trust-Weighted Reports</a></h2>
+<p>User reports are community self-moderation with a safety valve:</p>
+<ul>
+<li>Every report is recorded with the reporter’s <strong>trust weight</strong> (a
+Discourse-style 7-level axis — brand-new accounts cannot flag at all).</li>
+<li>A target’s open reports are continuously re-aggregated into <code>pending</code>,
+<code>needs_admin</code> (contested), or <code>auto_hidden</code> (overwhelming weight).
+Escalations are logged to the modlog as <code>report_auto_hide</code> — nothing is
+hidden silently, and a human always makes the final call.</li>
+<li><strong>Community moderators</strong> (trust level 5+, staff-designated from the weekly
+digest) can resolve reports, so moderation doesn’t bottleneck on admins.
+All resolutions are attributed in the modlog.</li>
+<li>Admins get a <strong>weekly moderation digest</strong> (<code>GET /api/admin/digest</code>)
+surfacing contested targets and TL5 promotion candidates.</li>
+</ul>
+<h2 id="usage-analytics-adminanalytics--admins-only"><a class="header" href="#usage-analytics-adminanalytics--admins-only">Usage Analytics (<code>/admin/analytics</code> — admins only)</a></h2>
+<p>FicHub tracks <strong>non-PII</strong> usage: each browser gets a random anonymous client
+ID (stored in localStorage — never an IP, never a cookie that identifies
+you). Every request records a <code>view</code> (browsing) or <code>action</code> (download, vote,
+comment, …).</p>
+<p>Admins see:</p>
+<ul>
+<li><strong>Unique visitors</strong> — daily (30d), weekly (12w), monthly (12m) bar charts.</li>
+<li><strong>Engagement</strong> — active users (performed actions) vs view-only users, for
+today / 7d / 30d, with action events + total events + action rate.</li>
+<li><strong>Recent activity timeline</strong> — the last 50 events (anonymous client, path,
+type, time).</li>
+<li><strong>Search analytics</strong> — zero-result queries (search quality blind spots),
+trope popularity, search volume, and search→export conversion
+(searchers vs exporters, joined by anonymous client ID).</li>
+</ul>
+<p><strong>Privacy:</strong> nothing PII is stored or shown. The client ID is a random UUID
+that cannot be tied to a person, and it’s only used to count distinct
+visitors and to join search→export funnels. Raw IPs are never recorded in
+analytics.</p>
+<p>API: <code>GET /api/admin/analytics</code> and <code>GET /api/admin/search-analytics</code>
+(role ≥ 10).</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="faq"><a class="header" href="#faq">FAQ</a></h1>
+<h2 id="general"><a class="header" href="#general">General</a></h2>
+<p><strong>Is FicHub free?</strong>
+Yes! 100% free, no ads, no hidden fees.</p>
+<p><strong>Do I need an account?</strong>
+No! You can download stories without an account. You need an account for
+bookmarks, ratings, comments, and posting in the forum.</p>
+<p><strong>Is FicHub safe?</strong>
+Yes. It doesn’t collect personal info, doesn’t track you, and doesn’t show ads. The code is open-source so anyone can verify.</p>
+<p><strong>Does FicHub host stories?</strong>
+No! FicHub downloads stories from their original sites and converts them for you. The stories always stay on their original sites.</p>
+<h2 id="downloading"><a class="header" href="#downloading">Downloading</a></h2>
+<p><strong>What formats can I download?</strong>
+EPUB (best for e-readers), HTML (best for browsers), PDF (best for printing), and MOBI (for older Kindles).</p>
+<p><strong>Can I download multi-chapter stories?</strong>
+Yes! FicHub grabs all chapters automatically.</p>
+<p><strong>Why did I get “Unknown Title”?</strong>
+Sometimes a site is busy or blocking requests. Try again in a minute. If it persists, the story might be restricted.</p>
+<p><strong>Can I download restricted/private stories?</strong>
+No, FicHub can only download public stories.</p>
+<h2 id="account--profile"><a class="header" href="#account--profile">Account &amp; Profile</a></h2>
+<p><strong>How do I create an account?</strong>
+Click “Register” in the top right, choose a username and password.</p>
+<p><strong>How do I earn exp (experience)?</strong>
+Post helpful content, suggest great stories (other users upvote them), be
+helpful in comments, and contribute to the community. Moderator/admin
+actions award exp too (with an idempotent audit trail). Your level (0–100)
+rises with exp and gates moderation powers.</p>
+<p><strong>What do roles mean?</strong></p>
+<ul>
+<li><strong>Reader</strong> — basic access</li>
+<li><strong>Curator</strong> — can help moderate tags</li>
+<li><strong>Senior Curator</strong> — experienced moderator</li>
+<li><strong>Admin</strong> — runs the site</li>
+</ul>
+<p>Roles still exist as labels, but site-wide <strong>levels + exp</strong> (see <a href="#your-profile--leaderboard">Your
+Profile &amp; Leaderboard</a>) are the active gates.</p>
+<h2 id="forum"><a class="header" href="#forum">Forum</a></h2>
+<p><strong>What is the forum?</strong>
+A community discussion area (categories, topics, replies) with follows,
+notifications, full-text search, read-state tracking, moderation points,
+and metamoderation. It lives at <code>/forum</code>.</p>
+<h2 id="progression--customization"><a class="header" href="#progression--customization">Progression &amp; Customization</a></h2>
+<p><strong>How do I earn XP?</strong>
+Read, download, bookmark, rate, review, comment, post in the forum, and
+contribute to the community. Each action awards a specific XP amount. Your
+level (0–100) rises with XP; your rank (Reader → Curator → Admin) unlocks
+access to features.</p>
+<p><strong>What is the Ability Tree?</strong>
+The Ability Tree (<code>/features</code>) shows every gateable feature in FicHub —
+widgets, recipe builder, theme editor, custom views, admin tools — and
+which ones you’ve unlocked. Activate or deactivate features individually.</p>
+<p><strong>How do recipes work?</strong>
+Recipes (<code>/settings/recipes</code>) let you compose custom recommendation blends
+by adjusting strategy weights (cooccur, tag_graph, embeddings, etc.),
+setting filters (min words, exclude warnings), and adding boosts. Activate
+a recipe to override your personal rec engine. Publish recipes to the
+gallery for others to install.</p>
+<p><strong>Can I change the site’s look?</strong>
+Yes! Theme Design Tokens (<code>/settings/theme</code>) let you customize accent
+colour, background, surface, text, font family, corner radius, density,
+and reader settings. Five presets ship out of the box: Default Dark,
+Default Light, High Contrast, Sepia, and Dyslexia-Friendly. Import/export
+themes as JSON.</p>
+<p><strong>What is a topic slug?</strong>
+Every topic gets a stable, human-readable URL at creation, e.g.
+<code>/forum/board/what-s-your-opinion-on-the-site.42</code>. The slug is generated
+from the title and never changes, so links keep working even if the topic
+is later renamed. The old <code>/forum/{category}/{id}</code> URLs still work too.</p>
+<p><strong>How do moderation points work?</strong>
+Trusted members earn moderation points; moderating from the queue spends
+one. Moderator actions are audited (metamoderation) so the community can
+vote on whether each was fair.</p>
+<h2 id="search"><a class="header" href="#search">Search</a></h2>
+<p><strong>Why is FicHub search better than AO3?</strong>
+FicHub supports full boolean queries (<code>AND</code>/<code>OR</code>/<code>NOT</code>), quoted phrases,
+fielded search (<code>title:</code>, <code>author:</code>, <code>fandom:</code>), exclusions (<code>-angst</code>),
+faceted navigation, primary tag filtering, comment/kudos counts,
+no-warnings filter, and more. See <a href="#finding-great-stories">Finding Great Stories</a>.</p>
+<p><strong>Can I search across multiple sites?</strong>
+Yes! Use the Source filter to pick a specific site, or leave it on “All Sites” to search everywhere.</p>
+<h2 id="troubleshooting-1"><a class="header" href="#troubleshooting-1">Troubleshooting</a></h2>
+<p><strong>Download failed!</strong></p>
+<ul>
+<li>Check the URL is correct</li>
+<li>The site might be temporarily down</li>
+<li>The story might be restricted</li>
+</ul>
+<p><strong>Can’t log in?</strong></p>
+<ul>
+<li>Make sure your username and password are correct</li>
+<li>If you forgot your password, contact an admin</li>
+</ul>
+<p><strong>Something looks broken?</strong>
+Report bugs on our <a href="https://opencommit.eu/MagicZhang/fichub">Forgejo</a> or chat with us on <a href="https://discord.gg/AmE93m23dW">Discord</a>.</p>
+<hr>
+<p><em>Back to <a href="#welcome-to-fichub">Introduction</a></em></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="preventing-bots-without-friction"><a class="header" href="#preventing-bots-without-friction">Preventing Bots Without Friction</a></h1>
+<p>FicHub is an open download service: anyone can paste a URL and get an EPUB. That
+openness is the product — but it also attracts scrapers, spam bots, credential
+stuffers, and “bad faith” automation (mass-downloading to repost, fake traffic,
+SEO spam). This page is the playbook for hardening against bots <strong>without</strong>
+friction for real readers.</p>
+<h2 id="principles"><a class="header" href="#principles">Principles</a></h2>
+<ol>
+<li><strong>Friction follows behavior, not identity.</strong> Never challenge a normal reader
+who is just downloading one fic. Only introduce a challenge after a pattern
+of bot-like behavior (rate, burst, or ratio anomalies).</li>
+<li><strong>Cheap signals first.</strong> Rate limiting, headers, and honeypots cost nothing
+for humans. CAPTCHAs and proof-of-work are last resorts.</li>
+<li><strong>Defense in depth.</strong> No single control is enough; layer them so a bot that
+evades one hits the next.</li>
+<li><strong>Never block on first contact.</strong> First-time anonymous users are mostly
+real. Flag first, block later.</li>
+</ol>
+<h2 id="what-fichub-already-has"><a class="header" href="#what-fichub-already-has">What FicHub already has</a></h2>
+<ul>
+<li><strong>Redis bucket rate limiter</strong> (<code>src/limiter/redis_bucket.rs</code>) — per-IP token
+bucket, enforced on download/export endpoints. <code>dynamic_rate_limit</code> can be
+enabled per-request. This is the first line: it already stops naive
+mass-download bots.</li>
+<li><strong>Client-id tracking</strong> (<code>X-Client-ID</code> header, <code>request_log</code>) — every request
+is logged with source + route + timing. This is the raw material for
+behavioral detection (see below).</li>
+<li><strong>User accounts with roles</strong> — registered users can be flagged/banned by
+admins (<code>/api/admin/users/{id}/ban</code>).</li>
+</ul>
+<h2 id="layered-controls-in-order-of-increasing-friction"><a class="header" href="#layered-controls-in-order-of-increasing-friction">Layered controls (in order of increasing friction)</a></h2>
+<h3 id="layer-0--observability-no-friction"><a class="header" href="#layer-0--observability-no-friction">Layer 0 — Observability (no friction)</a></h3>
+<ul>
+<li>Keep <code>request_log</code> rich: IP, <code>X-Client-ID</code>, user agent, route, timing,
+export file. Add: <code>X-Forwarded-For</code> handling behind nginx (currently the
+service may only see the proxy IP — fix this first).</li>
+<li>Ship a <strong>bot dashboard</strong> in <code>/admin</code>: top IPs by requests/hour, top
+client-ids, export:request ratio, error-rate spikes. An admin who can <em>see</em>
+abuse can respond before it needs automation.</li>
+<li>Add a periodic job that computes per-IP aggregates (requests/hour,
+downloads/hour, failed-auth count) into a <code>bot_scores</code> table.</li>
+</ul>
+<h3 id="layer-1--rate-limiting-cheap-mostly-invisible"><a class="header" href="#layer-1--rate-limiting-cheap-mostly-invisible">Layer 1 — Rate limiting (cheap, mostly invisible)</a></h3>
+<ul>
+<li><strong>Tiered limits per endpoint class:</strong>
+<ul>
+<li>Static assets, docs, search: high limits (bots don’t hurt here).</li>
+<li>Download/export (<code>/api/epub</code>, <code>/api/download</code>): the critical one. Suggest
+per-IP: e.g. 60 downloads/hour, 300/day, with a burst of 10.</li>
+<li>Auth endpoints (<code>/login</code>, <code>/register</code>): strict, e.g. 10/min per IP —
+stops credential stuffing and account spam.</li>
+</ul>
+</li>
+<li><strong>Sliding window over the bucket</strong> (already implemented) — keep it.</li>
+<li><strong>Rate-limit by <code>X-Client-ID</code> too</strong>, not just IP — mobile users on shared
+NAT IPs get unfairly blocked otherwise. Key: <code>(ip, client_id)</code>.</li>
+</ul>
+<h3 id="layer-2--behavioral-heuristics-still-zero-friction"><a class="header" href="#layer-2--behavioral-heuristics-still-zero-friction">Layer 2 — Behavioral heuristics (still zero friction)</a></h3>
+<ul>
+<li><strong>Export:request ratio</strong>: a client that requests 500 fics and downloads 499
+EPUBs in an hour is a mirror bot, not a reader. Flag ratio &gt; 0.9.</li>
+<li><strong>Speed</strong>: &gt; 5 downloads/minute sustained = suspicious. Add a per-client
+burst check before the bucket.</li>
+<li><strong>Failed-auth bursts</strong>: &gt; 5 failed logins/min from one IP = stuffing. Apply
+a temporary IP block (30 min) + require CAPTCHA after.</li>
+<li><strong>New-account spam</strong>: accounts created in bursts from one IP, or with
+throwaway email patterns, get a shadow “low trust” flag until they’ve made
+N legit requests.</li>
+</ul>
+<h3 id="layer-3--light-challenges-small-friction-only-for-flagged-clients"><a class="header" href="#layer-3--light-challenges-small-friction-only-for-flagged-clients">Layer 3 — Light challenges (small friction, only for flagged clients)</a></h3>
+<ul>
+<li><strong>Proof-of-work (PoW)</strong>: for flagged clients, require a small hashcash-style
+challenge (e.g. SHA-256 prefix of 8-10 zero bits, ~0.1-1s on modern
+hardware). Returns an <code>X-PoW</code> token valid for 10 min. Humans never notice;
+bulk bots pay 1000x.</li>
+<li><strong>JS challenge</strong>: a 1-second JS+canvas proof that a real browser is present
+(like Cloudflare’s “checking your browser”). Flagged clients only.</li>
+<li><strong>Email verification</strong> for registration (already should exist) — raise to
+mandatory if spam accounts appear.</li>
+</ul>
+<h3 id="layer-4--captcha-last-resort-real-friction"><a class="header" href="#layer-4--captcha-last-resort-real-friction">Layer 4 — CAPTCHA (last resort, real friction)</a></h3>
+<ul>
+<li>Only for clearly abusive patterns: IP that already hit Layer 3 blocks,
+disposable-email signups, comment spam.</li>
+<li>Use a self-hosted option (e.g. turnstile-like or mCaptcha) to avoid
+third-party friction/privacy cost.</li>
+</ul>
+<h2 id="human-impersonation-bots-the-tricky-ones"><a class="header" href="#human-impersonation-bots-the-tricky-ones">Human-impersonation bots (the tricky ones)</a></h2>
+<p>Bots that mimic humans (correct headers, browser fingerprints, human-like
+pacing) defeat layers 1-3. Detect via:</p>
+<ul>
+<li><strong>Behavioral fingerprinting</strong>: mouse/keyboard entropy, scroll patterns,
+request-order randomness. Flag clients with <em>too-perfect</em> pacing.</li>
+<li><strong>Honeypot fields</strong> in forms (a hidden input humans never fill): if it’s
+filled, it’s a bot — silently drop + shadow-ban the client-id.</li>
+<li><strong>Timing traps</strong>: a form that a human takes 3+ seconds to fill but a bot
+submits in &lt;300ms is bot-like. Store <code>form_opened_at</code> and flag fast submits.</li>
+<li><strong>Headless-browser detection</strong>: check <code>navigator.webdriver</code>, missing
+<code>navigator.languages</code>, absent plugin arrays. Flag but don’t block — many
+legitimate power users use automation (that’s the core FicHub audience!).</li>
+</ul>
+<h2 id="bad-faith-content-bots"><a class="header" href="#bad-faith-content-bots">Bad-faith content bots</a></h2>
+<ul>
+<li><strong>Comment spam</strong>: require the commenter to have a non-spam history (account
+age + N legit requests) before posting links; rate-limit comments;
+honeypot the comment form; admin flag queue for reported comments.</li>
+<li><strong>Tag/upload spam</strong>: manual-upload moderation queue already exists
+(<code>/api/admin/moderation/*</code>) — keep it mandatory for new uploaders until
+trust is earned.</li>
+<li><strong>Reputation farming</strong>: cap daily reputation gain; require a mix of
+actions, not just one action repeated.</li>
+</ul>
+<h2 id="what-to-avoid-friction-traps"><a class="header" href="#what-to-avoid-friction-traps">What to avoid (friction traps)</a></h2>
+<ul>
+<li><strong>Don’t CAPTCHA everyone</strong> — the #1 way to lose the power-user audience.</li>
+<li><strong>Don’t block shared NAT IPs globally</strong> — use <code>(ip, client_id)</code> keys.</li>
+<li><strong>Don’t rate-limit reading/search</strong> as hard as downloads.</li>
+<li><strong>Don’t ban on first offense</strong> — shadow-flag + challenge, escalate only on
+repeat patterns.</li>
+<li><strong>Don’t block legitimate automation</strong> — FicHub’s whole value is programmatic
+EPUB access (OPDS readers, CLI tools). PoW tokens and API keys for known
+tools are the answer, not IP bans.</li>
+</ul>
+<h2 id="implementation-roadmap"><a class="header" href="#implementation-roadmap">Implementation roadmap</a></h2>
+<ol>
+<li><strong>Immediate (this week)</strong>: fix X-Forwarded-For so rate limits see real IPs;
+add per-endpoint-class rate limits (downloads strict, auth strict, search
+loose); add <code>X-Client-ID</code> to the rate-limit key.</li>
+<li><strong>Short term (1-2 weeks)</strong>: behavioral aggregates job + admin bot dashboard;
+export:request ratio flag; failed-auth burst IP block.</li>
+<li><strong>Medium term</strong>: PoW challenge for flagged clients; honeypot fields in
+comment/registration forms; headless-browser flag (not block).</li>
+<li><strong>Long term</strong>: CAPTCHA layer for repeat offenders; account-trust tiers.</li>
+</ol>
+<h2 id="files-that-would-change"><a class="header" href="#files-that-would-change">Files that would change</a></h2>
+<ul>
+<li><code>src/limiter/redis_bucket.rs</code> — tiered limits, (ip, client_id) keys</li>
+<li><code>src/routes/admin.rs</code> — bot dashboard endpoints (top IPs, ratios)</li>
+<li><code>src/bin/</code> or a cron task — per-IP aggregate scoring</li>
+<li><code>frontend/src/routes/admin/*</code> — bot dashboard UI</li>
+<li><code>src/routes/upload.rs</code>, <code>src/routes/social.rs</code> — honeypots, form timers</li>
+<li><code>Cargo.toml</code> — PoW crate (e.g. a small sha256 challenge), if added</li>
+</ul>
+<h2 id="verification"><a class="header" href="#verification">Verification</a></h2>
+<ul>
+<li>Load test with a fake bot (loop 200 downloads) → blocked by Layer 1.</li>
+<li>Real-user journey (search → open fic → download one EPUB) → zero challenges.</li>
+<li>Headless browser (Playwright) → flagged in the bot dashboard, not blocked.</li>
+<li>After each change: <code>node qa/run.js</code> still green; no new QA findings.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="recommendation-engines-rec-engines"><a class="header" href="#recommendation-engines-rec-engines">Recommendation Engines (rec-engines)</a></h1>
+<p>FicHub’s pluggable recommendation platform. The <strong>default mode is <code>legacy</code></strong>
+— <code>REC_ENGINE_MODE=legacy</code> preserves today’s behavior byte-for-byte. Every
+strategy below is <strong>inert by default</strong>: the tables exist, the registry is
+built, but nothing runs until you opt in with <code>REC_ENGINE_MODE=pluggable</code>
+and a <code>REC_STRATEGIES</code> list.</p>
+<pre><code>Strategy trait ──► Registry (REC_STRATEGIES) ──► RRF Ranker ──► API
+     │                    │                         │
+     └─ train()           └─ weights                ├─ curator prior
+        (batch pipeline)                            └─ bandit slots
+</code></pre>
+<h2 id="the-golden-guarantee"><a class="header" href="#the-golden-guarantee">The golden guarantee</a></h2>
+<p>Stage 0’s invariant: a registry containing <strong>only <code>cooccur</code></strong> (the legacy
+engine wrapped as a strategy) must produce <strong>identical output</strong> to the
+current engine for the same user. This is asserted by the DB-gated test
+<code>golden_legacy_equals_cooccur_strategy</code> in <code>tests/rec_strategies.rs</code>.</p>
+<h2 id="strategies"><a class="header" href="#strategies">Strategies</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>key</th><th>module</th><th>mode</th><th>what it does</th><th>artifacts</th></tr>
+</thead>
+<tbody>
+<tr><td><code>cooccur</code></td><td><code>legacy_cooccur.rs</code></td><td>seed + personal</td><td>the CURRENT engine, unchanged</td><td>—</td></tr>
+<tr><td><code>decay</code></td><td><code>decay.rs</code></td><td>seed</td><td>SAR-style time-decayed co-occurrence + log-likelihood (pure SQL)</td><td>—</td></tr>
+<tr><td><code>embeddings</code></td><td><code>embeddings.rs</code></td><td>seed + personal</td><td>Ollama nomic-embed-text (384-d) content embeddings; user profile = recency-weighted centroid → ANN</td><td><code>rec_embeddings</code></td></tr>
+<tr><td><code>mf</code></td><td><code>mf.rs</code></td><td>personal</td><td>Hu–Koren implicit ALS (feature <code>rec-mf</code>; hand-rolled, no ndarray)</td><td><code>rec_models</code>, factors on disk</td></tr>
+<tr><td><code>hybrid</code></td><td><code>hybrid.rs</code></td><td>seed + personal</td><td>learned-weight blend of MF + embeddings + tag Jaccard</td><td>—</td></tr>
+<tr><td><code>author_graph</code></td><td><code>author_graph.rs</code></td><td>seed</td><td>author co-bookmark + shared-tag Jaccard</td><td><code>rec_author_graph</code></td></tr>
+<tr><td><code>tag_graph</code></td><td><code>tag_graph.rs</code></td><td>seed</td><td>meta-path fandom→character→relationship→freeform traversal</td><td>—</td></tr>
+<tr><td><code>sequential</code></td><td><code>sequential.rs</code></td><td>seed (Next Up)</td><td>first-order Markov next-read from sequels + download sequences</td><td><code>rec_transitions</code></td></tr>
+<tr><td><code>clusters</code></td><td><code>clusters.rs</code></td><td>personal</td><td>k-means over tag-affinity vectors</td><td><code>rec_user_clusters</code></td></tr>
+<tr><td><code>bandit</code></td><td><code>bandit.rs</code></td><td>exploration</td><td>Thompson sampling (Beta posteriors); engagement = bookmark/download/completion</td><td><code>rec_bandit_arms</code>, <code>rec_impressions</code></td></tr>
+<tr><td><code>external</code></td><td><code>external.rs</code></td><td>seed + personal</td><td>HTTP adapter for a Python sidecar (<code>REC_EXTERNAL_URL</code>)</td><td>sidecar</td></tr>
+<tr><td><code>weighted</code></td><td><code>weighted.rs</code> <em>(planned, P8#98)</em></td><td>seed + personal</td><td>Zeks/flipper rarity-tier weighting: per-author overlap ratio + matches + sigma, tier weights (unique 0.2×matches, rare 0.05×, uncommon 0.005×, common 1); explainable (“you share 5 faves with this author whose list is 90% rare fic”) + list-manipulation detection</td><td><code>rec_author_overlap</code> <em>(planned)</em></td></tr>
+<tr><td><code>mood</code></td><td><code>mood.rs</code> <em>(planned, P8#96)</em></td><td>seed + personal</td><td>fic-level mood similarity (Neutral/Funny/Shocky/Flirty/Dramatic/Hurty/Bondy from content signals: genre ratios, description, review sentiment, tags) — “rec me something dramatic”</td><td><code>rec_fic_moods</code> <em>(planned)</em></td></tr>
+<tr><td><code>author_recs</code></td><td><code>author_recs.rs</code> <em>(planned, P8#97)</em></td><td>personal</td><td>author feature vectors (genre mix, mood distribution, fandom spread, popularity band) → “authors like X” / “authors who wrote fic you kudos’d”; feeds the “Authors you might like” panel</td><td><code>rec_author_vectors</code> <em>(planned)</em></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="config-reference"><a class="header" href="#config-reference">Config reference</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>env</th><th>default</th><th>meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>REC_ENGINE_MODE</code></td><td><code>legacy</code></td><td><code>legacy</code> = today’s behavior exactly; <code>pluggable</code> = registry + ranker</td></tr>
+<tr><td><code>REC_STRATEGIES</code></td><td><code>cooccur</code></td><td>comma list <code>name:weight</code>, e.g. <code>cooccur:0.4,embeddings:0.3,mf:0.2,bandit:0.1</code></td></tr>
+<tr><td><code>REC_DECAY_HALFLIFE_DAYS</code></td><td><code>30</code></td><td>half-life for the <code>decay</code> strategy and arm decay</td></tr>
+<tr><td><code>REC_EMBED_MODEL</code></td><td><code>nomic-embed-text</code></td><td>Ollama embedding model</td></tr>
+<tr><td><code>REC_EMBED_DIM</code></td><td><code>384</code></td><td>embedding dimension (must match the model)</td></tr>
+<tr><td><code>REC_MF_FACTORS</code></td><td><code>16</code></td><td>latent factors for <code>mf</code></td></tr>
+<tr><td><code>REC_MF_ITERS</code></td><td><code>10</code></td><td>ALS iterations</td></tr>
+<tr><td><code>REC_MF_TRAIN_MIN_SIGNALS</code></td><td><code>500</code></td><td>minimum unified signals before MF trains</td></tr>
+<tr><td><code>REC_BANDIT_SLOTS</code></td><td><code>1</code></td><td>exploration slots per list</td></tr>
+<tr><td><code>REC_TRAIN_EVERY_H</code></td><td><code>6</code></td><td>batch pipeline cadence (hours)</td></tr>
+<tr><td><code>REC_SHADOW_MODE</code></td><td><code>false</code></td><td>compute pluggable recs but return legacy output while logging impressions</td></tr>
+<tr><td><code>REC_CURATOR_PRIOR</code></td><td>unset</td><td>curator user id whose profile shapes low-signal users</td></tr>
+<tr><td><code>REC_PRIOR_FLOOR</code></td><td><code>0.2</code></td><td>curator-prior floor α</td></tr>
+<tr><td><code>REC_CURATOR_TAU</code></td><td><code>25</code></td><td>signals at which curator influence decays toward the floor</td></tr>
+<tr><td><code>REC_STRATEGY_TIMEOUT_SECS</code></td><td><code>10</code></td><td>per-strategy HTTP timeout (Ollama/sidecar)</td></tr>
+<tr><td><code>REC_EXTERNAL_URL</code></td><td>unset</td><td>sidecar base URL (enables <code>external</code>)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="curator-prior-taste-shaping"><a class="header" href="#curator-prior-taste-shaping">Curator prior (taste-shaping)</a></h2>
+<p><code>REC_CURATOR_PRIOR=&lt;user_id&gt;</code> makes the curator’s taste shape every user’s
+recs. The curator’s interactions are weighted <strong>5×</strong> in <code>rec_user_signals</code>.
+In the ranker:</p>
+<pre><code>α = floor + (1 − floor)·exp(−n_signals / τ)     # α is the CURATOR weight
+final = (1−α)·user + α·curator
+</code></pre>
+<ul>
+<li>brand-new user (0 signals): α = 1.0 → pure curator picks</li>
+<li>active user: α → floor (their taste dominates, curator floor kept)</li>
+</ul>
+<p>Alignment <code>cos(user_centroid, curator_centroid)</code> is tracked per user in
+<code>rec_user_curator_align</code> for QA. The home dashboard shows <strong>“Curator’s
+pick”</strong> when the response carries <code>curator_alpha</code>.</p>
+<h2 id="eval-methodology"><a class="header" href="#eval-methodology">Eval methodology</a></h2>
+<ol>
+<li><strong>Shadow first</strong>: <code>REC_ENGINE_MODE=pluggable</code> + <code>REC_SHADOW_MODE=true</code>
+returns legacy recs to users while the pluggable pipeline computes and
+logs impressions into <code>rec_impressions</code>.</li>
+<li><strong>Read the runbook data</strong>: <code>GET /api/recommendations/strategies</code>
+(admin) shows per-strategy enabled state + last <code>rec_training_runs</code>
+metrics (duration, counts, ok).</li>
+<li><strong>Engagement</strong>: the bandit’s <code>reconcile_impressions</code> nightly step turns
+impressions + later bookmarks into α/β updates — high α/β means the arm
+converts.</li>
+<li><strong>Promote</strong>: set <code>REC_STRATEGIES</code> to the winners (e.g.
+<code>cooccur:0.4,embeddings:0.3</code>), <code>REC_SHADOW_MODE=false</code>.</li>
+</ol>
+<h2 id="runbook-enabling-a-strategy"><a class="header" href="#runbook-enabling-a-strategy">Runbook: enabling a strategy</a></h2>
+<pre><code class="language-bash"># 1. Shadow the embeddings strategy (users keep legacy recs, impressions logged)
+REC_ENGINE_MODE=pluggable REC_SHADOW_MODE=true \
+  REC_STRATEGIES=cooccur:0.6,embeddings:0.4
+
+# 2. Let the batch pipeline run (REC_TRAIN_EVERY_H=6 embeds new works),
+#    then read the eval:
+curl -H "Authorization: Bearer &lt;admin-jwt&gt;" \
+     http://localhost:8000/api/recommendations/strategies
+
+# 3. Promote when engagement/coverage looks good:
+REC_ENGINE_MODE=pluggable REC_SHADOW_MODE=false \
+  REC_STRATEGIES=cooccur:0.5,embeddings:0.3,mf:0.2
+</code></pre>
+<h2 id="python-sidecar-recipes"><a class="header" href="#python-sidecar-recipes">Python sidecar recipes</a></h2>
+<p><code>rec-engines/</code> holds <strong>recipes only</strong> — they are NOT part of the default
+runtime. Set <code>REC_EXTERNAL_URL</code> to point the <code>external</code> strategy at a
+sidecar speaking the tiny JSON protocol:</p>
+<pre><code>POST {base}/score  {"seed": "...", "user_id": 7, "n": 20}
+  → {"recs": [{"work_id": "...", "score": 0.5, "reason": "..."}]}
+POST {base}/train  {} → {"ok": true}
+</code></pre>
+<p>Recipes included: <strong>LightFM</strong> (<code>lightfm_recipe.py</code>), <strong>implicit</strong>
+(<code>implicit_recipe.py</code>), <strong>Vowpal Wabbit bandit</strong> (<code>vw_bandit_recipe.py</code>),
+<strong>RecBole</strong> (<code>recbole_config.yaml</code>), plus a <code>Dockerfile</code> and <code>README.md</code>.</p>
+<h2 id="user-recipes-v31"><a class="header" href="#user-recipes-v31">User Recipes (v3.1)</a></h2>
+<p>Users can compose their own recipe blends via the Recipe Builder
+(<code>/settings/recipes</code>). A recipe is a named JSON composition of strategy
+weights, filters, and boosts — it runs through the existing RRF ranker
+with zero new engine code.</p>
+<pre><code class="language-json">{
+  "name": "dark-fic-finder",
+  "blend": { "cooccur": 0.3, "tag_graph": 0.4, "embeddings": 0.3 },
+  "filters": { "min_words": 30000, "exclude_warnings": ["Major Character Death"] },
+  "boost": { "tag": "Dark Harry Potter", "weight": 1.5 }
+}
+</code></pre>
+<p><strong>Activation:</strong> <code>POST /api/recipes/{id}/activate</code> sets the recipe as
+active (mutual exclusion — only one active recipe per user). The active
+recipe’s <code>to_strategy_weights()</code> method is called at rec-request time,
+overriding the default <code>REC_STRATEGIES</code> env config.</p>
+<p><strong>Gallery:</strong> publish a recipe (<code>POST /api/recipes/{id}/publish</code>) to make
+it available in the public gallery. Other users can browse
+(<code>GET /api/recipes/gallery</code>) and install copies.</p>
+<p><strong>Plugin manifest:</strong> recipes, themes, layouts, and views are all stored
+in the unified <code>extensions</code> table with kind/slug/version/tier/payload.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="self-healing--scrape-failure-telemetry"><a class="header" href="#self-healing--scrape-failure-telemetry">Self-Healing &amp; Scrape Failure Telemetry</a></h1>
+<blockquote>
+<p>Status: milestone 1 (failure telemetry + diagnose-only agent trigger)
+implemented. Autonomy is OFF by default (<code>AGENT_ENABLED=false</code>).</p>
+</blockquote>
+<p>FicHub records every scrape failure, classifies it, and (when enabled) asks
+an LLM agent to diagnose the cause. This chapter is for operators running
+the live instance.</p>
+<h2 id="site-as-a-cache-of-gathered-fanfiction"><a class="header" href="#site-as-a-cache-of-gathered-fanfiction">Site as a cache of gathered fanfiction</a></h2>
+<p>Every successfully scraped fic body is persisted on the attached drive
+(<code>BODY_CACHE_DIR</code>, default <code>/public/literature/fichub/bodies</code>), NOT in the
+database. Layout is two-level hex sharding on <code>url_id</code> (git-objects style),
+versioned per fix:</p>
+<ul>
+<li><code>bodies/{url_id[0:2]}/{url_id[2:4]}/{url_id}.v{version}.html</code> — the
+extracted body HTML (so a bad extraction can be re-done from saved
+content without re-scraping).</li>
+<li><code>bodies/{url_id[0:2]}/{url_id[2:4]}/{url_id}.v{version}.json</code> — the
+structured chapters the exports render.</li>
+</ul>
+<p>Exports reuse the cached body (no re-scrape). Version bumps GC old files
+for the same url_id (bounded disk, no background job).</p>
+<p>Curator fixes go through <strong>peer voting</strong> — a single curator cannot silently
+replace a fic’s content:</p>
+<ul>
+<li><code>POST /api/curator/content/{url_id}/propose</code> — submit a fix proposal
+(body_html + reason) → <code>pending</code>.</li>
+<li><code>POST /api/curator/content/proposals/{id}/vote</code> — other curators vote
+up/down (no self-vote). At quorum (≥2 votes) with net ≥ 1 the fix is
+<strong>applied</strong> (body blob written at the next version); net &lt; 0 → rejected.</li>
+<li><code>GET /api/curator/content/proposals?status=pending</code> — review queue.</li>
+<li><code>GET /api/curator/content/{url_id}</code> — inspect what was gathered.</li>
+<li><code>DELETE /api/curator/content/{url_id}</code> — delete the blob, force a
+re-scrape (safe: only triggers re-scrape, doesn’t replace content).</li>
+</ul>
+<p>All gated to role ≥ 10 (400-as-403 convention).</p>
+<h2 id="failure-telemetry"><a class="header" href="#failure-telemetry">Failure telemetry</a></h2>
+<p>Every failed scrape lands in the <code>scrape_failures</code> table:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Column</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>url</code> / <code>url_id</code></td><td>the requested fic URL</td></tr>
+<tr><td><code>domain</code></td><td>host (e.g. <code>royalroad.com</code>)</td></tr>
+<tr><td><code>error_kind</code></td><td><code>blocked</code> / <code>timeout</code> / <code>parse</code> / <code>not_found</code> / <code>export</code> / <code>unknown</code></td></tr>
+<tr><td><code>message</code></td><td>scraper error text</td></tr>
+<tr><td><code>html_snapshot_path</code></td><td>captured page (parse failures only, sanitized, ≤200KB)</td></tr>
+<tr><td><code>fingerprint</code></td><td>stable hash — dedupes identical failures</td></tr>
+<tr><td><code>created_at</code> / <code>resolved_at</code> / <code>resolution</code></td><td>lifecycle</td></tr>
+</tbody>
+</table>
+</div>
+<p>On parse failures the offending HTML is saved under
+<code>tests/fixtures/scrape/&lt;domain&gt;/&lt;fingerprint&gt;.html</code> — it doubles as agent
+context and as a future regression fixture.</p>
+<h2 id="classifier"><a class="header" href="#classifier">Classifier</a></h2>
+<p>Pure Rust (no LLM), maps an error to a healing class:</p>
+<ul>
+<li><strong>transient</strong> — 429/timeouts/525/not-found: back off, no agent.</li>
+<li><strong>blocked</strong> — 403 / Cloudflare from known-bad hosts (AO3, FFN,
+FictionPress): the agent cannot fix an IP-level block; surface to users.</li>
+<li><strong>structural</strong> — selector/parse error: agent territory (site layout
+changed).</li>
+<li><strong>systemic</strong> — 5xx / panic / build failure: service-level playbook.</li>
+</ul>
+<p>Debounce: ≥3 same-domain structural failures in 15 min → one healing event.
+Fingerprint: one heal per fingerprint per 24h unless it changes.</p>
+<h2 id="agent-runtime"><a class="header" href="#agent-runtime">Agent runtime</a></h2>
+<ul>
+<li>Endpoint (OpenAI-compatible <code>chat/completions</code>): CommandCode
+<code>https://api.commandcode.ai/provider/v1</code> — key in
+<code>COMMANDCODE_API_KEY</code> / <code>AGENT_API_KEY</code>, model <code>poolside/laguna-s-2.1-free</code>
+(override <code>AGENT_MODEL</code>). Local fallback: <code>AGENT_OLLAMA_URL</code>.</li>
+<li>Diagnose-only this pass: <code>POST /api/admin/heal?domain=X</code> (role ≥ 10)
+returns recent failures + a plan, and if <code>AGENT_ENABLED=true</code> makes one
+diagnose call (30s timeout) recording the reply in <code>agent_runs</code>.
+It never writes files or modifies code.</li>
+</ul>
+<h2 id="config"><a class="header" href="#config">Config</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Env</th><th>Default</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>AGENT_ENABLED</code></td><td><code>false</code></td><td>master switch (healing loop + agent calls)</td></tr>
+<tr><td><code>AGENT_MODEL</code></td><td><code>deepseek/deepseek-v4-flash</code></td><td>agent model (deploy uses <code>poolside/laguna-s-2.1-free</code>)</td></tr>
+<tr><td><code>AGENT_API_KEY</code> / <code>COMMANDCODE_API_KEY</code></td><td>—</td><td>remote API key</td></tr>
+<tr><td><code>AGENT_API_URL</code></td><td><code>https://api.commandcode.ai/provider/v1</code></td><td>OpenAI-compatible base</td></tr>
+<tr><td><code>AGENT_OLLAMA_URL</code></td><td><code>http://localhost:11434</code></td><td>local fallback</td></tr>
+<tr><td><code>AGENT_MAX_RUNS_PER_DAY</code></td><td><code>6</code></td><td>daily budget</td></tr>
+<tr><td><code>AGENT_COOLDOWN_DOMAIN_SECS</code></td><td><code>3600</code></td><td>per-domain cooldown</td></tr>
+<tr><td><code>AGENT_USE_ON_FLY</code></td><td><code>false</code></td><td>M2: on-the-fly extraction on structural failure (needs <code>AGENT_ENABLED=true</code>)</td></tr>
+<tr><td><code>AGENT_EXTRACT_MAX_SNAPSHOT_CHARS</code></td><td><code>120000</code></td><td>max snapshot HTML sent to the extraction agent</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="whats-next"><a class="header" href="#whats-next">What’s next</a></h2>
+<p>See <code>docs/brainstorm-02-roadmap-status.md</code> — T1 auto-merge + deploy/rollback
+harness, T2 service heal (health watcher → restart), T3 QA-driven site
+regen, <code>/admin/agent</code> UI panel.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="contributing-to-fichub"><a class="header" href="#contributing-to-fichub">Contributing to FicHub</a></h1>
+<p>Welcome! This guide gets a junior developer from “I cloned the repo” to
+“my first merged PR” — with no prior FicHub context required.</p>
+<p>FicHub is a self-hosted fanfiction archive + download server (a modern
+fichub.net replacement). It scrapes stories from fanfiction sites, builds
+EPUB/HTML/PDF/TXT/MOBI/AZW3 files, and runs a community platform on top:
+accounts, bookmarks, ratings, reviews, comments, reading lists, follows,
+feeds, an in-browser reader, and a recommendation engine.</p>
+<hr>
+<h2 id="1-the-stack-at-a-glance"><a class="header" href="#1-the-stack-at-a-glance">1. The stack at a glance</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Layer</th><th>Technology</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr><td>Backend</td><td>Rust 2024, Axum 0.8, SQLx 0.9</td><td><code>src/</code> — HTTP API, scraping, exports, social</td></tr>
+<tr><td>Frontend</td><td>SvelteKit 5 (SPA, adapter-static)</td><td><code>frontend/</code> — built to <code>frontend/build/</code>, served by Axum</td></tr>
+<tr><td>Database</td><td>PostgreSQL 16 + pgvector</td><td>Migrations in <code>migrations/</code>, applied on startup</td></tr>
+<tr><td>Cache/limits</td><td>Redis</td><td>Rate limiter token bucket, shadowban state</td></tr>
+<tr><td>ML/embeddings</td><td>Ollama (nomic-embed-text)</td><td>Roadmap consensus, auto-tagger, rec embeddings</td></tr>
+<tr><td>Scraping</td><td><code>fanfic-scrapers</code> crate (no Python dependency)</td><td><code>scrapers/</code> — native adapters for all 107 FFF-parity sites</td></tr>
+<tr><td>Docs</td><td>mdBook (Rust)</td><td><code>docs/</code> — this site</td></tr>
+</tbody>
+</table>
+</div>
+<blockquote>
+<p>The frontend is a <strong>SPA served from one origin</strong> — Axum serves
+<code>frontend/build/</code> as a fallback, so <code>/docs/</code> is just static HTML shipped
+inside the SPA.</p>
+</blockquote>
+<hr>
+<h2 id="2-repository-layout"><a class="header" href="#2-repository-layout">2. Repository layout</a></h2>
+<pre><code>fichub/
+├── src/               # Rust backend
+│   ├── server.rs      # Axum router: all routes registered here
+│   ├── routes/        # one module per feature area (download, auth, social, admin…)
+│   ├── scrape/        # scraper subsystem + registry (fanfic-scrapers)
+│   ├── heal/          # self-healing classifier (LLM-assisted)
+│   ├── limiter/       # Redis token-bucket rate limiter
+│   └── epub/          # EPUB/TXT/MD builder (pure Rust)
+├── scrapers/          # fanfic-scrapers crate (standalone, published to crates.io)
+│   └── src/sites/     # one adapter module per site/family (ao3, ffnet, xenforo…)
+├── frontend/          # SvelteKit 5 SPA
+│   ├── src/routes/    # +page.svelte files; one route per page
+│   ├── src/lib/       # shared components, API client, stores
+│   └── static/docs/   # BUILT docs output (mdBook HTML; committed)
+├── migrations/        # SQLx migrations 001…N (auto-applied on boot)
+├── docs/              # mdBook source (docs/src/*.md + SUMMARY.md)
+├── tests/             # Rust integration tests (DB-gated)
+├── qa/                # QA harness (node qa/run.js — Playwright + API audit)
+├── scripts/           # data/seed/consensus helper scripts (Python)
+├── deploy.sh          # build + deploy to the prod machine
+└── Cargo.toml         # backend workspace deps
+</code></pre>
+<hr>
+<h2 id="3-first-run-setup-5-minutes"><a class="header" href="#3-first-run-setup-5-minutes">3. First-run setup (5 minutes)</a></h2>
+<h3 id="prerequisites"><a class="header" href="#prerequisites">Prerequisites</a></h3>
+<ul>
+<li>Rust toolchain (<code>rustup default stable</code>)</li>
+<li>Node.js 20+ (frontend)</li>
+<li>PostgreSQL 16 running, with a <code>fichub</code> database</li>
+<li>Redis running on <code>localhost:6379</code></li>
+<li>Optional but recommended: Ollama (for recs/consensus; the app falls back
+gracefully when offline)</li>
+</ul>
+<h3 id="backend"><a class="header" href="#backend">Backend</a></h3>
+<pre><code class="language-bash">cp .env.example .env        # edit DATABASE_URL, REDIS_URL to match your machine
+cargo run                   # starts on :8000 (or $PORT)
+</code></pre>
+<p>First boot applies migrations automatically. Check it’s up:</p>
+<pre><code class="language-bash">curl http://localhost:8000/api/health
+</code></pre>
+<h3 id="frontend"><a class="header" href="#frontend">Frontend</a></h3>
+<pre><code class="language-bash">cd frontend
+npm install
+npm run dev                 # Vite dev server (usually :5173, proxies API)
+</code></pre>
+<blockquote>
+<p>In production the SPA is built (<code>npm run build</code>) into <code>frontend/build/</code>
+and served by Axum — so a backend change needs no frontend rebuild, and
+a frontend change needs <code>npm run build</code> before it appears on the live
+site.</p>
+</blockquote>
+<h3 id="the-scraper-crate-separate-published"><a class="header" href="#the-scraper-crate-separate-published">The scraper crate (separate, published)</a></h3>
+<pre><code class="language-bash">cd scrapers
+cargo test                  # runs the adapter test suite
+</code></pre>
+<p>The crate is <strong>general-purpose and published to crates.io</strong>
+(<code>fanfic-scrapers</code>). It has zero FicHub internals — keep it that way.</p>
+<hr>
+<h2 id="4-your-dev-loop"><a class="header" href="#4-your-dev-loop">4. Your dev loop</a></h2>
+<ol>
+<li><strong>Pick a small issue</strong> (check the consolidated plan in
+<code>docs/brainstorm-02-roadmap-status.md</code>).</li>
+<li><strong>Create a branch</strong>: <code>git checkout -b feat/your-feature</code>.</li>
+<li><strong>Make the smallest change that works.</strong> No unrelated refactors.</li>
+<li><strong>Test it</strong> (see §5).</li>
+<li><strong>Run the QA harness</strong> (§6).</li>
+<li><strong>Open a PR</strong> to <code>main</code> (§7).</li>
+</ol>
+<h3 id="golden-rules-for-a-junior-pr"><a class="header" href="#golden-rules-for-a-junior-pr">Golden rules for a junior PR</a></h3>
+<ul>
+<li><strong>Never weaken or delete a test.</strong> Every fixed bug adds a regression test.</li>
+<li><strong>Don’t change migrations/schema without approval.</strong> If a migration is
+already applied to prod, changing it breaks the checksum check.</li>
+<li><strong>Auth/payment/security logic requires human review.</strong></li>
+<li><strong>Prefer explicit failure over hidden assumptions.</strong> If something can’t be
+scraped or parsed, return a clear error — don’t silently return empty data.</li>
+<li><strong>Commit often, small commits.</strong> Conventional Commits:
+<code>feat:</code>, <code>fix:</code>, <code>test:</code>, <code>docs:</code>, <code>chore:</code>.</li>
+</ul>
+<hr>
+<h2 id="5-testing"><a class="header" href="#5-testing">5. Testing</a></h2>
+<p>|| Suite | Command | Notes |
+||—––|———|—––|
+|| Backend unit + integration | <code>cargo test</code> | 582+ lib tests |
+|| DB-gated integration | <code>cargo test --test &lt;suite&gt; -- --test-threads=1</code> | Run suites individually (they hold their own DB mutex) |
+|| Frontend unit | <code>cd frontend &amp;&amp; npm test</code> | vitest, 464+ tests |
+|| Frontend E2E | <code>cd frontend &amp;&amp; npm run test:e2e</code> | Playwright via vitest config; 15/15 green |
+|| Frontend coverage gate | <code>cd frontend &amp;&amp; npm run coverage</code> | 65% lines / 55% funcs / 60% branches on <code>src/lib/**</code> |
+|| Scraper crate | <code>cd scrapers &amp;&amp; cargo test</code> | 200+ adapter tests |</p>
+<h3 id="new-feature-new-tests-always"><a class="header" href="#new-feature-new-tests-always">New feature? New tests, always</a></h3>
+<ul>
+<li>Backend: unit test the handler logic; integration test the endpoint (with
+the DB suite).</li>
+<li>Frontend: a <code>page.test.ts</code> next to the route (not <code>+page.test.ts</code> —
+that breaks the build). Add the route prefix to the <code>routePages</code> list in
+<code>frontend/src/routes/+layout.svelte</code> or the layout renders the dashboard
+instead.</li>
+<li>Scraper: every new site adapter ships 4 unit tests (can_handle, id
+parsing, date parsing, body extraction) against real HTML fixtures.</li>
+</ul>
+<hr>
+<h2 id="6-the-qa-harness-run-before-every-pr"><a class="header" href="#6-the-qa-harness-run-before-every-pr">6. The QA harness (run before every PR)</a></h2>
+<pre><code class="language-bash">node qa/run.js
+</code></pre>
+<p>This runs the full deterministic QA: API smoke, link crawl, OPDS checks,
+browser journeys (Playwright with console/network capture), and a backend
+log scan. It’s the closest thing to a staging environment you can run
+locally.</p>
+<p>Other QA tools:</p>
+<pre><code class="language-bash">node qa/api-walk.js              # scriptable API-surface audit (97/97 green)
+node qa/triage.js                # enrich findings with local LLM
+node qa/gen-issues.js            # emit qa/reports/ISSUES.md from the bug queue
+</code></pre>
+<p>QA state is tracked in <code>qa/bugs.db</code> (SQLite). Fingerprints dedupe; status
+<code>open</code> → <code>fixed</code> when the regression test passes.</p>
+<hr>
+<h2 id="7-submitting-a-pr"><a class="header" href="#7-submitting-a-pr">7. Submitting a PR</a></h2>
+<ol>
+<li><code>git push origin your-branch</code> → open a PR on
+<code>https://opencommit.eu/MagicZhang/fichub</code> (or the GitHub mirror).</li>
+<li><strong>Describe what changed and why</strong>, and paste the test/QA output.</li>
+<li>CI runs: build, backend tests, frontend tests + coverage, docs EPUB
+build. Make them green.</li>
+<li>Expect review feedback. Small, well-tested PRs merge fast.</li>
+</ol>
+<hr>
+<h2 id="8-where-things-live-feature-cheat-sheet"><a class="header" href="#8-where-things-live-feature-cheat-sheet">8. Where things live (feature cheat-sheet)</a></h2>
+<p>|| Feature | Backend | Frontend |
+||———|———|–––––|
+|| Download/export | <code>src/routes/download.rs</code>, <code>src/epub/</code> | <code>src/routes/+page.svelte</code> (Download tab) |
+|| Search | <code>src/routes/search.rs</code> (+ pgvector) | <code>searching.md</code> docs, search page |
+|| Bookmarks | <code>src/routes/bookmarks.rs</code> | <code>src/routes/bookmarks/*</code> |
+|| Ratings/reviews | <code>src/routes/ratings.rs</code> | story page components |
+|| Comments | <code>src/routes/comments.rs</code> | <code>src/routes/+page.svelte</code> comments |
+|| <strong>Forum</strong> | <code>src/routes/forum.rs</code>, <code>forum_core/</code> crate, <code>src/server.rs</code> forum routes | <code>src/routes/forum/*</code> (<code>/forum</code>, board, search, moderate, metamod) |
+|| Recommendations | <code>src/routes/recs.rs</code>, <code>rec-engines/</code> | Recommendations tab |
+|| <strong>Progression</strong> | <code>src/services/progression.rs</code>, <code>src/routes/progression.rs</code> | <code>src/routes/features/</code>, <code>src/lib/api/theme.ts</code> |
+|| <strong>Recipes</strong> | <code>src/services/recipes.rs</code>, <code>src/routes/recipes.rs</code> | <code>src/routes/settings/recipes/</code> |
+|| <strong>Themes</strong> | <code>src/routes/social.rs</code> (PUT /api/me/theme) | <code>src/lib/themes/</code>, <code>src/routes/settings/theme/</code> |
+|| Admin | <code>src/routes/admin.rs</code> | <code>src/routes/admin/*</code> |
+|| Scraping | <code>src/scrape/</code>, <code>scrapers/</code> | — |
+|| Self-healing | <code>src/heal/</code> | admin UI |
+|| Docs | <code>docs/</code> | served at <code>/docs/</code> |</p>
+<hr>
+<h2 id="9-contributing-to-these-docs"><a class="header" href="#9-contributing-to-these-docs">9. Contributing to these docs</a></h2>
+<p>The docs are an <strong>mdBook</strong>. To change them:</p>
+<pre><code class="language-bash">cd docs
+# edit src/*.md (add a chapter: create the .md + add it to SUMMARY.md)
+mdbook build          # produces book/html + book/epub
+bash build.sh         # also copies HTML into frontend/static/docs + build/docs
+</code></pre>
+<p>Then commit <code>docs/src/*</code> <strong>and</strong> the regenerated <code>frontend/static/docs/*</code>.</p>
+<p>Style guide: friendly, plain language, no emoji (a few UI glyphs like ♡ or →
+that name real on-screen elements are fine), zero-PII, aimed at non-technical
+readers. The <code>docs/src/</code> chapters are the user-facing docs; the consolidated
+planning/design docs live in <code>docs/brainstorm-*.md</code>.</p>
+<hr>
+<h2 id="10-mental-models-that-help"><a class="header" href="#10-mental-models-that-help">10. Mental models that help</a></h2>
+<ul>
+<li><strong>The site is a cache + export machine first, a community second.</strong>
+Scrape → store body → export on demand. Social features sit on top.</li>
+<li><strong>The scraper crate is shared.</strong> Improvements to <code>scrapers/</code> benefit
+every consumer (and it’s published on crates.io — good practice for
+public Rust APIs).</li>
+<li><strong>Determinism is sacred.</strong> Tests must be runnable locally, no network
+dependence. Fixtures, not live scrapes.</li>
+<li><strong>Read the docs before guessing.</strong> <code>docs/brainstorm-01-system-overview.md</code>
+is the full system spec (architecture, schema, endpoints, design notes);
+<code>docs/brainstorm-02-roadmap-status.md</code> is the canonical plan; <code>docs/AGENTS.md</code>
+is the agent-rules file (also useful for humans!).</li>
+</ul>
+<hr>
+<h2 id="11-getting-help"><a class="header" href="#11-getting-help">11. Getting help</a></h2>
+<ul>
+<li><strong>Repo</strong>: https://opencommit.eu/MagicZhang/fichub (public mirror on
+GitHub too)</li>
+<li><strong>Issues/roadmap</strong>: see <code>docs/brainstorm-02-roadmap-status.md</code>
+(shipped / in-flight / prioritized suggestions)</li>
+<li><strong>Community</strong>: Discord invite in <code>docs/src/faq.md</code></li>
+</ul>
+<p>Welcome aboard — happy hacking!</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="v3-customization-spec"><a href="#v3-customization-spec" class="header">v3 Customization Spec</a></h1>
+<hr>
+<h2 id="11-extension-platform-v31"><a class="header" href="#11-extension-platform-v31">11. Extension Platform (v3.1)</a></h2>
+<p>Builds on the progression system to let users create, share, and compose custom recommenders, themes, and layouts.</p>
+<h3 id="111-the-power-ladder"><a class="header" href="#111-the-power-ladder">11.1 The Power Ladder</a></h3>
+<p>Every customization surface offers escalating tiers with different safety + resource envelopes:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Tier</th><th>What the user provides</th><th>Runs where</th><th>Risk</th><th>Resource control</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>1. Config</strong></td><td>Pick options / weights</td><td>Our code</td><td>None</td><td>Free</td></tr>
+<tr><td><strong>2. Recipe</strong></td><td>A JSON composition of existing parts</td><td>Our code</td><td>None</td><td>Free, cached</td></tr>
+<tr><td><strong>3. Script</strong></td><td>A small scoring function (WASM)</td><td>Sandbox on-host</td><td>Medium</td><td>Fuel + memory metering</td></tr>
+<tr><td><strong>4. Service</strong></td><td>A URL implementing a protocol</td><td>Their server</td><td>Low</td><td>Timeout + circuit breaker + cache</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>The key move:</strong> the most powerful tier (Service) is the cheapest for us because compute lives on the user’s machine. The safest tiers (Config/Recipe) cover 90% of what people actually want.</p>
+<h3 id="112-recipe-builder-p6"><a class="header" href="#112-recipe-builder-p6">11.2 Recipe Builder (P6)</a></h3>
+<p>Most users don’t want to write code — they want to tune. A recipe is a named blend of existing strategies:</p>
+<pre><code class="language-json">{
+  "name": "dark-fic-finder",
+  "blend": { "cooccur": 0.3, "tag_graph": 0.4, "embeddings": 0.3 },
+  "filters": { "min_words": 30000, "exclude_warnings": ["Major Character Death"] },
+  "boost": { "tag": "Dark Harry Potter", "weight": 1.5 }
+}
+</code></pre>
+<p>This is a <code>REC_STRATEGIES</code> weight set + filters — it runs through the existing RRF ranker with zero new engine code. It’s a data row, so it’s trivially shareable and impossible to abuse.</p>
+<p><strong>DB:</strong> <code>user_recipes</code> table (id, user_id, name, description, blend JSONB, filters JSONB, boost JSONB, curator_prior, is_active, is_public, installs, timestamps).</p>
+<p><strong>Feature gates:</strong> recipes.create (L4), recipes.publish (L6), recipes.gallery (L4).</p>
+<h3 id="113-plugin-manifest-p7"><a class="header" href="#113-plugin-manifest-p7">11.3 Plugin Manifest (P7)</a></h3>
+<p>One table for all shareable objects — recipes, themes, layouts, views:</p>
+<pre><code class="language-json">{
+  "kind": "recipe" | "theme" | "layout" | "view",
+  "slug": "dark-fic-finder",
+  "name": "Dark Fic Finder",
+  "author": { "id": 42, "name": "..." },
+  "version": 3,
+  "tier": "recipe",
+  "gate": { "level": 6 },
+  "payload": { ... },
+  "stats": { "installs": 128, "rating": 0.31 }
+}
+</code></pre>
+<p><strong>DB:</strong> <code>extensions</code> table (id, kind, slug, name, description, author_id, version, tier, gate_level, payload JSONB, stats JSONB, timestamps).</p>
+<h3 id="114-theme-design-tokens-p8"><a class="header" href="#114-theme-design-tokens-p8">11.4 Theme Design Tokens (P8)</a></h3>
+<p>Themes as data, not code — CSS custom properties:</p>
+<pre><code class="language-css">:root {
+  --fh-accent: #7c5cff;  --fh-bg: #0f1117;  --fh-surface: #171a23;
+  --fh-text: #e8eaf0;    --fh-muted: #8a90a2; --fh-radius: 12px;
+  --fh-font: "Inter";    --fh-density: 1;
+}
+</code></pre>
+<p>Theme = a JSON blob of token overrides. Import/export/share as easily as a recipe.</p>
+<p><strong>Presets:</strong> Default Dark, Default Light, High Contrast, Sepia, Dyslexia-Friendly.</p>
+<p><strong>Reader theme</strong> is separate from app theme (font, width, line height).</p>
+<p><strong>Safety:</strong> themes are token values only, never raw CSS — no injection surface.</p>
+<h3 id="115-resource-guardrails"><a class="header" href="#115-resource-guardrails">11.5 Resource Guardrails</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Threat</th><th>Guardrail</th></tr>
+</thead>
+<tbody>
+<tr><td>Slow/dead user sidecar</td><td>Timeout → fallback; circuit breaker</td></tr>
+<tr><td>Popular engine hogging compute</td><td>Aggressive caching → promote to precomputed</td></tr>
+<tr><td>Global pipeline pollution</td><td>User engines on-demand only, never in batch</td></tr>
+<tr><td>Arbitrary code on host</td><td>Prefer Config/Recipe/Service; WASM gets fuel+memory metering</td></tr>
+<tr><td>Call spam</td><td>Per-user-recommender hourly budget via rate limiter</td></tr>
+<tr><td>Theme injection</td><td>Token-values-only; sanitize raw CSS</td></tr>
+<tr><td>Marketplace abuse</td><td>Level/role gates + shadow-run review</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="116-build-order"><a class="header" href="#116-build-order">11.6 Build Order</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Phase</th><th>Deliverable</th><th>Status</th></tr>
+</thead>
+<tbody>
+<tr><td></td><td><strong>P1</strong></td><td>DB migrations, XP engine, feature registry, can() gate</td></tr>
+<tr><td></td><td><strong>P2</strong></td><td>Ability Tree UI + notifications + onboarding</td></tr>
+<tr><td></td><td><strong>P3</strong></td><td>Theme + layout customization backend</td></tr>
+<tr><td></td><td><strong>P4</strong></td><td>Widget-composed home dashboard</td></tr>
+<tr><td></td><td><strong>P5</strong></td><td>Custom Views + admin feature editor</td></tr>
+<tr><td></td><td><strong>P6</strong></td><td>Recipe Builder + plugin manifest</td></tr>
+<tr><td></td><td><strong>P7</strong></td><td>Theme design tokens + presets + import/export</td></tr>
+<tr><td></td><td><strong>P8</strong></td><td>Unified extension marketplace (<code>/marketplace</code>)</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>P8 detail (shipped):</strong> <code>migrations/014_extensions.sql</code> upgrades the baseline
+<code>extensions</code> table in place — wider kind set (<code>skin</code>, <code>saved_search</code>, <code>profile</code>
+join <code>recipe</code>/<code>theme</code>/<code>layout</code>/<code>view</code>), <strong>per-category</strong> unique slugs,
+<code>is_public</code> / <code>is_verified</code> flags, first-class <code>installs</code> / <code>rating</code> columns
+(<code>stats</code> jsonb kept for legacy readers), restored id sequence, plus
+<code>extension_installs</code> (dedup per user) and <code>extension_ratings</code> (1–5 stars).
+Backend: <code>services/extensions.rs</code> + <code>routes/extensions.rs</code> mounted at
+<code>/api/extensions</code> — publish (trust-gated TL2+), gallery with kind/search
+filters, idempotent install, ratings with running average, remix into a
+private draft. Publishing to the existing recipes and skins galleries is now
+gated the same way (<code>services::trust::PUBLISH_MIN_TRUST</code>).</p>
+<h3 id="117-deferred-roadmap"><a class="header" href="#117-deferred-roadmap">11.7 Deferred (Roadmap)</a></h3>
+<p>These are worth considering but not yet:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Feature</th><th>Why deferred</th></tr>
+</thead>
+<tbody>
+<tr><td>Multi-tenant sidecars (user-hosted rec engines)</td><td>Needs outbound HTTP safety; compute on user’s server</td></tr>
+<tr><td>WASM sandbox</td><td>Heavy dependency (wasmtime); fuel+memory metering needed; only if demand proves out</td></tr>
+<tr><td><del>Full marketplace with ratings/reviews</del></td><td>✅ Shipped 2026-08-27 — see P8 above</td></tr>
+<tr><td>Nav/layout editor (drag-drop)</td><td>Partially built; iterate on existing widget dashboard</td></tr>
+<tr><td>Layout presets (mobile vs desktop)</td><td>Nice but low priority; users can save multiple layouts via user_views</td></tr>
+<tr><td>Community recommender leaderboard</td><td>Needs rec_impressions data to accumulate first</td></tr>
+<tr><td>Recipe → precomputed promotion</td><td>Only when shared recipes get popular enough to warrant batch compute</td></tr>
+<tr><td>Per-surface rec recipes</td><td>Home vs fic-page vs Next-Up each use different blends; extends recipe activation</td></tr>
+<tr><td>Rec subscription</td><td>Follow another user’s recipe, auto-propagate updates on change</td></tr>
+<tr><td>Theme remixing</td><td>One-click fork from gallery, tweak, re-share</td></tr>
+<tr><td>Reduced-motion accessibility preset</td><td>CSS prefers-reduced-motion; ships alongside high-contrast</td></tr>
+<tr><td>Custom shelf colors and icons</td><td>Visual library organization; extends shelves metadata</td></tr>
+<tr><td>Command palette for customization</td><td>Universal launcher for saved views, themes, recipes (extends Ctrl+K)</td></tr>
+<tr><td>User-remappable keyboard shortcuts</td><td>Exportable as shareable JSON profiles</td></tr>
+<tr><td>Skip locked widgets on layout install</td><td>Graceful degradation when installing shared layouts</td></tr>
+<tr><td>Blind-date as unlockable widget</td><td>Extends existing Blind Date to widget registry</td></tr>
+<tr><td>Forum posting level gate</td><td>Anti-spam for fresh accounts; configurable threshold</td></tr>
+<tr><td>Daily quests + reading streaks</td><td>Gamified engagement loop; feeds XP toward unlocks</td></tr>
+<tr><td>Rec explainability</td><td>Strategy name + reason on every recommendation card</td></tr>
+<tr><td>People-like-you row</td><td>Taste clusters → explain recommendations by group</td></tr>
+<tr><td>Curator prior personal slider</td><td>User-adjustable taste shaping (exposes REC_CURATOR_PRIOR)</td></tr>
+<tr><td>Customization profile export</td><td>One portable JSON backup of all prefs, themes, recipes, layouts</td></tr>
+<tr><td>Feature toggle API</td><td>Power users script setup via API tokens</td></tr>
+<tr><td><del>Curator-verified badge</del></td><td>✅ <code>is_verified</code> column + marketplace flag shipped (2026-08-27); curator review UI still pending</td></tr>
+<tr><td><del>Level gate + curator review for publishing</del></td><td>✅ Publishing gated at trust TL2 across recipes/skins/extensions (2026-08-27)</td></tr>
+<tr><td>Widget marketplace with live previews</td><td>Preview before install; render from layout JSON</td></tr>
+<tr><td>Rec shown-to-engaged ratio</td><td>Social proof per shared recipe from rec_impressions</td></tr>
+<tr><td>Per-feature notification granularity</td><td>Mute notifications for features you disabled</td></tr>
+<tr><td>Circuit breaker for dead sidecars</td><td>Fallback to cooccur when user sidecar is unreachable</td></tr>
+</tbody>
+</table>
+</div>
+<hr>
+<h2 id="12-open-questions"><a class="header" href="#12-open-questions">12. Open Questions</a></h2>
+<ol>
+<li><strong>Sidecar compute location:</strong> User’s server (Tier 4) recommended over on-host — zero RAM cost to M720q.</li>
+<li><strong>Recipe scope:</strong> Per-user global or per-surface (home vs fic-page)? Recommendation: global for simplicity; per-surface (#106) as future extension.</li>
+<li><strong>Marketplace moderation:</strong> Shadow-run engagement as gate, or human curator review, or both.</li>
+<li><strong>XP from customization:</strong> “Your theme was installed 50 times → reputation” — makes customization itself a progression loop.</li>
+<li><strong>Manifest degradation:</strong> Skip missing features or show locked teasers (aspiration pattern).</li>
+<li><strong>Rec subscription propagation:</strong> When a followed recipe updates, do followers auto-get the new blend, or is it a snapshot?</li>
+<li><strong>Forum level gate threshold:</strong> Configurable per-instance (default L3) or fixed site-wide?</li>
+<li><strong>Daily quest scope:</strong> Reading goals only, or mixed (read + bookmark + rate + comment)?</li>
+</ol>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+        <script src="fichub-header-2753af81.js"></script>
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+
+    </div>
+    </body>
+</html>
