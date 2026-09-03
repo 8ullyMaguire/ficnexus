@@ -5,6 +5,7 @@
   import CommandPalette from '$lib/components/CommandPalette.svelte';
   import HelpModal from '$lib/components/HelpModal.svelte';
   import ForumBottomNav from '$lib/components/ForumBottomNav.svelte';
+  import ConsentToast from '$lib/ui/consent/ConsentToast.svelte';
   import { onMount } from 'svelte';
   import { applyTheme, loadTheme } from '$lib/themes/apply.js';
   import { initI18n } from '$lib/i18n/index.svelte';
@@ -40,6 +41,7 @@
 
 <HelpModal />
 <CommandPalette />
+<ConsentToast />
 
 <style>
   .archive-shell {
