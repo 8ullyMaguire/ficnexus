@@ -98,6 +98,11 @@ pub struct Config {
     /// Base URL for OPDS feeds (used for xml:base on relative URLs).
     /// E.g. "https://fichub.example.com". If empty, no xml:base is set.
     pub opds_base_url: Option<String>,
+    /// Public origin of this deployment (e.g. "https://fichub.example.com").
+    /// Used to build absolute URLs in sitemaps. Falls back to
+    /// `opds_base_url`, then "http://localhost:8000".
+    pub public_origin: String,
+
     // ── Tiered rate limiting (anti-bot) ──────────────────────────────
     /// Capacity (burst tokens) of the download-tier bucket per IP.
     pub rl_download_capacity: f64,
@@ -525,6 +530,15 @@ impl Config {
             .ok()
             .filter(|s| !s.is_empty());
 
+        // ── Public origin (sitemaps etc.) ───────────────────────────
+        // PUBLIC_BASE_URL wins; falls back to OPDS_BASE_URL (deployments
+        // usually set it to the same origin), then localhost.
+        let public_origin = std::env::var("PUBLIC_BASE_URL")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .or_else(|| opds_base_url.clone())
+            .unwrap_or_else(|| "http://localhost:8000".to_string());
+
         // ── Tiered rate limiting (anti-bot) ─────────────────────────
         // Tiers are (capacity, flow-tokens/sec). Defaults implement:
         //   download: 10 burst, refills 60/hr  = 60 downloads/hour, burst 10
@@ -860,6 +874,7 @@ impl Config {
             wayback_cdx_rate_limit_per_sec,
             opds_shelf_token,
             opds_base_url,
+            public_origin,
             rl_download_capacity,
             rl_download_flow,
             rl_auth_capacity,

@@ -289,6 +289,7 @@ mod tests {
             wayback_cdx_rate_limit_per_sec: 1,
             opds_shelf_token: "fichub".into(),
             opds_base_url: None,
+            public_origin: "http://localhost:8000".into(),
             rl_download_capacity: 10.0,
             rl_download_flow: 60.0 / 3600.0,
             rl_auth_capacity: 10.0,

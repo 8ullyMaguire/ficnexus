@@ -62,6 +62,7 @@ pub mod pseuds;
 pub mod recipes;
 pub mod reactions;
 pub mod saved_search;
+pub mod sitemap;
 pub mod skins;
 pub mod extensions;
 

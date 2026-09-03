@@ -350,6 +350,10 @@ async fn build_router(state: Arc<AppState>) -> Router {
         .route("/cache/{etype}/{url_id}/{fname}", get(routes::cache_download::download_with_hash))
         .route("/cache/{etype}/{url_id}", get(routes::cache_download::download_or_export))
 
+        // Sitemaps (SEO)
+        .route("/sitemaps/index.xml", get(routes::sitemap::sitemap_index_handler))
+        .route("/sitemaps/works-{shard}.xml", get(routes::sitemap::sitemap_works_handler))
+
         // Proof-of-work challenge for shadowbanned clients
         .route("/api/pow/challenge", get(routes::pow::challenge_handler))
         .route("/api/pow/solve", axum::routing::post(routes::pow::solve_handler))
