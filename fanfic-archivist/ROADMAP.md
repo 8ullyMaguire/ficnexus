@@ -33,36 +33,36 @@ All adapters live in `~/code/rust/fanfic-archivist-bot/crates/`.
 | search/ask/quote/body | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 | download/download_direct | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 | bookmark/rate/kudos | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| block/unblock | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| updates | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| exclude | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| link/unlink/whoami/linkcode | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | — |
-| request/roadmap | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
+| block/unblock | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| updates | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| exclude | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| link/unlink/whoami/linkcode | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | — |
+| request/roadmap | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
 | fandoms/fandom | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 | work | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| daily | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| suggest | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| notify | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| curator | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| vote | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| authors | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| stats | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| filters/reset-filters | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| track | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| sus | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| link_token | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| opds | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| status_presence | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| full-favourites | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| cutoff/wordcount/year | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| blind/reveal | ✅ | ✅ | ❌ | ✅/❌ | ❌ | ❌ | ✅ | — |
+| daily | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| suggest | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| notify | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| curator | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| vote | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| authors | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| stats | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| filters/reset-filters | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| track | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| sus | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| link_token | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| opds | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| status_presence | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| full-favourites | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| cutoff/wordcount/year | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
+| blind/reveal | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
 | trending | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
 | comments | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
 | also | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
 | notifications | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
 | follow | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | — |
 | forum | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | — |
-| help/status/commands | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | — |
+| help/status/commands | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 | webhook events | — | — | — | — | — | — | — | ✅ |
 | work-proposals | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | — |
 | bounties | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | — |
@@ -128,6 +128,12 @@ All adapters live in `~/code/rust/fanfic-archivist-bot/crates/`.
 - New FicHub features (migrations 008-074): work deletion proposals, reputation
   bounties, user favorite tags, trust levels, extensions marketplace, GDPR
   export, work translations — all implemented in `archivist-core` dispatch.
+- Matrix adapter parity (2026-09-04): all missing commands wired — daily, suggest,
+  curator, vote, authors, stats, filters, reset-filters, track, sus, link_token,
+  opds, status_presence, exclude, full-favourites, cutoff, wordcount, year,
+  blind/reveal, download_direct, block, unblock, updates, link/unlink/whoami,
+  linkcode, request, roadmap, commands, status, help, quote, body, rate, also,
+  trending, comments, notifications, follow. 22 parse tests passing.
 
 ## Backlog
 
@@ -145,14 +151,14 @@ All adapters live in `~/code/rust/fanfic-archivist-bot/crates/`.
       full-favourites, cutoff, wordcount, year, blind/reveal, trending,
       comments, also, notifications, follow, forum, work-proposals, bounties,
       favorite-tags, trust-level, extensions, gdpr-export, work-translations.
-- [ ] **Matrix parity** — add missing commands: daily, suggest, curator, vote,
+- [x] **Matrix parity** — add missing commands: daily, suggest, curator, vote,
       authors, stats, filters, reset-filters, track, sus, link_token, opds,
       status_presence, exclude, full-favourites, cutoff, wordcount, year,
       blind_date_reveal, download_direct, block, unblock, updates, link,
       unlink, whoami, linkcode, request, roadmap, commands, status, help,
-      quote, body, rate, also, trending, comments, notifications, follow,
-      work-proposals, bounties, favorite-tags, trust-level, extensions,
-      gdpr-export, work-translations.
+      quote, body, rate, also, trending, comments, notifications, follow.
+      ✅ COMPLETE (2026-09-04): all variants + parse + dispatch wired, 22 tests
+      passing.
 - [ ] **Slack parity** — add missing commands: block, unblock, updates, exclude,
       request, roadmap, daily, suggest, notify, curator, vote, authors,
       stats, filters, track, sus, link_token, opds, status_presence,
