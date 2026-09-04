@@ -139,23 +139,24 @@
   });
 </script>
 
-<div class="archive-home">
-  <!-- Compact download bar -->
-  <div class="dl-bar">
+  <div class="archive-home">
+  <!-- Prominent paste-URL bar (above the fold) -->
+  <div class="dl-bar dl-bar--prominent">
     <form class="dl-form" onsubmit={(e) => { e.preventDefault(); handleDownload(); }}>
-      <label class="dl-label" for="archive-dl-url">Download a fic</label>
+      <label class="dl-label" for="archive-dl-url">Read or download a fic</label>
       <div class="dl-row">
         <input
           id="archive-dl-url"
           class="dl-input"
           type="url"
-          placeholder="Paste a fanfiction URL…"
+          placeholder="Paste a fanfiction URL (AO3, FFN, Wattpad, …)…"
           bind:value={dlUrl}
           onkeydown={onDlKeydown}
           disabled={dlLoading}
+          required
         />
-        <button class="dl-btn" type="submit" disabled={dlLoading}>
-          {#if dlLoading}…{:else}Download{/if}
+        <button class="dl-btn" type="submit" disabled={dlLoading || !dlUrl.trim()}>
+          {#if dlLoading}…{:else}Go{/if}
         </button>
       </div>
     </form>
@@ -164,6 +165,31 @@
   <div class="archive-columns">
     <!-- ─── Main column ──────────────────────────────────────────── -->
     <div class="archive-main-col">
+      <!-- Trending This Week — moved above personalized widgets -->
+      <section class="blurb-section trending-main">
+        <h2 class="section-heading">
+          <span>Trending This Week</span>
+          <a class="see-all" href="/trending">See all →</a>
+        </h2>
+        {#if trendingLoading}
+          <div class="skeleton-block">{#each Array(5) as _}<div class="skeleton-row"><span class="skeleton-line w80"></span></div>{/each}</div>
+        {:else if trendingError}
+          <p class="empty-msg">{trendingError}</p>
+        {:else if trendingItems.length === 0}
+          <p class="empty-msg">Nothing trending yet.</p>
+        {:else}
+          <ol class="trending-list">
+            {#each trendingItems as item (item.url_id)}
+              <li class="trending-item">
+                <a class="trending-title" href="/works/{item.url_id}">{item.title}</a>
+                <span class="trending-byline">by {item.author}</span>
+                <span class="trending-meta">{item.downloads} downloads · {item.words.toLocaleString()} words</span>
+              </li>
+            {/each}
+          </ol>
+        {/if}
+      </section>
+
       <!-- Continue reading (hidden when logged out or empty) -->
       {#if auth.isLoggedIn && !historyLoading && history.length > 0}
         <section class="blurb-section continue-reading">
@@ -245,36 +271,6 @@
     <!-- ─── Sidebar ──────────────────────────────────────────────── -->
     <aside class="archive-sidebar">
       <div class="sidebar-box">
-        <h2 class="sidebar-heading">Trending This Week</h2>
-        {#if trendingLoading}
-          <div class="skeleton-block">
-            {#each Array(4) as _}
-              <div class="skeleton-row">
-                <span class="skeleton-line w80"></span>
-              </div>
-            {/each}
-          </div>
-        {:else if trendingError}
-          <p class="empty-msg">{trendingError}</p>
-        {:else if trendingItems.length === 0}
-          <p class="empty-msg">Nothing trending yet.</p>
-        {:else}
-          <ol class="trending-list">
-            {#each trendingItems as item (item.url_id)}
-              <li class="trending-item">
-                <a class="trending-title" href="/works/{item.url_id}">{item.title}</a>
-                <span class="trending-byline">by {item.author}</span>
-                <span class="trending-meta">{item.downloads} downloads · {item.words.toLocaleString()} words</span>
-              </li>
-            {/each}
-          </ol>
-          <div class="sidebar-more">
-            <a href="/trending">See all trending →</a>
-          </div>
-        {/if}
-      </div>
-
-      <div class="sidebar-box">
         <h2 class="sidebar-heading">Browse</h2>
         <ul class="browse-links">
           <li><a href="/search">Advanced Search</a></li>
@@ -295,11 +291,27 @@
     gap: 1.2em;
   }
 
-  /* ── Download bar ──────────────────────────────────────────────── */
+    /* ── Download bar ──────────────────────────────────────────────── */
   .dl-bar {
     background: var(--archive-bg-raised, #f5f5f5);
     border: 1px solid var(--archive-border, #dddddd);
     padding: 0.8em 1em;
+  }
+
+  /* Prominent homepage variant — wider input, bigger button */
+  .dl-bar--prominent .dl-input {
+    font-size: 1em;
+    padding: 0.6em 0.8em;
+    width: 100%;
+    max-width: 38rem;
+    border: 1px solid var(--archive-border, #ccc);
+    border-radius: 0.3em;
+  }
+
+  .dl-bar--prominent .dl-btn {
+    font-size: 1em;
+    font-weight: 700;
+    padding: 0.6em 1.2em;
   }
 
   .dl-form {

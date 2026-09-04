@@ -15,8 +15,8 @@ Incremental improvements to the current codebase (no rewrite), ordered by impact
 - [x] 1. Meta tags — commit 90020f1 (`works/[urlId]` full OG/Twitter/canonical set; homepage, search, fandoms, trending, tags, authors titles)
 - [x] 2. Sitemap + robots.txt — commit 9a292a9 (`/sitemaps/index.xml`, `/sitemaps/works-{shard}.xml` × 36, `PUBLIC_BASE_URL` config, `robots.txt` in `frontend/static/`)
 - [x] 3. Cookie consent toast — commit 9fa5086 (`consent.svelte.ts` store + `ConsentToast.svelte` in ArchiveLayout; accept → 1-year `fh_consent` cookie, reject → sessionStorage only, links `/privacy`)
-- [ ] 4. Anonymous library device cookie — gate `fh_dev` on `consentGranted()`; merge into account on register/login
-- [ ] 5. Homepage focus — paste-URL box + trending above dashboard widgets
+- [x] 4. Anonymous library device cookie — commit 7049cb1 (backend signs + emits `Set-Cookie: fh_dev=…`; frontend mirrors; merge on login/register; 6 tests including Set-Cookie roundtrip + tamper rejection)
+- [x] 5. Homepage focus — paste-URL bar above the fold (`dl-bar--prominent`), Trending moved to top of main column, Browse sidebar trimmed
 
 ## Notes
 
