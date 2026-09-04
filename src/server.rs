@@ -354,6 +354,14 @@ async fn build_router(state: Arc<AppState>) -> Router {
         .route("/sitemaps/index.xml", get(routes::sitemap::sitemap_index_handler))
         .route("/sitemaps/works-{shard}.xml", get(routes::sitemap::sitemap_works_handler))
 
+        // Anonymous device library (Tier-2)
+        .route("/api/v1/device/library", get(routes::device_library::get_device_library))
+        .route("/api/v1/device/bookmark", post(routes::device_library::add_device_bookmark))
+        .route("/api/v1/device/bookmark/{work_id}", delete(routes::device_library::remove_device_bookmark))
+        .route("/api/v1/device/follow", post(routes::device_library::add_device_follow))
+        .route("/api/v1/device/follow", delete(routes::device_library::remove_device_follow))
+        .route("/api/v1/device/merge", post(routes::device_library::merge_device_library))
+
         // Proof-of-work challenge for shadowbanned clients
         .route("/api/pow/challenge", get(routes::pow::challenge_handler))
         .route("/api/pow/solve", axum::routing::post(routes::pow::solve_handler))

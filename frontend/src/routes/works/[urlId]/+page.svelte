@@ -6,6 +6,7 @@
  import { addBookmark, listBookmarks, removeBookmark, rateWork, getRatings, giveKudos, removeKudos, getKudos, downloadAuthorWorks, downloadSeries, getChapterTranslations, saveChapterTranslations, follow, unfollow, checkWorkFollow, markFollowSeen, refreshFic } from '$lib/api/social';
  import { sendToKindle } from '$lib/api/kindle';
  import { auth } from '$lib/stores/auth.svelte';
+import { isDeviceBookmarked, toggleDeviceBookmark } from '$lib/stores/deviceLibrary.svelte';
  import { t } from '$lib/i18n/index.svelte';
  import { getPref, setPref } from '$lib/prefs';
  import CommentSection from '$lib/components/CommentSection.svelte';
@@ -368,31 +369,40 @@ import TranslatePageButton from '$lib/components/TranslatePageButton.svelte';
  }
  }
 
- async function loadBookmarkStatus() {
- if (!auth.isLoggedIn || !workId) return;
- try {
- const res = await listBookmarks();
- if (res.err === 0) {
- isBookmarked = res.bookmarks.some((b) => b.work_id === workId);
- }
- } catch { /* ignore */ }
- }
+   async function loadBookmarkStatus() {
+  if (!workId) return;
+  if (auth.isLoggedIn) {
+    try {
+      const res = await listBookmarks();
+      if (res.err === 0) {
+        isBookmarked = res.bookmarks.some((b) => b.work_id === workId);
+      }
+    } catch { /* ignore */ }
+  } else {
+    isBookmarked = isDeviceBookmarked(workId);
+  }
+  }
 
- async function toggleBookmark() {
- if (!auth.isLoggedIn || savingBookmark || !workId) return;
- savingBookmark = true;
- try {
- if (isBookmarked) {
- await removeBookmark(workId);
- isBookmarked = false;
- } else {
- await addBookmark(workId, bookmarkNotes || undefined, bookmarkPrivate);
- isBookmarked = true;
- bookmarkNotes = '';
- }
- } catch { /* ignore */ }
- savingBookmark = false;
- }
+  async function toggleBookmark() {
+  if (savingBookmark || !workId) return;
+  savingBookmark = true;
+  try {
+    if (auth.isLoggedIn) {
+      if (isBookmarked) {
+        await removeBookmark(workId);
+        isBookmarked = false;
+      } else {
+        await addBookmark(workId, bookmarkNotes || undefined, bookmarkPrivate);
+        isBookmarked = true;
+        bookmarkNotes = '';
+      }
+    } else {
+      await toggleDeviceBookmark(workId);
+      isBookmarked = isDeviceBookmarked(workId);
+    }
+  } catch { /* ignore */ }
+  savingBookmark = false;
+  }
 
  async function loadRatings() {
  if (!workId) return;

@@ -1,6 +1,7 @@
 // Auth store using Svelte 5 runes (.svelte.ts extension required)
 
 import { getMe, login, logout, register, setToken } from '$lib/api/social';
+import { mergeOnLogin } from '$lib/stores/deviceLibrary.svelte';
 import type { User } from '$lib/api/social-types';
 
 // Last-known signed-in user, persisted so the app can keep working (and keep
@@ -109,10 +110,12 @@ class AuthStore {
     this.loading = true;
     try {
       const res = await login(username, password, rememberMe);
-      if (res.err === 0 && res.user) {
+            if (res.err === 0 && res.user) {
         this.user = res.user;
         cacheUser(res.user);
         this.loading = false;
+        // Fold any anonymous device-library bookmarks/follows into the account.
+        void mergeOnLogin();
         return true;
       }
       this.loading = false;
@@ -132,10 +135,12 @@ class AuthStore {
     this.loading = true;
     try {
       const res = await register(username, password, email, inviteCode);
-      if (res.err === 0 && res.user) {
+            if (res.err === 0 && res.user) {
         this.user = res.user;
         cacheUser(res.user);
         this.loading = false;
+        // Fold any anonymous device-library bookmarks/follows into the account.
+        void mergeOnLogin();
         return true;
       }
       this.loading = false;
