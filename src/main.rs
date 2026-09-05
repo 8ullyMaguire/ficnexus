@@ -1,3 +1,4 @@
+pub mod activitypub;
 pub mod body_cache;
 pub mod cache;
 pub mod config;
@@ -11,24 +12,23 @@ pub mod heal;
 pub mod ingest;
 pub mod limiter;
 pub mod modlog;
+pub mod progression;
 pub mod recommender;
 pub mod routes;
 pub mod scrape;
 pub mod search;
 pub mod server;
 pub mod services;
-pub mod activitypub;
 pub mod tags;
+pub mod trending;
 pub mod works;
-pub mod progression;
 
 /// Matches `@username` tokens (FicNexus usernames: 2-32 alphanumeric/underscore)
 /// used by forum mention notifications. Compile once at startup.
 /// NOTE: no look-around — `regex_lite` doesn't support it. The word-boundary
 /// check for `foo@bar` is done in `extract_mentions` (forum.rs).
 pub static MENTION_RE: std::sync::LazyLock<regex_lite::Regex> = std::sync::LazyLock::new(|| {
-    regex_lite::Regex::new(r"@([A-Za-z0-9_]{2,32})\b")
-        .expect("valid mention regex")
+    regex_lite::Regex::new(r"@([A-Za-z0-9_]{2,32})\b").expect("valid mention regex")
 });
 
 #[tokio::main]
