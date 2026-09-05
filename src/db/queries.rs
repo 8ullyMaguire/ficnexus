@@ -3791,7 +3791,7 @@ pub async fn save_user_format_preferences(
         ));
     }
 
-    let formats_value = serde_json::json!(formats);
+    let _formats_value = serde_json::json!(formats);
     sqlx::query(
         "UPDATE users SET settings = jsonb_set(
             COALESCE(settings, '{}'::jsonb),

@@ -15,6 +15,74 @@ use crate::routes::auth::AuthUser;
 use crate::scrape::sites::ao3::Ao3Scraper;
 use crate::server::AppState;
 
+
+/// Result of a bulk-download bundle operation.
+/// - Single: 1 work × 1 format → stream directly (no ZIP overhead).
+/// - Bundle:  N works × M formats → ZIP with per-work subdirectories.
+pub enum DownloadBundle {
+    Single { data: Vec<u8>, filename: String, mime: &'static str },
+    Bundle { data: Vec<u8>, filename: String },
+}
+
+impl DownloadBundle {
+    pub fn into_response(self) -> (StatusCode, HeaderMap, Vec<u8>) {
+        match self {
+            DownloadBundle::Single { data, filename, mime } => {
+                let headers = HeaderMap::from_iter([
+                    (header::CONTENT_TYPE, mime.parse().unwrap()),
+                    (header::CONTENT_DISPOSITION,
+                        format!("attachment; filename=\"{}\"", filename).parse().unwrap()),
+                ]);
+                (StatusCode::OK, headers, data)
+            }
+            DownloadBundle::Bundle { data, filename } => {
+                let headers = HeaderMap::from_iter([
+                    (header::CONTENT_TYPE, "application/zip".parse().unwrap()),
+                    (header::CONTENT_DISPOSITION,
+                        format!("attachment; filename=\"{}\"", filename).parse().unwrap()),
+                ]);
+                (StatusCode::OK, headers, data)
+            }
+        }
+    }
+}
+
+/// Map user-facing format name to an export function.
+/// Formats requiring Calibre (pdf, mobi, azw3) return None.
+async fn export_one_format(
+    meta: &fanfic_scrapers::FicMetadata,
+    chapters: &[fanfic_scrapers::Chapter],
+    tmp_dir: &std::path::Path,
+    format: &str,
+) -> Option<(String, std::path::PathBuf)> {
+    match format {
+        "epub" => export::epub::create_epub(meta, chapters, tmp_dir).await.ok().map(|(p, _)| ("epub".into(), p)),
+        "html" => export::html_bundle::create_html_bundle(meta, chapters, tmp_dir).await.ok().map(|(p, _)| ("html".into(), p)),
+        "txt"  => export::txt::create_txt(meta, chapters, tmp_dir).await.ok().map(|(p, _)| ("txt".into(), p)),
+        "md"   => export::md::create_md(meta, chapters, tmp_dir).await.ok().map(|(p, _)| ("md".into(), p)),
+        "docx" => export::docx::create_docx(meta, chapters, tmp_dir).await.ok().map(|(p, _)| ("docx".into(), p)),
+        "kepub" => export::kepub::create_kepub(meta, chapters, tmp_dir).await.ok().map(|(p, _)| ("kepub".into(), p)),
+        "pdf" | "mobi" | "azw3" => {
+            tracing::debug!("format {} requires Calibre, skipping", format);
+            None
+        }
+        _ => {
+            tracing::warn!("unknown export format: {}", format);
+            None
+        }
+    }
+}
+
+/// Sanitize a string for use as a ZIP entry filename.
+fn safe_basename(title: &str, url_id: &str) -> String {
+    let s: String = title
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let s: String = s.split_whitespace().collect::<Vec<_>>().join("_");
+    if s.is_empty() { format!("work_{}", url_id) } else { s }
+}
+
 /// Query parameters for batch download requests
 #[derive(Debug, Deserialize)]
 pub struct DownloadAuthorQuery {
@@ -27,22 +95,25 @@ pub struct DownloadSeriesQuery {
     pub url: String,
 }
 
-/// Shared helper: scrape multiple work URLs into EPUBs, bundle them as a ZIP,
-/// and return the ZIP bytes + a suggested filename.
+/// Shared helper: scrape multiple work URLs, export in the given formats,
+/// and return either a single file (1 work × 1 format) or a ZIP
+/// (N works × M formats) with a suggested filename.
 ///
 /// `user_id`: when Some (authenticated download), the user's stored site
 /// credentials for each work's host are loaded and passed through the
 /// registry's `lookup_authed` login pre-pass. When None (anonymous), empty
 /// credentials are passed — login-requiring sites return AuthRequired,
 /// exactly as before this feature.
-async fn create_zip_from_works(
+async fn create_bundle_from_works(
     state: &AppState,
     work_urls: &[String],
-    zip_basename: &str,
+    basename: &str,
     user_id: Option<i32>,
-) -> Result<(Vec<u8>, String), AppError> {
+    formats: Vec<String>,
+) -> Result<DownloadBundle, AppError> {
     let tmp_dir = state.config.tmp_dir.clone();
-    let mut epub_paths: Vec<(String, std::path::PathBuf)> = Vec::new();
+    let formats = if formats.is_empty() { vec!["epub".into()] } else { formats };
+    let mut bundle_entries: Vec<(String, std::path::PathBuf)> = Vec::new();
 
     for work_url in work_urls {
         let scraper = state
@@ -83,73 +154,77 @@ async fn create_zip_from_works(
                 AppError::ScrapeError(format!("failed to fetch chapters for {}: {e}", meta.title))
             })?;
 
-        let (epub_path, _hash) = export::epub::create_epub(&meta, &chapters, &tmp_dir)
-            .await
-            .map_err(|e| {
-                AppError::ExportError(format!("failed to generate EPUB for {}: {e}", meta.title))
-            })?;
-
-        // Sanitize filename for the EPUB inside the ZIP
-        let safe_name: String = meta
-            .title
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' {
-                    c
+        // Export in each requested format.
+        let safe_name = safe_basename(&meta.title, &meta.url_id);
+        for fmt in &formats {
+            if let Some((ext, path)) = export_one_format(&meta, &chapters, &tmp_dir, fmt).await {
+                let entry_name = if formats.len() == 1 && work_urls.len() == 1 {
+                    format!("{}.{}", safe_name, ext)
                 } else {
-                    '_'
-                }
-            })
-            .collect();
-        let safe_name: String = safe_name.split_whitespace().collect::<Vec<_>>().join("_");
-        let zip_entry_name = if safe_name.is_empty() {
-            format!("work_{}.epub", meta.url_id)
-        } else {
-            format!("{}.epub", safe_name)
-        };
-
-        epub_paths.push((zip_entry_name, epub_path));
+                    format!("{}/{}.{}", safe_name, safe_name, ext)
+                };
+                bundle_entries.push((entry_name, path));
+            }
+        }
     }
 
-    // Create ZIP file from all EPUBs
+    if bundle_entries.is_empty() {
+        return Err(AppError::BadRequest(
+            "no formats available for the requested works".into(),
+        ));
+    }
+
+    // 1 work × 1 format → stream directly, no ZIP overhead.
+    if work_urls.len() == 1 && formats.len() == 1 {
+        let (entry_name, path) = bundle_entries.remove(0);
+        let data = std::fs::read(&path)
+            .map_err(|e| AppError::Internal(format!("failed to read file: {e}")))?;
+        let _ = std::fs::remove_file(&path);
+        let mime = match entry_name.rsplit('.').next().unwrap_or("") {
+            "epub"  => "application/epub+zip",
+            "html"  => "application/zip",
+            "txt"   => "text/plain",
+            "md"    => "text/markdown",
+            "docx"  => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "kepub" => "application/epub+zip",
+            _       => "application/octet-stream",
+        };
+        return Ok(DownloadBundle::Single { data, filename: entry_name, mime });
+    }
+
+    // N works × M formats → ZIP with per-work subdirectories.
     let zip_uuid = uuid::Uuid::new_v4();
     let zip_path = tmp_dir.join(format!("{}.zip", zip_uuid));
-
     let zip_file = std::fs::File::create(&zip_path)?;
     let mut zip_writer = zip::ZipWriter::new(zip_file);
 
-    for (entry_name, epub_path) in &epub_paths {
+    for (entry_name, entry_path) in &bundle_entries {
         let options = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);
         zip_writer.start_file(entry_name, options).map_err(|e| {
             AppError::Internal(format!("failed to start ZIP entry '{entry_name}': {e}"))
         })?;
-
-        let epub_data = std::fs::read(epub_path)
-            .map_err(|e| AppError::Internal(format!("failed to read EPUB file: {e}")))?;
-        zip_writer.write_all(&epub_data).map_err(|e| {
+        let data = std::fs::read(entry_path)
+            .map_err(|e| AppError::Internal(format!("failed to read file: {e}")))?;
+        zip_writer.write_all(&data).map_err(|e| {
             AppError::Internal(format!("failed to write ZIP entry '{entry_name}': {e}"))
         })?;
     }
 
-    zip_writer
-        .finish()
+    zip_writer.finish()
         .map_err(|e| AppError::Internal(format!("failed to finalize ZIP: {e}")))?;
 
-    // Clean up individual EPUB temp files
-    for (_, epub_path) in &epub_paths {
-        let _ = std::fs::remove_file(epub_path);
+    // Clean up temp files.
+    for (_, path) in &bundle_entries {
+        let _ = std::fs::remove_file(path);
     }
 
-    // Read the ZIP into memory
     let zip_data = std::fs::read(&zip_path)
-        .map_err(|e| AppError::Internal(format!("failed to read ZIP file: {e}")))?;
-
-    // Clean up the ZIP temp file
+        .map_err(|e| AppError::Internal(format!("failed to read ZIP: {e}")))?;
     let _ = std::fs::remove_file(&zip_path);
 
-    let zip_filename = format!("{}.zip", zip_basename);
-    Ok((zip_data, zip_filename))
+    let zip_filename = format!("{}.zip", basename);
+    Ok(DownloadBundle::Bundle { data: zip_data, filename: zip_filename })
 }
 
 /// GET /api/download/author?url=<author_page_url>
@@ -195,25 +270,25 @@ pub async fn download_author_handler(
         .last()
         .unwrap_or("author");
 
-    let (zip_data, zip_filename) = create_zip_from_works(
+    let formats = if let Some(uid) = auth.user_id {
+        crate::db::queries::get_user_format_preferences(&state.db, uid)
+            .await
+            .unwrap_or_else(|_| vec!["epub".to_string()])
+    } else {
+        vec!["epub".to_string()]
+    };
+
+    let bundle = create_bundle_from_works(
         &state,
         &work_urls,
         &format!("{}_works", author_name),
         auth.user_id,
+        formats,
     )
     .await?;
 
-    let headers = HeaderMap::from_iter([
-        (header::CONTENT_TYPE, "application/zip".parse().unwrap()),
-        (
-            header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{}\"", zip_filename)
-                .parse()
-                .unwrap(),
-        ),
-    ]);
-
-    Ok((StatusCode::OK, headers, Body::from(zip_data)))
+    let (status, headers, body) = bundle.into_response();
+    Ok((status, headers, Body::from(body)))
 }
 
 /// Enforce the download-tier rate limit for a batch-download request.
@@ -290,23 +365,23 @@ pub async fn download_series_handler(
         .last()
         .unwrap_or("series");
 
-    let (zip_data, zip_filename) = create_zip_from_works(
+    let formats = if let Some(uid) = auth.user_id {
+        crate::db::queries::get_user_format_preferences(&state.db, uid)
+            .await
+            .unwrap_or_else(|_| vec!["epub".to_string()])
+    } else {
+        vec!["epub".to_string()]
+    };
+
+    let bundle = create_bundle_from_works(
         &state,
         &work_urls,
         &format!("series_{}", series_id),
         auth.user_id,
+        formats,
     )
     .await?;
 
-    let headers = HeaderMap::from_iter([
-        (header::CONTENT_TYPE, "application/zip".parse().unwrap()),
-        (
-            header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{}\"", zip_filename)
-                .parse()
-                .unwrap(),
-        ),
-    ]);
-
-    Ok((StatusCode::OK, headers, Body::from(zip_data)))
+    let (status, headers, body) = bundle.into_response();
+    Ok((status, headers, Body::from(body)))
 }
