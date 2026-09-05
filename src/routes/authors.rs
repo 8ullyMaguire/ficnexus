@@ -220,16 +220,14 @@ pub async fn update_author_profile(
     Ok(Json(json!({"err": 0, "msg": "Profile updated"})))
 }
 
-/// POST /api/authors/{id}/socials — add social link
+/// POST /api/authors/{id}/socials — propose adding a social link (curator quorum).
 pub async fn add_social(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
     Path(id): Path<i32>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 5 {
-        return Err(AppError::Forbidden("Curator access required".into()));
-    }
+    let uid = crate::routes::curator_content::require_curator(&user)?;
 
     let platform = payload
         .get("platform")
@@ -240,35 +238,265 @@ pub async fn add_social(
         .and_then(|v| v.as_str())
         .ok_or_else(|| AppError::BadRequest("url required".to_string()))?;
     let label = payload.get("label").and_then(|v| v.as_str()).unwrap_or("");
+    let reason = payload.get("reason").and_then(|v| v.as_str()).unwrap_or("");
 
-    sqlx::query(
-        "INSERT INTO author_socials (profile_id, platform, url, label) VALUES ($1, $2, $3, $4) ON CONFLICT (profile_id, platform, url) DO UPDATE SET label = EXCLUDED.label",
+    let proposal_id: i64 = sqlx::query_scalar(
+        "INSERT INTO author_social_proposals (profile_id, action, platform, url, label, reason, proposed_by)
+         VALUES ($1, 'add', $2, $3, $4, $5, $6) RETURNING id",
     )
     .bind(id)
     .bind(platform)
     .bind(url)
     .bind(label)
-    .execute(&state.db)
+    .bind(reason)
+    .bind(uid)
+    .fetch_one(&state.db)
     .await?;
 
-    Ok(Json(json!({"err": 0, "msg": "Social link added"})))
+    Ok(Json(json!({ "err": 0, "proposal_id": proposal_id, "status": "pending" })))
 }
 
-/// DELETE /api/authors/{id}/socials/{social_id} — remove social link
+/// DELETE /api/authors/{id}/socials/{social_id} — propose removing a social link (curator quorum).
 pub async fn remove_social(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
     Path((id, social_id)): Path<(i32, i32)>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 5 {
-        return Err(AppError::Forbidden("Curator access required".into()));
+    let uid = crate::routes::curator_content::require_curator(&user)?;
+
+    // Fetch the existing social link so we can snapshot it in the proposal.
+    let existing: Option<(String, String, String)> =
+        sqlx::query_as("SELECT platform, url, label FROM author_socials WHERE id = $1 AND profile_id = $2")
+            .bind(social_id)
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await?;
+
+    let (platform, url, label) = match existing {
+        Some(s) => s,
+        None => return Err(AppError::NotFound("social link not found".to_string())),
+    };
+
+    let proposal_id: i64 = sqlx::query_scalar(
+        "INSERT INTO author_social_proposals (profile_id, action, social_id, platform, url, label, reason, proposed_by)
+         VALUES ($1, 'remove', $2, $3, $4, $5, 'Removal requested', $6) RETURNING id",
+    )
+    .bind(id)
+    .bind(social_id)
+    .bind(platform)
+    .bind(url)
+    .bind(label)
+    .bind(uid)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(json!({ "err": 0, "proposal_id": proposal_id, "status": "pending" })))
+}
+
+// ── Curator social proposal voting ──────────────────────────────────────────
+
+/// POST /api/curator/authors/social-proposals/{id}/vote — vote on a social proposal.
+pub async fn vote_social_proposal(
+    State(state): State<Arc<AppState>>,
+    user: AuthUser,
+    Path(proposal_id): Path<i64>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let uid = crate::routes::curator_content::require_curator(&user)?;
+    let vote = body
+        .get("vote")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| AppError::BadRequest("vote required".into()))?;
+    if vote != 1 && vote != -1 {
+        return Err(AppError::BadRequest("vote must be 1 or -1".into()));
     }
-    sqlx::query("DELETE FROM author_socials WHERE id = $1 AND profile_id = $2")
-        .bind(social_id)
-        .bind(id)
+    let vote = vote as i16;
+
+    // Make sure the proposal exists and is still pending.
+    let proposal: Option<(String, i32, String)> = sqlx::query_as(
+        "SELECT status, proposed_by, action FROM author_social_proposals WHERE id = $1",
+    )
+    .bind(proposal_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let (status, proposed_by, action) = match proposal {
+        Some(p) => p,
+        None => return Err(AppError::NotFound(format!("proposal {proposal_id} not found"))),
+    };
+    if status != "pending" {
+        return Err(AppError::BadRequest(format!("proposal already {status}")));
+    }
+    if proposed_by == uid {
+        return Err(AppError::BadRequest("cannot vote on your own proposal".into()));
+    }
+
+    // Upsert vote.
+    sqlx::query(
+        "INSERT INTO author_social_votes (proposal_id, user_id, vote) VALUES ($1, $2, $3)
+         ON CONFLICT (proposal_id, user_id) DO UPDATE SET vote = EXCLUDED.vote",
+    )
+    .bind(proposal_id)
+    .bind(uid)
+    .bind(vote)
+    .execute(&state.db)
+    .await?;
+
+    // Tally votes.
+    let (upvotes, downvotes): (i64, i64) = sqlx::query_as(
+        "SELECT
+           COALESCE(SUM(CASE WHEN vote = 1 THEN 1 ELSE 0 END), 0)::bigint,
+           COALESCE(SUM(CASE WHEN vote = -1 THEN 1 ELSE 0 END), 0)::bigint
+         FROM author_social_votes WHERE proposal_id = $1",
+    )
+    .bind(proposal_id)
+    .fetch_one(&state.db)
+    .await?;
+    let total = upvotes + downvotes;
+    let net = upvotes - downvotes;
+
+    let mut new_status: Option<String> = None;
+    let mut applied = false;
+    let quorum: i64 = 3; // 3 other curators (proposer doesn't vote) — match metadata
+    if total >= quorum && net >= 1 {
+        // Apply the change.
+        let detail: (i32, String, String, String, String, Option<i32>) = sqlx::query_as(
+            "SELECT profile_id, action, platform, url, label, social_id
+             FROM author_social_proposals WHERE id = $1",
+        )
+        .bind(proposal_id)
+        .fetch_one(&state.db)
+        .await?;
+        match detail.1.as_str() {
+            "add" => {
+                sqlx::query(
+                    "INSERT INTO author_socials (profile_id, platform, url, label)
+                     VALUES ($1, $2, $3, $4)
+                     ON CONFLICT (profile_id, platform, url) DO UPDATE SET label = EXCLUDED.label",
+                )
+                .bind(detail.0)
+                .bind(&detail.2)
+                .bind(&detail.3)
+                .bind(&detail.4)
+                .execute(&state.db)
+                .await?;
+                applied = true;
+            }
+            "remove" => {
+                if let Some(sid) = detail.5 {
+                    sqlx::query("DELETE FROM author_socials WHERE id = $1 AND profile_id = $2")
+                        .bind(sid)
+                        .bind(detail.0)
+                        .execute(&state.db)
+                        .await?;
+                    applied = true;
+                }
+            }
+            _ => {}
+        }
+        sqlx::query(
+            "UPDATE author_social_proposals
+             SET status = 'approved', decided_at = NOW(), decided_by = $1, upvotes = $2, downvotes = $3
+             WHERE id = $4",
+        )
+        .bind(uid)
+        .bind(upvotes)
+        .bind(downvotes)
+        .bind(proposal_id)
         .execute(&state.db)
         .await?;
-    Ok(Json(json!({"err": 0, "msg": "Social link removed"})))
+        new_status = Some("approved".into());
+    } else if total >= quorum && net < 0 {
+        sqlx::query(
+            "UPDATE author_social_proposals
+             SET status = 'rejected', decided_at = NOW(), decided_by = $1, upvotes = $2, downvotes = $3
+             WHERE id = $4",
+        )
+        .bind(uid)
+        .bind(upvotes)
+        .bind(downvotes)
+        .bind(proposal_id)
+        .execute(&state.db)
+        .await?;
+        new_status = Some("rejected".into());
+    } else {
+        // Still pending; just update the running tallies.
+        sqlx::query(
+            "UPDATE author_social_proposals SET upvotes = $1, downvotes = $2 WHERE id = $3",
+        )
+        .bind(upvotes)
+        .bind(downvotes)
+        .bind(proposal_id)
+        .execute(&state.db)
+        .await?;
+    }
+
+    // Audit trail: ignore failures (modlog is best-effort).
+    let _ = crate::modlog::record_json(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "vote_social_proposal",
+        "author_social_proposal",
+        &proposal_id.to_string(),
+        vec![
+            ("vote", json!(vote)),
+            ("upvotes", json!(upvotes)),
+            ("downvotes", json!(downvotes)),
+            ("new_status", json!(new_status.clone().unwrap_or_else(|| "pending".into()))),
+            ("action", json!(action)),
+            ("applied", json!(applied)),
+        ],
+    )
+    .await;
+
+    Ok(Json(json!({
+        "err": 0,
+        "upvotes": upvotes,
+        "downvotes": downvotes,
+        "new_status": new_status.unwrap_or_else(|| "pending".into()),
+        "applied": applied,
+    })))
+}
+
+/// GET /api/curator/authors/social-proposals — list proposals (default: pending).
+pub async fn list_social_proposals(
+    State(state): State<Arc<AppState>>,
+    user: AuthUser,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Value>, AppError> {
+    let _uid = crate::routes::curator_content::require_curator(&user)?;
+    let status_filter = params.get("status").map(|s| s.as_str()).unwrap_or("pending");
+
+    let proposals: Vec<(i64, i32, String, String, String, String, String, i64, i64)> =
+        sqlx::query_as(
+            "SELECT id, profile_id, action, platform, url, label, status, upvotes, downvotes
+             FROM author_social_proposals
+             WHERE status = $1
+             ORDER BY created_at DESC
+             LIMIT 50",
+        )
+        .bind(status_filter)
+        .fetch_all(&state.db)
+        .await?;
+
+    let items: Vec<Value> = proposals
+        .into_iter()
+        .map(|(id, pid, action, platform, url, label, status, up, down)| {
+            json!({
+                "id": id,
+                "profile_id": pid,
+                "action": action,
+                "platform": platform,
+                "url": url,
+                "label": label,
+                "status": status,
+                "upvotes": up,
+                "downvotes": down,
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({ "err": 0, "proposals": items })))
 }
 
 // ── Curator routes ──────────────────────────────────────────────────────────

@@ -665,6 +665,16 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/api/curator/authors/reject/{proposal_id}",
             axum::routing::post(crate::routes::authors::reject_merge),
         )
+        // Social link proposal voting (F7+ in the audit plan; replaces the
+        // direct add_social/remove_social with a quorum flow).
+        .route(
+            "/api/curator/authors/social-proposals",
+            get(crate::routes::authors::list_social_proposals),
+        )
+        .route(
+            "/api/curator/authors/social-proposals/{proposal_id}/vote",
+            axum::routing::post(crate::routes::authors::vote_social_proposal),
+        )
         // Advanced search route
         .route("/api/search", get(crate::search::routes::search_handler))
         // Ask the Archive — natural-language search via Ollama
