@@ -229,4 +229,20 @@ mod tests {
         assert!(LeaderboardCategory::parse("authors").is_some());
         assert!(LeaderboardCategory::parse("invalid").is_none());
     }
+
+    #[test]
+    fn your_rank_marker_added_for_user_outside_top_n() {
+        // User 99 is not in top 50 -> compute_user_rank returns None ->
+        // handler will try to fetch their rank from DB.
+        let entries: Vec<LeaderboardEntry> = (1..=50)
+            .map(|i| LeaderboardEntry {
+                user_id: i,
+                username: format!("user_{}", i),
+                score: (51 - i) as f64,
+                rank: i as usize,
+            })
+            .collect();
+        assert!(crate::leaderboard::compute_user_rank(&entries, 99).is_none());
+        assert_eq!(crate::leaderboard::compute_user_rank(&entries, 1), Some(1));
+    }
 }
