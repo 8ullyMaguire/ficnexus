@@ -332,6 +332,30 @@ pub async fn get_author(
     .fetch_all(&state.db)
     .await?;
 
+    // Social links: author_profiles.canonical_name → author_profiles.id →
+    // author_socials.profile_id. Only visible socials (is_visible = true)
+    // are returned. Sorted by sort_order (curator-controlled).
+    let socials: Vec<Value> = sqlx::query_as::<_, (i32, String, String, String)>(
+        r#"SELECT s.id, s.platform, s.url, s.label
+           FROM author_socials s
+           JOIN author_profiles ap ON ap.id = s.profile_id
+           WHERE ap.canonical_name = $1 AND s.is_visible = true
+           ORDER BY s.sort_order, s.id"#,
+    )
+    .bind(&canonical_name)
+    .fetch_all(&state.db)
+    .await?
+    .into_iter()
+    .map(|(id, platform, url, label)| {
+        json!({
+            "id": id,
+            "platform": platform,
+            "url": url,
+            "label": label,
+        })
+    })
+    .collect();
+
     Ok(Json(json!({
         "err": 0,
         "author": {
@@ -341,6 +365,7 @@ pub async fn get_author(
             "badge_text": author_profile.as_ref().map(|p| p.2.clone()).unwrap_or(None),
             "badges": badges,
             "favorite_tags": favorite_tags,
+            "socials": socials,
             "work_count": stats.0,
             "total_words": stats.1.unwrap_or(0),
             "top_tags": top_tags.into_iter().map(|(tag_name, tag_type, count)| json!({

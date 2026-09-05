@@ -94,6 +94,8 @@ export interface AuthorDetail {
   }[];
   /** Tags this author/user has favorited (AO3-style favourite tags). */
   favorite_tags?: { name: string; tag_type_id: number }[];
+  /** Social links (AO3-style external links: Twitter, Tumblr, personal site, etc.). */
+  socials?: { id: number; platform: string; url: string; label?: string }[];
   work_count: number;
   total_words: number;
   top_tags: { name: string; tag_type_id: number; usage_count: number }[];
