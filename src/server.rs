@@ -912,6 +912,14 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/api/user/consent",
             axum::routing::post(crate::routes::user_export::record_consent_handler),
         )
+        .route(
+            "/api/user/preferences/formats",
+            get(crate::routes::user_preferences::get_format_preferences),
+        )
+        .route(
+            "/api/user/preferences/formats",
+            axum::routing::put(crate::routes::user_preferences::update_format_preferences),
+        )
         // DMCA / copyright takedowns
         .route(
             "/api/copyright/notice",
