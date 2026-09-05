@@ -5,12 +5,13 @@
 //! FicNexus-specific `ExtractedTag` (i16 scores, matching `fic_tags.score`
 //! smallint) and FicNexus's `url_id` scheme, and converts between them.
 
+pub mod process;
+pub mod quality;
 pub mod registry;
 pub mod wayback;
-pub mod quality;
 
-pub use fanfic_scrapers::sites;
 pub use fanfic_scrapers::author_link;
+pub use fanfic_scrapers::sites;
 
 pub use fanfic_scrapers::{Chapter, FicMetadata, HealHook, NoopHealHook, ScrapeError, SiteScraper};
 
@@ -29,7 +30,10 @@ pub fn load_credentials() -> Vec<fanfic_scrapers::SiteCredentials> {
             continue;
         };
         let domain = domain.to_lowercase().replace('_', ".");
-        let pass_key = format!("FANFICSCRAPER_{}_PASS", domain.replace('.', "_").to_uppercase());
+        let pass_key = format!(
+            "FANFICSCRAPER_{}_PASS",
+            domain.replace('.', "_").to_uppercase()
+        );
         if let Ok(password) = std::env::var(&pass_key) {
             out.push(fanfic_scrapers::SiteCredentials {
                 domain,
@@ -59,14 +63,62 @@ pub struct ExtractedTag {
 }
 
 impl ExtractedTag {
-    pub fn fandom(name: &str) -> Self { Self { name: name.to_string(), tag_type_id: 1, score: 0 } }
-    pub fn character(name: &str) -> Self { Self { name: name.to_string(), tag_type_id: 2, score: 1 } }
-    pub fn character_main(name: &str) -> Self { Self { name: name.to_string(), tag_type_id: 2, score: 10 } }
-    pub fn relationship(name: &str) -> Self { Self { name: name.to_string(), tag_type_id: 3, score: 1 } }
-    pub fn relationship_primary(name: &str) -> Self { Self { name: name.to_string(), tag_type_id: 3, score: 5 } }
-    pub fn freeform(name: &str) -> Self { Self { name: name.to_string(), tag_type_id: 4, score: 0 } }
-    pub fn warning(name: &str) -> Self { Self { name: name.to_string(), tag_type_id: 5, score: 0 } }
-    pub fn category(name: &str) -> Self { Self { name: name.to_string(), tag_type_id: 6, score: 0 } }
+    pub fn fandom(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            tag_type_id: 1,
+            score: 0,
+        }
+    }
+    pub fn character(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            tag_type_id: 2,
+            score: 1,
+        }
+    }
+    pub fn character_main(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            tag_type_id: 2,
+            score: 10,
+        }
+    }
+    pub fn relationship(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            tag_type_id: 3,
+            score: 1,
+        }
+    }
+    pub fn relationship_primary(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            tag_type_id: 3,
+            score: 5,
+        }
+    }
+    pub fn freeform(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            tag_type_id: 4,
+            score: 0,
+        }
+    }
+    pub fn warning(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            tag_type_id: 5,
+            score: 0,
+        }
+    }
+    pub fn category(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            tag_type_id: 6,
+            score: 0,
+        }
+    }
 }
 
 impl From<fanfic_scrapers::ExtractedTag> for ExtractedTag {
