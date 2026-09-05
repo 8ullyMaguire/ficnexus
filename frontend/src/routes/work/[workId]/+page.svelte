@@ -417,6 +417,18 @@
         </div>
       </dl>
 
+      <!-- Suggestions & Request Similar (AO3-style) -->
+      <fieldset class="archive-fieldset">
+        <legend class="archive-legend">Suggestions</legend>
+        <div class="archive-actions-inline">
+          <a class="archive-btn" href={`/recommendations?work_id=${workId}`}>Find Similar Works</a>
+          <a class="archive-btn" href={`/ask?ref=work_${workId}`}>Request a Recommendation</a>
+        </div>
+        <p class="archive-muted" style="margin: 0.5rem 0 0; font-size: 0.85em;">
+          Looking for something like this? Browse works with similar tags or ask the community for personalized suggestions.
+        </p>
+      </fieldset>
+
       <!-- Comments -->
       <CommentSection workId={workId} />
 
