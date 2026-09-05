@@ -13,6 +13,7 @@ pub mod ingest;
 pub mod limiter;
 pub mod modlog;
 pub mod progression;
+pub mod leaderboard;
 pub mod recommender;
 pub mod routes;
 pub mod scrape;
