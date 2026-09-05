@@ -1,18 +1,18 @@
 use axum::{
-    extract::{Query, State},
     Json,
+    extract::{Query, State},
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
-use crate::error::AppError;
-use crate::server::AppState;
-use crate::scrape::FicMetadata;
+use crate::cache::{self, EType};
 use crate::db::models::*;
 use crate::db::queries;
-use crate::cache::{self, EType};
+use crate::error::AppError;
 use crate::export;
+use crate::scrape::FicMetadata;
+use crate::server::AppState;
 use crate::services::pow;
 
 /// Query parameters for export requests
@@ -69,10 +69,8 @@ pub async fn epub_handler(
             )
             .await;
             if !solved {
-                let challenge = pow::generate_challenge(
-                    state.config.pow_difficulty,
-                    state.config.pow_ttl_secs,
-                );
+                let challenge =
+                    pow::generate_challenge(state.config.pow_difficulty, state.config.pow_ttl_secs);
                 pow::set_latest_challenge_for_client(&state, cid, &challenge.challenge);
                 return Err(AppError::RateLimitedJson(json!({
                     "err": -429,
@@ -105,7 +103,9 @@ pub async fn epub_handler(
 
     // Check for automated flag (block if present)
     if params.automated.as_deref() == Some("true") {
-        return Ok(Json(json!({"err": -10, "msg": "automated requests blocked"})));
+        return Ok(Json(
+            json!({"err": -10, "msg": "automated requests blocked"}),
+        ));
     }
 
     // If q looks like a hash (not a URL), look up from fic_info directly
@@ -150,7 +150,10 @@ pub async fn epub_handler(
                     &e.to_string(),
                 ) != crate::heal::classifier::Class::Structural
             {
-                state.wayback.fetch_snapshot(&state.http_client, query).await
+                state
+                    .wayback
+                    .fetch_snapshot(&state.http_client, query)
+                    .await
             } else {
                 None
             };
@@ -164,7 +167,8 @@ pub async fn epub_handler(
                     m
                 } else {
                     // Parse failed — save for M2/heal.
-                    let snapshot_path = crate::heal::snapshot::save_snapshot_html(query, html).await;
+                    let snapshot_path =
+                        crate::heal::snapshot::save_snapshot_html(query, html).await;
                     state
                         .heal
                         .record_failure(
@@ -195,6 +199,31 @@ pub async fn epub_handler(
 
     let info_request_ms = start.elapsed().as_millis() as i32;
 
+    // Quality gate: classify metadata before persisting.
+    // Suspicious works are hidden + sent to curator quorum for review.
+    // Rejected works are dropped entirely.
+    let verdict = crate::scrape::quality::classify(&meta);
+    match verdict {
+        crate::scrape::quality::QualityVerdict::Reject(reason) => {
+            tracing::warn!(url_id = %meta.url_id, reason, "rejected low-quality work");
+            return Err(AppError::BadRequest(format!("work rejected: {reason}")));
+        }
+        crate::scrape::quality::QualityVerdict::Suspicious(reason) => {
+            tracing::info!(url_id = %meta.url_id, reason, "quarantined suspicious work — curator review");
+            // Insert hidden + create curator quorum proposal (best-effort).
+            let _ = crate::db::queries::hide_fic_info(&state.db, &meta.url_id).await;
+            let _ = crate::db::queries::create_curator_quorum_proposal(
+                &state.db,
+                &meta.url_id,
+                "quality_filter",
+                reason,
+            )
+            .await;
+            return Err(AppError::BadRequest(format!("work held for review: {reason}")));
+        }
+        crate::scrape::quality::QualityVerdict::Accept => {}
+    }
+
     // Upsert fic_info in database
     let fic_info_row = FicInfo {
         id: meta.url_id.clone(),
@@ -207,10 +236,8 @@ pub async fn epub_handler(
         chapters: meta.chapters,
         words: meta.words,
         description: meta.desc.clone(),
-        fic_created: chrono::DateTime::from_timestamp_millis(meta.published)
-            .unwrap_or_default(),
-        fic_updated: chrono::DateTime::from_timestamp_millis(meta.updated)
-            .unwrap_or_default(),
+        fic_created: chrono::DateTime::from_timestamp_millis(meta.published).unwrap_or_default(),
+        fic_updated: chrono::DateTime::from_timestamp_millis(meta.updated).unwrap_or_default(),
         status: meta.status.clone(),
         source: meta.source.clone(),
         extra_meta: meta.extra_meta.clone(),
@@ -231,18 +258,25 @@ pub async fn epub_handler(
         for tag in &extracted_tags {
             // Convert crate tag (f64/i32) → FicNexus tag (i16 score)
             let tag: crate::scrape::ExtractedTag = tag.clone().into();
-            if let Ok(resolution) = crate::tags::resolve::resolve_tag(
-                &state.db, &tag.name, tag.tag_type_id,
-            ).await {
+            if let Ok(resolution) =
+                crate::tags::resolve::resolve_tag(&state.db, &tag.name, tag.tag_type_id).await
+            {
                 let _ = queries::upsert_fic_tag(
-                    &state.db, &meta.url_id, resolution.tag_id,
+                    &state.db,
+                    &meta.url_id,
+                    resolution.tag_id,
                     &std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
                     tag.score,
-                ).await;
+                )
+                .await;
             }
         }
         if !extracted_tags.is_empty() {
-            tracing::debug!("Extracted {} tags for {}", extracted_tags.len(), meta.url_id);
+            tracing::debug!(
+                "Extracted {} tags for {}",
+                extracted_tags.len(),
+                meta.url_id
+            );
         }
     }
 
@@ -251,29 +285,47 @@ pub async fn epub_handler(
     if !fic_blacklist.is_empty() {
         // Greylist (reason 6) shows metadata but no download
         if fic_blacklist.iter().any(|b| b.reason == 6) {
-            return Ok(build_metadata_response(&meta, &[], &state.config.export_version, None, true));
+            return Ok(build_metadata_response(
+                &meta,
+                &[],
+                &state.config.export_version,
+                None,
+                true,
+            ));
         }
         // Hard blacklist
-        if fic_blacklist.iter().any(|b| b.reason == 5 || b.reason == 7 || b.reason == 8) {
-            return Ok(Json(json!({"err": -7, "msg": "fic is blacklisted", "q": query})));
+        if fic_blacklist
+            .iter()
+            .any(|b| b.reason == 5 || b.reason == 7 || b.reason == 8)
+        {
+            return Ok(Json(
+                json!({"err": -7, "msg": "fic is blacklisted", "q": query}),
+            ));
         }
     }
 
     // Check author blacklist
-    let author_blacklist = queries::check_author_blacklist(
-        &state.db, meta.source_id, meta.author_id,
-    ).await?;
+    let author_blacklist =
+        queries::check_author_blacklist(&state.db, meta.source_id, meta.author_id).await?;
     if !author_blacklist.is_empty() {
-        return Ok(Json(json!({"err": -7, "msg": "author is blacklisted", "q": query})));
+        return Ok(Json(
+            json!({"err": -7, "msg": "author is blacklisted", "q": query}),
+        ));
     }
 
     // Compute cache version
-    let version_bump = queries::get_fic_version_bump(&state.db, &meta.url_id).await?.unwrap_or(0);
+    let version_bump = queries::get_fic_version_bump(&state.db, &meta.url_id)
+        .await?
+        .unwrap_or(0);
     let version = state.config.export_version + version_bump;
 
     // Check cache (try EPUB first, then all formats)
-    let input_hash = meta.content_hash.clone().unwrap_or_else(|| "upstream".to_string());
-    let cached = queries::find_export_log(&state.db, &meta.url_id, version, "epub", &input_hash).await?;
+    let input_hash = meta
+        .content_hash
+        .clone()
+        .unwrap_or_else(|| "upstream".to_string());
+    let cached =
+        queries::find_export_log(&state.db, &meta.url_id, version, "epub", &input_hash).await?;
 
     let mut urls = std::collections::HashMap::new();
     let mut hashes = std::collections::HashMap::new();
@@ -282,17 +334,34 @@ pub async fn epub_handler(
         // Cache hit - build URLs from cached hash
         let epub_hash = &export_log.export_hash;
         hashes.insert("epub".to_string(), epub_hash.clone());
-        urls.insert("epub".to_string(), format!("/cache/epub/{}?h={}", meta.url_id, epub_hash));
+        urls.insert(
+            "epub".to_string(),
+            format!("/cache/epub/{}?h={}", meta.url_id, epub_hash),
+        );
 
         // Other formats from cached EPUB
-        for etype_str in &["html", "mobi", "pdf", "txt", "md", "azw3", "docx", "fb2", "kepub"] {
+        for etype_str in &[
+            "html", "mobi", "pdf", "txt", "md", "azw3", "docx", "fb2", "kepub",
+        ] {
             if let Ok(_etype) = etype_str.parse::<EType>() {
                 let e_input_hash = format!("epub:{}", epub_hash);
                 if let Ok(Some(entry)) = queries::find_export_log(
-                    &state.db, &meta.url_id, version, etype_str, &e_input_hash,
-                ).await {
+                    &state.db,
+                    &meta.url_id,
+                    version,
+                    etype_str,
+                    &e_input_hash,
+                )
+                .await
+                {
                     hashes.insert(etype_str.to_string(), entry.export_hash.clone());
-                    urls.insert(etype_str.to_string(), format!("/cache/{}/{}?h={}", etype_str, meta.url_id, entry.export_hash));
+                    urls.insert(
+                        etype_str.to_string(),
+                        format!(
+                            "/cache/{}/{}?h={}",
+                            etype_str, meta.url_id, entry.export_hash
+                        ),
+                    );
                 }
             }
         }
@@ -301,9 +370,13 @@ pub async fn epub_handler(
         let (info_str, notes) = build_info_string(&meta);
 
         // Fetch tags and sources for the work
-        let tags = queries::get_fic_tags(&state.db, &meta.url_id, 0).await.unwrap_or_default();
+        let tags = queries::get_fic_tags(&state.db, &meta.url_id, 0)
+            .await
+            .unwrap_or_default();
         let tags_json = format_tags_json(&tags);
-        let sources = queries::get_work_sources(&state.db, work_id).await.unwrap_or_default();
+        let sources = queries::get_work_sources(&state.db, work_id)
+            .await
+            .unwrap_or_default();
         let sources_json = format_sources_json(&sources);
 
         return Ok(Json(json!({
@@ -335,23 +408,35 @@ pub async fn epub_handler(
 
     // Cache miss - generate EPUB
     // Acquire semaphore to prevent duplicate concurrent exports
-    let sem = cache::get_export_semaphore(&state.cache_semaphores, &meta.url_id, &EType::Epub).await;
-    let _permit = sem.acquire().await.map_err(|e| AppError::Internal(e.to_string()))?;
+    let sem =
+        cache::get_export_semaphore(&state.cache_semaphores, &meta.url_id, &EType::Epub).await;
+    let _permit = sem
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     // Check cache again (double-check pattern)
-    let cached = queries::find_export_log(&state.db, &meta.url_id, version, "epub", &input_hash).await?;
+    let cached =
+        queries::find_export_log(&state.db, &meta.url_id, version, "epub", &input_hash).await?;
     if let Some(export_log) = cached {
         // Another concurrent request already generated it
         let epub_hash = &export_log.export_hash;
         hashes.insert("epub".to_string(), epub_hash.clone());
-        urls.insert("epub".to_string(), format!("/cache/epub/{}?h={}", meta.url_id, epub_hash));
+        urls.insert(
+            "epub".to_string(),
+            format!("/cache/epub/{}?h={}", meta.url_id, epub_hash),
+        );
         let slug = generate_slug(&meta.title, &meta.url_id);
         let (info_str, notes) = build_info_string(&meta);
 
         // Fetch tags and sources for the work
-        let tags = queries::get_fic_tags(&state.db, &meta.url_id, 0).await.unwrap_or_default();
+        let tags = queries::get_fic_tags(&state.db, &meta.url_id, 0)
+            .await
+            .unwrap_or_default();
         let tags_json = format_tags_json(&tags);
-        let sources = queries::get_work_sources(&state.db, work_id).await.unwrap_or_default();
+        let sources = queries::get_work_sources(&state.db, work_id)
+            .await
+            .unwrap_or_default();
         let sources_json = format_sources_json(&sources);
 
         return Ok(Json(json!({
@@ -492,13 +577,16 @@ pub async fn epub_handler(
                         )
                         .await;
                     }
-                    state.heal.record_failure(
-                        &meta.source,
-                        Some(&meta.url_id),
-                        &kind,
-                        Some(&e.to_string()),
-                        snapshot_path.as_deref(),
-                    ).await;
+                    state
+                        .heal
+                        .record_failure(
+                            &meta.source,
+                            Some(&meta.url_id),
+                            &kind,
+                            Some(&e.to_string()),
+                            snapshot_path.as_deref(),
+                        )
+                        .await;
                     return Err(AppError::ScrapeError(e.to_string()));
                 }
             }
@@ -524,7 +612,11 @@ pub async fn epub_handler(
         if let Err(e) = crate::body_cache::save_html(
             &state.config,
             &meta.url_id,
-            &fetched.iter().map(|c| c.content.clone()).collect::<Vec<_>>().join("\n"),
+            &fetched
+                .iter()
+                .map(|c| c.content.clone())
+                .collect::<Vec<_>>()
+                .join("\n"),
             version,
         ) {
             tracing::warn!("html_cache save failed for {}: {e}", meta.url_id);
@@ -540,7 +632,8 @@ pub async fn epub_handler(
             let config = state.config.clone();
             let url_id = meta.url_id.clone();
             tokio::spawn(async move {
-                crate::services::content_scan::scan_single_fic(&db, &ollama, &config, &url_id).await;
+                crate::services::content_scan::scan_single_fic(&db, &ollama, &config, &url_id)
+                    .await;
             });
         }
 
@@ -553,11 +646,24 @@ pub async fn epub_handler(
         .map_err(|e| AppError::ExportError(e.to_string()))?;
 
     // Move to cache
-    let cache_dest = cache::disk::cache_path(&state.config.cache_dir, &EType::Epub, &meta.url_id, &epub_hash);
+    let cache_dest = cache::disk::cache_path(
+        &state.config.cache_dir,
+        &EType::Epub,
+        &meta.url_id,
+        &epub_hash,
+    );
     cache::disk::move_to_cache(&epub_path, &cache_dest)?;
 
     // Record in export_log
-    queries::insert_export_log(&state.db, &meta.url_id, version, "epub", &input_hash, &epub_hash).await?;
+    queries::insert_export_log(
+        &state.db,
+        &meta.url_id,
+        version,
+        "epub",
+        &input_hash,
+        &epub_hash,
+    )
+    .await?;
 
     // Notify work followers if this is an update (work was previously exported)
     if version_bump > 0 {
@@ -565,56 +671,92 @@ pub async fn epub_handler(
     }
 
     // Generate HTML bundle
-    let (html_path, html_hash) = export::html_bundle::create_html_bundle(&meta, &chapters, &state.config.tmp_dir)
-        .await
-        .map_err(|e| AppError::ExportError(e.to_string()))?;
-    let html_cache_dest = cache::disk::cache_path(&state.config.cache_dir, &EType::Html, &meta.url_id, &html_hash);
+    let (html_path, html_hash) =
+        export::html_bundle::create_html_bundle(&meta, &chapters, &state.config.tmp_dir)
+            .await
+            .map_err(|e| AppError::ExportError(e.to_string()))?;
+    let html_cache_dest = cache::disk::cache_path(
+        &state.config.cache_dir,
+        &EType::Html,
+        &meta.url_id,
+        &html_hash,
+    );
     cache::disk::move_to_cache(&html_path, &html_cache_dest)?;
     let html_input_hash = format!("epub:{}", epub_hash);
-    queries::insert_export_log(&state.db, &meta.url_id, version, "html", &html_input_hash, &html_hash).await?;
+    queries::insert_export_log(
+        &state.db,
+        &meta.url_id,
+        version,
+        "html",
+        &html_input_hash,
+        &html_hash,
+    )
+    .await?;
 
     // Generate TXT
     let (txt_path, txt_hash) = export::txt::create_txt(&meta, &chapters, &state.config.tmp_dir)
         .await
         .map_err(|e| AppError::ExportError(e.to_string()))?;
-    let txt_cache_dest = cache::disk::cache_path(&state.config.cache_dir, &EType::Txt, &meta.url_id, &txt_hash);
+    let txt_cache_dest = cache::disk::cache_path(
+        &state.config.cache_dir,
+        &EType::Txt,
+        &meta.url_id,
+        &txt_hash,
+    );
     cache::disk::move_to_cache(&txt_path, &txt_cache_dest)?;
     let txt_input_hash = format!("epub:{}", epub_hash);
-    queries::insert_export_log(&state.db, &meta.url_id, version, "txt", &txt_input_hash, &txt_hash).await?;
+    queries::insert_export_log(
+        &state.db,
+        &meta.url_id,
+        version,
+        "txt",
+        &txt_input_hash,
+        &txt_hash,
+    )
+    .await?;
 
     // Generate Markdown
     let (md_path, md_hash) = export::md::create_md(&meta, &chapters, &state.config.tmp_dir)
         .await
         .map_err(|e| AppError::ExportError(e.to_string()))?;
-    let md_cache_dest = cache::disk::cache_path(&state.config.cache_dir, &EType::Md, &meta.url_id, &md_hash);
+    let md_cache_dest =
+        cache::disk::cache_path(&state.config.cache_dir, &EType::Md, &meta.url_id, &md_hash);
     cache::disk::move_to_cache(&md_path, &md_cache_dest)?;
     let md_input_hash = format!("epub:{}", epub_hash);
-    queries::insert_export_log(&state.db, &meta.url_id, version, "md", &md_input_hash, &md_hash).await?;
+    queries::insert_export_log(
+        &state.db,
+        &meta.url_id,
+        version,
+        "md",
+        &md_input_hash,
+        &md_hash,
+    )
+    .await?;
 
     // Generate MOBI via Calibre (lazy — only if already cached; on first
     // export these convert on demand via GET /api/epub/convert so the
     // initial response is fast).
-    let mobi_hash = if let Some(h) = cached_format_hash(
-        &state.db, &meta.url_id, version, &epub_hash, "mobi",
-    ).await {
+    let mobi_hash = if let Some(h) =
+        cached_format_hash(&state.db, &meta.url_id, version, &epub_hash, "mobi").await
+    {
         Some(h)
     } else {
         None
     };
 
     // Generate PDF via Calibre (lazy)
-    let pdf_hash = if let Some(h) = cached_format_hash(
-        &state.db, &meta.url_id, version, &epub_hash, "pdf",
-    ).await {
+    let pdf_hash = if let Some(h) =
+        cached_format_hash(&state.db, &meta.url_id, version, &epub_hash, "pdf").await
+    {
         Some(h)
     } else {
         None
     };
 
     // Generate AZW3 via Calibre (lazy)
-    let azw3_hash = if let Some(h) = cached_format_hash(
-        &state.db, &meta.url_id, version, &epub_hash, "azw3",
-    ).await {
+    let azw3_hash = if let Some(h) =
+        cached_format_hash(&state.db, &meta.url_id, version, &epub_hash, "azw3").await
+    {
         Some(h)
     } else {
         None
@@ -624,28 +766,68 @@ pub async fn epub_handler(
     let (docx_path, docx_hash) = export::docx::create_docx(&meta, &chapters, &state.config.tmp_dir)
         .await
         .map_err(|e| AppError::ExportError(e.to_string()))?;
-    let docx_cache_dest = cache::disk::cache_path(&state.config.cache_dir, &EType::Docx, &meta.url_id, &docx_hash);
+    let docx_cache_dest = cache::disk::cache_path(
+        &state.config.cache_dir,
+        &EType::Docx,
+        &meta.url_id,
+        &docx_hash,
+    );
     cache::disk::move_to_cache(&docx_path, &docx_cache_dest)?;
     let docx_input_hash = format!("epub:{}", epub_hash);
-    queries::insert_export_log(&state.db, &meta.url_id, version, "docx", &docx_input_hash, &docx_hash).await?;
+    queries::insert_export_log(
+        &state.db,
+        &meta.url_id,
+        version,
+        "docx",
+        &docx_input_hash,
+        &docx_hash,
+    )
+    .await?;
 
     // Generate FB2 (native)
     let (fb2_path, fb2_hash) = export::fb2::create_fb2(&meta, &chapters, &state.config.tmp_dir)
         .await
         .map_err(|e| AppError::ExportError(e.to_string()))?;
-    let fb2_cache_dest = cache::disk::cache_path(&state.config.cache_dir, &EType::Fb2, &meta.url_id, &fb2_hash);
+    let fb2_cache_dest = cache::disk::cache_path(
+        &state.config.cache_dir,
+        &EType::Fb2,
+        &meta.url_id,
+        &fb2_hash,
+    );
     cache::disk::move_to_cache(&fb2_path, &fb2_cache_dest)?;
     let fb2_input_hash = format!("epub:{}", epub_hash);
-    queries::insert_export_log(&state.db, &meta.url_id, version, "fb2", &fb2_input_hash, &fb2_hash).await?;
+    queries::insert_export_log(
+        &state.db,
+        &meta.url_id,
+        version,
+        "fb2",
+        &fb2_input_hash,
+        &fb2_hash,
+    )
+    .await?;
 
     // Generate KEPUB (native)
-    let (kepub_path, kepub_hash) = export::kepub::create_kepub(&meta, &chapters, &state.config.tmp_dir)
-        .await
-        .map_err(|e| AppError::ExportError(e.to_string()))?;
-    let kepub_cache_dest = cache::disk::cache_path(&state.config.cache_dir, &EType::Kepub, &meta.url_id, &kepub_hash);
+    let (kepub_path, kepub_hash) =
+        export::kepub::create_kepub(&meta, &chapters, &state.config.tmp_dir)
+            .await
+            .map_err(|e| AppError::ExportError(e.to_string()))?;
+    let kepub_cache_dest = cache::disk::cache_path(
+        &state.config.cache_dir,
+        &EType::Kepub,
+        &meta.url_id,
+        &kepub_hash,
+    );
     cache::disk::move_to_cache(&kepub_path, &kepub_cache_dest)?;
     let kepub_input_hash = format!("epub:{}", epub_hash);
-    queries::insert_export_log(&state.db, &meta.url_id, version, "kepub", &kepub_input_hash, &kepub_hash).await?;
+    queries::insert_export_log(
+        &state.db,
+        &meta.url_id,
+        version,
+        "kepub",
+        &kepub_input_hash,
+        &kepub_hash,
+    )
+    .await?;
 
     // Build response
     hashes.insert("epub".to_string(), epub_hash.clone());
@@ -655,24 +837,54 @@ pub async fn epub_handler(
     hashes.insert("docx".to_string(), docx_hash.clone());
     hashes.insert("fb2".to_string(), fb2_hash.clone());
     hashes.insert("kepub".to_string(), kepub_hash.clone());
-    urls.insert("epub".to_string(), format!("/cache/epub/{}?h={}", meta.url_id, epub_hash));
-    urls.insert("html".to_string(), format!("/cache/html/{}?h={}", meta.url_id, html_hash));
-    urls.insert("txt".to_string(), format!("/cache/txt/{}?h={}", meta.url_id, txt_hash));
-    urls.insert("md".to_string(), format!("/cache/md/{}?h={}", meta.url_id, md_hash));
-    urls.insert("docx".to_string(), format!("/cache/docx/{}?h={}", meta.url_id, docx_hash));
-    urls.insert("fb2".to_string(), format!("/cache/fb2/{}?h={}", meta.url_id, fb2_hash));
-    urls.insert("kepub".to_string(), format!("/cache/kepub/{}?h={}", meta.url_id, kepub_hash));
+    urls.insert(
+        "epub".to_string(),
+        format!("/cache/epub/{}?h={}", meta.url_id, epub_hash),
+    );
+    urls.insert(
+        "html".to_string(),
+        format!("/cache/html/{}?h={}", meta.url_id, html_hash),
+    );
+    urls.insert(
+        "txt".to_string(),
+        format!("/cache/txt/{}?h={}", meta.url_id, txt_hash),
+    );
+    urls.insert(
+        "md".to_string(),
+        format!("/cache/md/{}?h={}", meta.url_id, md_hash),
+    );
+    urls.insert(
+        "docx".to_string(),
+        format!("/cache/docx/{}?h={}", meta.url_id, docx_hash),
+    );
+    urls.insert(
+        "fb2".to_string(),
+        format!("/cache/fb2/{}?h={}", meta.url_id, fb2_hash),
+    );
+    urls.insert(
+        "kepub".to_string(),
+        format!("/cache/kepub/{}?h={}", meta.url_id, kepub_hash),
+    );
     if let Some(ref h) = mobi_hash {
         hashes.insert("mobi".to_string(), h.clone());
-        urls.insert("mobi".to_string(), format!("/cache/mobi/{}?h={}", meta.url_id, h));
+        urls.insert(
+            "mobi".to_string(),
+            format!("/cache/mobi/{}?h={}", meta.url_id, h),
+        );
     }
     if let Some(ref h) = pdf_hash {
         hashes.insert("pdf".to_string(), h.clone());
-        urls.insert("pdf".to_string(), format!("/cache/pdf/{}?h={}", meta.url_id, h));
+        urls.insert(
+            "pdf".to_string(),
+            format!("/cache/pdf/{}?h={}", meta.url_id, h),
+        );
     }
     if let Some(ref h) = azw3_hash {
         hashes.insert("azw3".to_string(), h.clone());
-        urls.insert("azw3".to_string(), format!("/cache/azw3/{}?h={}", meta.url_id, h));
+        urls.insert(
+            "azw3".to_string(),
+            format!("/cache/azw3/{}?h={}", meta.url_id, h),
+        );
     }
 
     let export_ms = start.elapsed().as_millis() as i32;
@@ -680,15 +892,16 @@ pub async fn epub_handler(
     let (info_str, notes) = build_info_string(&meta);
 
     // Get or create a request source
-    let source_id = queries::insert_request_source(
-        &state.db, false, "/api/v0/epub", "web request",
-    ).await?;
+    let source_id =
+        queries::insert_request_source(&state.db, false, "/api/v0/epub", "web request").await?;
 
     // Extract client tracking info from headers
-    let client_id = headers.get("x-client-id")
+    let client_id = headers
+        .get("x-client-id")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
-    let user_agent = headers.get("user-agent")
+    let user_agent = headers
+        .get("user-agent")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
     // Real client IP from X-Forwarded-For (set by nginx) — first hop is the
@@ -703,17 +916,31 @@ pub async fn epub_handler(
     // Log the request
     let fic_json = serde_json::to_string(&meta).ok();
     queries::insert_request_log(
-        &state.db, source_id, "epub", query, info_request_ms,
-        Some(&meta.url_id), fic_json.as_deref(),
-        Some(export_ms), Some(&format!("{}.epub", epub_hash)),
-        Some(&epub_hash), Some(query),
-        client_id.as_deref(), user_agent.as_deref(), client_ip,
-    ).await?;
+        &state.db,
+        source_id,
+        "epub",
+        query,
+        info_request_ms,
+        Some(&meta.url_id),
+        fic_json.as_deref(),
+        Some(export_ms),
+        Some(&format!("{}.epub", epub_hash)),
+        Some(&epub_hash),
+        Some(query),
+        client_id.as_deref(),
+        user_agent.as_deref(),
+        client_ip,
+    )
+    .await?;
 
     // Fetch tags and sources for the work
-    let tags = queries::get_fic_tags(&state.db, &meta.url_id, 0).await.unwrap_or_default();
+    let tags = queries::get_fic_tags(&state.db, &meta.url_id, 0)
+        .await
+        .unwrap_or_default();
     let tags_json = format_tags_json(&tags);
-    let sources = queries::get_work_sources(&state.db, work_id).await.unwrap_or_default();
+    let sources = queries::get_work_sources(&state.db, work_id)
+        .await
+        .unwrap_or_default();
     let sources_json = format_sources_json(&sources);
 
     Ok(Json(json!({
@@ -776,10 +1003,17 @@ async fn attempt_on_the_fly_heal(
     // Record the failure FIRST so run_extraction can link to it; the row is
     // the trigger_ref for the agent run.
     let kind = crate::heal::classifier::ErrorKind::from(e);
-    let domain = crate::heal::classifier::url_domain(meta_source).unwrap_or_else(|| meta_source.to_string());
+    let domain =
+        crate::heal::classifier::url_domain(meta_source).unwrap_or_else(|| meta_source.to_string());
     state
         .heal
-        .record_failure(meta_source, None, &kind, Some(&e.to_string()), snapshot_path.as_deref())
+        .record_failure(
+            meta_source,
+            None,
+            &kind,
+            Some(&e.to_string()),
+            snapshot_path.as_deref(),
+        )
         .await;
 
     // Find the failure row we just recorded (fingerprint-stable) to pass to
@@ -841,7 +1075,10 @@ pub struct ConvertQuery {
 
 /// Whitelist of Calibre-backed formats convertible on demand.
 pub fn supported_convert_format(format: &str) -> bool {
-    matches!(format, "mobi" | "pdf" | "azw3" | "docx" | "fb2" | "kepub" | "html" | "txt" | "md")
+    matches!(
+        format,
+        "mobi" | "pdf" | "azw3" | "docx" | "fb2" | "kepub" | "html" | "txt" | "md"
+    )
 }
 
 /// On-demand Calibre conversion: GET /api/epub/convert?q=<url>&format=<fmt>
@@ -922,7 +1159,8 @@ pub async fn convert_format_handler(
             Err(e) => return Err(AppError::ScrapeError(e.to_string())),
         }
     } else {
-        let fic = queries::get_fic_info(&state.db, query).await?
+        let fic = queries::get_fic_info(&state.db, query)
+            .await?
             .ok_or_else(|| AppError::NotFound(format!("fic not found: {query}")))?;
         // Rebuild a FicMetadata from the stored fic_info row (same fields
         // the main export handler writes).
@@ -948,42 +1186,68 @@ pub async fn convert_format_handler(
     };
 
     // Compute cache version
-    let version_bump = queries::get_fic_version_bump(&state.db, &meta.url_id).await?.unwrap_or(0);
+    let version_bump = queries::get_fic_version_bump(&state.db, &meta.url_id)
+        .await?
+        .unwrap_or(0);
     let version = state.config.export_version + version_bump;
 
     // Locate the EPUB (source for conversion). Reuse the same logic as
     // epub_handler: cache first, else body_cache, else scrape.
-    let input_hash = meta.content_hash.clone().unwrap_or_else(|| "upstream".to_string());
-    let cached = queries::find_export_log(&state.db, &meta.url_id, version, "epub", &input_hash).await?;
+    let input_hash = meta
+        .content_hash
+        .clone()
+        .unwrap_or_else(|| "upstream".to_string());
+    let cached =
+        queries::find_export_log(&state.db, &meta.url_id, version, "epub", &input_hash).await?;
 
     let epub_hash = if let Some(export_log) = cached {
         export_log.export_hash
     } else {
         // No cached EPUB: scrape + generate (same as the main handler's
         // cache-miss path, trimmed to just EPUB).
-        let chapters = if let Some(cached_ch) = crate::body_cache::load_body(&state.config, &meta.url_id) {
-            cached_ch
-        } else {
-            let fetched = match scraper_fetch(&state, query).await {
-                Ok(ch) => ch,
-                Err(e) => return Err(e),
+        let chapters =
+            if let Some(cached_ch) = crate::body_cache::load_body(&state.config, &meta.url_id) {
+                cached_ch
+            } else {
+                let fetched = match scraper_fetch(&state, query).await {
+                    Ok(ch) => ch,
+                    Err(e) => return Err(e),
+                };
+                fetched
             };
-            fetched
-        };
         // Acquire semaphore to prevent duplicate concurrent exports
-        let sem = cache::get_export_semaphore(&state.cache_semaphores, &meta.url_id, &EType::Epub).await;
-        let _permit = sem.acquire().await.map_err(|e| AppError::Internal(e.to_string()))?;
+        let sem =
+            cache::get_export_semaphore(&state.cache_semaphores, &meta.url_id, &EType::Epub).await;
+        let _permit = sem
+            .acquire()
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
         // Re-check cache after semaphore (double-check pattern)
-        let cached_again = queries::find_export_log(&state.db, &meta.url_id, version, "epub", &input_hash).await?;
+        let cached_again =
+            queries::find_export_log(&state.db, &meta.url_id, version, "epub", &input_hash).await?;
         let epub_hash = if let Some(export_log) = cached_again {
             export_log.export_hash
         } else {
-            let (epub_path, epub_hash) = export::epub::create_epub(&meta, &chapters, &state.config.tmp_dir)
-                .await
-                .map_err(|e| AppError::ExportError(e.to_string()))?;
-            let cache_dest = cache::disk::cache_path(&state.config.cache_dir, &EType::Epub, &meta.url_id, &epub_hash);
+            let (epub_path, epub_hash) =
+                export::epub::create_epub(&meta, &chapters, &state.config.tmp_dir)
+                    .await
+                    .map_err(|e| AppError::ExportError(e.to_string()))?;
+            let cache_dest = cache::disk::cache_path(
+                &state.config.cache_dir,
+                &EType::Epub,
+                &meta.url_id,
+                &epub_hash,
+            );
             cache::disk::move_to_cache(&epub_path, &cache_dest)?;
-            queries::insert_export_log(&state.db, &meta.url_id, version, "epub", &input_hash, &epub_hash).await?;
+            queries::insert_export_log(
+                &state.db,
+                &meta.url_id,
+                version,
+                "epub",
+                &input_hash,
+                &epub_hash,
+            )
+            .await?;
             epub_hash
         };
         epub_hash
@@ -993,9 +1257,20 @@ pub async fn convert_format_handler(
 
     // Check for existing converted format
     if let Ok(Some(entry)) = queries::find_export_log(
-        &state.db, &meta.url_id, version, format.as_str(), &epub_input_hash,
-    ).await {
-        let url = format!("/cache/{}/{}/{}", format.as_str(), meta.url_id, entry.export_hash);
+        &state.db,
+        &meta.url_id,
+        version,
+        format.as_str(),
+        &epub_input_hash,
+    )
+    .await
+    {
+        let url = format!(
+            "/cache/{}/{}/{}",
+            format.as_str(),
+            meta.url_id,
+            entry.export_hash
+        );
         return Ok(Json(json!({
             "err": 0,
             "q": query,
@@ -1009,13 +1284,27 @@ pub async fn convert_format_handler(
 
     // Acquire per-format semaphore to prevent duplicate conversions
     let sem = cache::get_export_semaphore(&state.cache_semaphores, &meta.url_id, &etype).await;
-    let _permit = sem.acquire().await.map_err(|e| AppError::Internal(e.to_string()))?;
+    let _permit = sem
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     // Re-check after semaphore
     if let Ok(Some(entry)) = queries::find_export_log(
-        &state.db, &meta.url_id, version, format.as_str(), &epub_input_hash,
-    ).await {
-        let url = format!("/cache/{}/{}/{}", format.as_str(), meta.url_id, entry.export_hash);
+        &state.db,
+        &meta.url_id,
+        version,
+        format.as_str(),
+        &epub_input_hash,
+    )
+    .await
+    {
+        let url = format!(
+            "/cache/{}/{}/{}",
+            format.as_str(),
+            meta.url_id,
+            entry.export_hash
+        );
         return Ok(Json(json!({
             "err": 0,
             "q": query,
@@ -1028,7 +1317,12 @@ pub async fn convert_format_handler(
     }
 
     // Locate EPUB cache file path for conversion
-    let epub_cache_dest = cache::disk::cache_path(&state.config.cache_dir, &EType::Epub, &meta.url_id, &epub_hash);
+    let epub_cache_dest = cache::disk::cache_path(
+        &state.config.cache_dir,
+        &EType::Epub,
+        &meta.url_id,
+        &epub_hash,
+    );
     if !epub_cache_dest.exists() {
         return Err(AppError::NotFound(format!(
             "cached EPUB missing for {} (hash {epub_hash})",
@@ -1039,17 +1333,34 @@ pub async fn convert_format_handler(
     // Convert via Calibre
     let calibre_container = &state.config.calibre_container;
     let (out_path, out_md5) = export::convert::convert_epub(
-        &epub_cache_dest, format.as_str(), calibre_container, &state.config.tmp_dir,
-    ).await.map_err(|e| AppError::ExportError(e.to_string()))?;
+        &epub_cache_dest,
+        format.as_str(),
+        calibre_container,
+        &state.config.tmp_dir,
+    )
+    .await
+    .map_err(|e| AppError::ExportError(e.to_string()))?;
 
-    let out_cache_dest = cache::disk::cache_path(&state.config.cache_dir, &etype, &meta.url_id, &out_md5);
+    let out_cache_dest =
+        cache::disk::cache_path(&state.config.cache_dir, &etype, &meta.url_id, &out_md5);
     cache::disk::move_to_cache(&out_path, &out_cache_dest)?;
-    queries::insert_export_log(&state.db, &meta.url_id, version, format.as_str(), &epub_input_hash, &out_md5).await?;
+    queries::insert_export_log(
+        &state.db,
+        &meta.url_id,
+        version,
+        format.as_str(),
+        &epub_input_hash,
+        &out_md5,
+    )
+    .await?;
 
     let elapsed = start.elapsed().as_millis() as i32;
     tracing::info!(
         "lazy convert {} {} in {}ms -> {}",
-        meta.url_id, format.as_str(), elapsed, out_md5
+        meta.url_id,
+        format.as_str(),
+        elapsed,
+        out_md5
     );
 
     Ok(Json(json!({
@@ -1070,9 +1381,13 @@ async fn scraper_fetch(
     state: &Arc<AppState>,
     query: &str,
 ) -> Result<Vec<crate::scrape::Chapter>, AppError> {
-    let scraper = state.scraper_registry.find_specific_or_fff(query)
+    let scraper = state
+        .scraper_registry
+        .find_specific_or_fff(query)
         .ok_or_else(|| AppError::BadRequest(format!("unsupported URL: {query}")))?;
-    let meta = scraper.lookup(&state.http_client, query).await
+    let meta = scraper
+        .lookup(&state.http_client, query)
+        .await
         .map_err(|e| AppError::ScrapeError(e.to_string()))?;
     let fetched = match scraper.fetch_chapters(&state.http_client, &meta).await {
         Ok(ch) => ch,
@@ -1089,7 +1404,11 @@ async fn scraper_fetch(
                     &e.to_string(),
                 ) != crate::heal::classifier::Class::Structural
             {
-                if let Some(html) = state.wayback.fetch_snapshot(&state.http_client, query).await {
+                if let Some(html) = state
+                    .wayback
+                    .fetch_snapshot(&state.http_client, query)
+                    .await
+                {
                     let snapshot = crate::scrape::Chapter {
                         chapter_id: 1,
                         title: meta.title.clone(),
@@ -1111,7 +1430,11 @@ async fn scraper_fetch(
     };
     let version = crate::body_cache::current_version(&state.config, &meta.url_id);
     if let Err(e) = crate::body_cache::save_body(
-        &state.config, &meta.url_id, &fetched, Some(meta.source.clone()), version,
+        &state.config,
+        &meta.url_id,
+        &fetched,
+        Some(meta.source.clone()),
+        version,
     ) {
         tracing::warn!("body_cache save failed for {}: {e}", meta.url_id);
     }
@@ -1127,15 +1450,21 @@ async fn handle_hash_lookup(
     _info_request_ms: i32,
 ) -> Result<Json<Value>, AppError> {
     // Look up fic from database
-    let fic = queries::get_fic_info(&state.db, hash).await?
+    let fic = queries::get_fic_info(&state.db, hash)
+        .await?
         .ok_or_else(|| AppError::NotFound(format!("fic not found: {}", hash)))?;
 
     // Compute cache version
-    let version_bump = queries::get_fic_version_bump(&state.db, &fic.id).await?.unwrap_or(0);
+    let version_bump = queries::get_fic_version_bump(&state.db, &fic.id)
+        .await?
+        .unwrap_or(0);
     let version = state.config.export_version + version_bump;
 
     // Check for cached exports
-    let input_hash = fic.content_hash.clone().unwrap_or_else(|| "upstream".to_string());
+    let input_hash = fic
+        .content_hash
+        .clone()
+        .unwrap_or_else(|| "upstream".to_string());
     let cached = queries::find_export_log(&state.db, &fic.id, version, "epub", &input_hash).await?;
 
     let mut urls = std::collections::HashMap::new();
@@ -1144,16 +1473,25 @@ async fn handle_hash_lookup(
     if let Some(export_log) = cached {
         let epub_hash = &export_log.export_hash;
         hashes.insert("epub".to_string(), epub_hash.clone());
-        urls.insert("epub".to_string(), format!("/cache/epub/{}?h={}", fic.id, epub_hash));
+        urls.insert(
+            "epub".to_string(),
+            format!("/cache/epub/{}?h={}", fic.id, epub_hash),
+        );
 
-        for etype_str in &["html", "mobi", "pdf", "txt", "md", "azw3", "docx", "fb2", "kepub"] {
+        for etype_str in &[
+            "html", "mobi", "pdf", "txt", "md", "azw3", "docx", "fb2", "kepub",
+        ] {
             if let Ok(_etype) = etype_str.parse::<EType>() {
                 let e_input_hash = format!("epub:{}", epub_hash);
-                if let Ok(Some(entry)) = queries::find_export_log(
-                    &state.db, &fic.id, version, etype_str, &e_input_hash,
-                ).await {
+                if let Ok(Some(entry)) =
+                    queries::find_export_log(&state.db, &fic.id, version, etype_str, &e_input_hash)
+                        .await
+                {
                     hashes.insert(etype_str.to_string(), entry.export_hash.clone());
-                    urls.insert(etype_str.to_string(), format!("/cache/{}/{}?h={}", etype_str, fic.id, entry.export_hash));
+                    urls.insert(
+                        etype_str.to_string(),
+                        format!("/cache/{}/{}?h={}", etype_str, fic.id, entry.export_hash),
+                    );
                 }
             }
         }
@@ -1169,9 +1507,13 @@ async fn handle_hash_lookup(
         .unwrap_or(0);
 
     // Fetch tags and sources for the work
-    let tags = queries::get_fic_tags(&state.db, &fic.id, 0).await.unwrap_or_default();
+    let tags = queries::get_fic_tags(&state.db, &fic.id, 0)
+        .await
+        .unwrap_or_default();
     let tags_json = format_tags_json(&tags);
-    let sources = queries::get_work_sources(&state.db, work_id).await.unwrap_or_default();
+    let sources = queries::get_work_sources(&state.db, work_id)
+        .await
+        .unwrap_or_default();
     let sources_json = format_sources_json(&sources);
 
     Ok(Json(json!({
@@ -1280,25 +1622,28 @@ fn format_tags_json(tags: &[(i32, String, i16, i16, bool)]) -> Value {
 
 /// Format fic_info sources into JSON for the frontend source chips.
 fn format_sources_json(sources: &[crate::db::models::FicInfo]) -> Value {
-    let source_list: Vec<Value> = sources.iter().map(|s| {
-        // Extract site name from source URL (e.g., "archiveofourown.org" → "AO3")
-        let site = if s.source.contains("archiveofourown") {
-            "AO3".to_string()
-        } else if s.source.contains("fanfiction.net") || s.source.contains("fictionpress") {
-            "FFN".to_string()
-        } else if s.source.contains("wattpad") {
-            "Wattpad".to_string()
-        } else {
-            s.source.clone()
-        };
-        json!({
-            "url_id": s.id,
-            "site": site,
-            "source_url": s.source,
-            "words": s.words,
-            "chapters": s.chapters,
+    let source_list: Vec<Value> = sources
+        .iter()
+        .map(|s| {
+            // Extract site name from source URL (e.g., "archiveofourown.org" → "AO3")
+            let site = if s.source.contains("archiveofourown") {
+                "AO3".to_string()
+            } else if s.source.contains("fanfiction.net") || s.source.contains("fictionpress") {
+                "FFN".to_string()
+            } else if s.source.contains("wattpad") {
+                "Wattpad".to_string()
+            } else {
+                s.source.clone()
+            };
+            json!({
+                "url_id": s.id,
+                "site": site,
+                "source_url": s.source,
+                "words": s.words,
+                "chapters": s.chapters,
+            })
         })
-    }).collect();
+        .collect();
     Value::Array(source_list)
 }
 
@@ -1306,7 +1651,13 @@ fn format_sources_json(sources: &[crate::db::models::FicInfo]) -> Value {
 pub fn generate_slug(title: &str, url_id: &str) -> String {
     let sanitized: String = title
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     // Collapse multiple underscores
     let re = regex_lite::Regex::new(r"_+").unwrap();
@@ -1502,18 +1853,15 @@ mod tests {
     #[test]
     fn test_build_metadata_response_greylisted() {
         let meta = make_test_meta();
-        let resp = super::build_metadata_response(
-            &meta,
-            &[],
-            &1,
-            None,
-            true,
-        );
+        let resp = super::build_metadata_response(&meta, &[], &1, None, true);
         let json = resp.0; // Json wrapper
         assert_eq!(json["err"], 0);
-        assert!(json["notes"][0].as_str()
-            .unwrap_or("")
-            .contains("greylisted"));
+        assert!(
+            json["notes"][0]
+                .as_str()
+                .unwrap_or("")
+                .contains("greylisted")
+        );
         assert!(json["urls"].as_object().unwrap().is_empty());
     }
 

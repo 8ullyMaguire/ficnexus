@@ -17,9 +17,9 @@ pub enum QualityVerdict {
     /// Looks legitimate: non-zero word count, real title and author.
     Accept,
     /// Clearly junk (zero words, placeholder title, lorem ipsum). Drop it.
-    Reject,
+    Reject(&'static str),
     /// Couldn't make a confident call — leave it for a curator to review.
-    Suspicious,
+    Suspicious(&'static str),
 }
 
 /// Strings that indicate the scraper failed to extract real content and
@@ -62,19 +62,19 @@ pub fn classify(fic: &FicMetadata) -> QualityVerdict {
     let author = normalize(&fic.author);
 
     if title.is_empty() || author.is_empty() {
-        return QualityVerdict::Reject;
+        return QualityVerdict::Reject("empty title or author");
     }
     if PLACEHOLDER_TITLES.iter().any(|p| title == *p) {
-        return QualityVerdict::Reject;
+        return QualityVerdict::Reject("placeholder title");
     }
     if PLACEHOLDER_TITLES.iter().any(|p| author == *p) {
-        return QualityVerdict::Reject;
+        return QualityVerdict::Reject("placeholder author");
     }
     if is_lorem_ipsum(&title) || is_lorem_ipsum(&author) {
-        return QualityVerdict::Reject;
+        return QualityVerdict::Reject("lorem ipsum detected");
     }
     if fic.words <= 0 {
-        return QualityVerdict::Suspicious;
+        return QualityVerdict::Suspicious("zero word count");
     }
     QualityVerdict::Accept
 }
@@ -114,50 +114,58 @@ mod tests {
     #[test]
     fn unknown_title_rejects() {
         let m = fic("unknown", "alice42", 5_000);
-        assert_eq!(classify(&m), QualityVerdict::Reject);
+        assert!(matches!(classify(&m), QualityVerdict::Reject(_)));
     }
 
     #[test]
     fn unknown_author_rejects() {
         let m = fic("My Fic", "n/a", 5_000);
-        assert_eq!(classify(&m), QualityVerdict::Reject);
+        assert!(matches!(classify(&m), QualityVerdict::Reject(_)));
     }
 
     #[test]
     fn empty_title_rejects() {
         let m = fic("   ", "alice42", 5_000);
-        assert_eq!(classify(&m), QualityVerdict::Reject);
+        assert!(matches!(classify(&m), QualityVerdict::Reject(_)));
     }
 
     #[test]
     fn empty_author_rejects() {
         let m = fic("My Fic", "  ", 5_000);
-        assert_eq!(classify(&m), QualityVerdict::Reject);
+        assert!(matches!(classify(&m), QualityVerdict::Reject(_)));
     }
 
     #[test]
     fn lorem_ipsum_title_rejects() {
         let m = fic("Lorem ipsum dolor sit amet consectetur", "alice42", 5_000);
-        assert_eq!(classify(&m), QualityVerdict::Reject);
+        assert!(matches!(classify(&m), QualityVerdict::Reject(_)));
     }
 
     #[test]
     fn zero_words_is_suspicious_not_reject() {
-        // RoyalRoad JS-render failures land here — quarantine for review
-        // rather than auto-reject.
         let m = fic("Real Title", "real_author", 0);
-        assert_eq!(classify(&m), QualityVerdict::Suspicious);
+        assert!(matches!(classify(&m), QualityVerdict::Suspicious(_)));
     }
 
     #[test]
     fn case_insensitive_placeholder_match() {
         let m = fic("UNKNOWN", "alice42", 5_000);
-        assert_eq!(classify(&m), QualityVerdict::Reject);
+        assert!(matches!(classify(&m), QualityVerdict::Reject(_)));
     }
 
     #[test]
     fn whitespace_normalized_for_match() {
         let m = fic("  untitled  ", "alice42", 5_000);
-        assert_eq!(classify(&m), QualityVerdict::Reject);
+        assert!(matches!(classify(&m), QualityVerdict::Reject(_)));
+    }
+
+    #[test]
+    fn reject_reason_is_descriptive() {
+        let m = fic("unknown", "alice42", 5_000);
+        if let QualityVerdict::Reject(reason) = classify(&m) {
+            assert!(!reason.is_empty());
+        } else {
+            panic!("expected Reject");
+        }
     }
 }

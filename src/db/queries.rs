@@ -1,8 +1,8 @@
-use chrono::Datelike;
-use sqlx::{PgPool, Row};
 use crate::db::models::*;
 use crate::error::AppResult;
+use chrono::Datelike;
 use chrono::{DateTime, Utc};
+use sqlx::{PgPool, Row};
 
 /// A stored site-credential row (no password — never surfaced).
 #[derive(Debug, Clone)]
@@ -39,10 +39,11 @@ pub async fn set_site_credentials(
     .execute(pool)
     .await?;
     // Opportunistic lazy-expiry cleanup for this user.
-    let _ = sqlx::query("DELETE FROM user_site_credentials WHERE user_id = $1 AND expires_at <= now()")
-        .bind(user_id)
-        .execute(pool)
-        .await;
+    let _ =
+        sqlx::query("DELETE FROM user_site_credentials WHERE user_id = $1 AND expires_at <= now()")
+            .bind(user_id)
+            .execute(pool)
+            .await;
     Ok(())
 }
 
@@ -60,7 +61,11 @@ pub async fn get_user_site_credentials(pool: &PgPool, user_id: i32) -> AppResult
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(domain, username, expires_at)| SiteCredRow { domain, username, expires_at })
+        .map(|(domain, username, expires_at)| SiteCredRow {
+            domain,
+            username,
+            expires_at,
+        })
         .collect())
 }
 
@@ -85,14 +90,16 @@ pub async fn get_user_site_credential(
 }
 
 /// Remove a user's credential for a domain. Idempotent.
-pub async fn delete_user_site_credential(pool: &PgPool, user_id: i32, domain: &str) -> AppResult<()> {
-    sqlx::query(
-        "DELETE FROM user_site_credentials WHERE user_id = $1 AND domain = $2",
-    )
-    .bind(user_id)
-    .bind(domain.trim().to_lowercase())
-    .execute(pool)
-    .await?;
+pub async fn delete_user_site_credential(
+    pool: &PgPool,
+    user_id: i32,
+    domain: &str,
+) -> AppResult<()> {
+    sqlx::query("DELETE FROM user_site_credentials WHERE user_id = $1 AND domain = $2")
+        .bind(user_id)
+        .bind(domain.trim().to_lowercase())
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -140,19 +147,51 @@ pub async fn upsert_fic_info(pool: &PgPool, fic: &FicInfo) -> AppResult<()> {
     Ok(())
 }
 
+/// Hide a fic_info row (sets hidden = true). Used by the quality filter
+/// to quarantine suspicious works from public view.
+pub async fn hide_fic_info(pool: &PgPool, url_id: &str) -> AppResult<()> {
+    sqlx::query("UPDATE fic_info SET hidden = true WHERE id = $1")
+        .bind(url_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Create a curator quorum proposal for reviewing a quarantined work.
+pub async fn create_curator_quorum_proposal(
+    pool: &PgPool,
+    url_id: &str,
+    proposal_type: &str,
+    reason: &str,
+) -> AppResult<()> {
+    sqlx::query(
+        "INSERT INTO curator_quorum_proposals (url_id, proposal_type, reason, status)
+         VALUES ($1, $2, $3, 'pending')",
+    )
+    .bind(url_id)
+    .bind(proposal_type)
+    .bind(reason)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Get fic_info by ID
 pub async fn get_fic_info(pool: &PgPool, id: &str) -> AppResult<Option<FicInfo>> {
-    let row = sqlx::query_as::<_, FicInfo>(
-        "SELECT * FROM fic_info WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?;
+    let row = sqlx::query_as::<_, FicInfo>("SELECT * FROM fic_info WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
     Ok(row)
 }
 
 /// Insert a request source record
-pub async fn insert_request_source(pool: &PgPool, is_automated: bool, route: &str, description: &str) -> AppResult<i64> {
+pub async fn insert_request_source(
+    pool: &PgPool,
+    is_automated: bool,
+    route: &str,
+    description: &str,
+) -> AppResult<i64> {
     let row: (i64,) = sqlx::query_as(
         r#"INSERT INTO request_source (is_automated, route, description)
            VALUES ($1, $2, $3)
@@ -326,17 +365,19 @@ pub async fn insert_export_log(
 
 /// Check if a fic is blacklisted
 pub async fn check_fic_blacklist(pool: &PgPool, url_id: &str) -> AppResult<Vec<FicBlacklist>> {
-    let rows = sqlx::query_as::<_, FicBlacklist>(
-        "SELECT * FROM fic_blacklist WHERE url_id = $1",
-    )
-    .bind(url_id)
-    .fetch_all(pool)
-    .await?;
+    let rows = sqlx::query_as::<_, FicBlacklist>("SELECT * FROM fic_blacklist WHERE url_id = $1")
+        .bind(url_id)
+        .fetch_all(pool)
+        .await?;
     Ok(rows)
 }
 
 /// Check if an author is blacklisted
-pub async fn check_author_blacklist(pool: &PgPool, source_id: i64, author_id: i64) -> AppResult<Vec<AuthorBlacklist>> {
+pub async fn check_author_blacklist(
+    pool: &PgPool,
+    source_id: i64,
+    author_id: i64,
+) -> AppResult<Vec<AuthorBlacklist>> {
     let rows = sqlx::query_as::<_, AuthorBlacklist>(
         "SELECT * FROM author_blacklist WHERE source_id = $1 AND author_id = $2",
     )
@@ -349,12 +390,10 @@ pub async fn check_author_blacklist(pool: &PgPool, source_id: i64, author_id: i6
 
 /// Get version bumps for a fic (cache invalidation)
 pub async fn get_fic_version_bump(pool: &PgPool, url_id: &str) -> AppResult<Option<i32>> {
-    let row = sqlx::query_as::<_, FicVersionBump>(
-        "SELECT * FROM fic_version_bump WHERE id = $1",
-    )
-    .bind(url_id)
-    .fetch_optional(pool)
-    .await?;
+    let row = sqlx::query_as::<_, FicVersionBump>("SELECT * FROM fic_version_bump WHERE id = $1")
+        .bind(url_id)
+        .fetch_optional(pool)
+        .await?;
     Ok(row.and_then(|r| r.value))
 }
 
@@ -375,7 +414,10 @@ pub async fn search_similar_fics(pool: &PgPool, query: &str) -> AppResult<Vec<Fi
 // ── Tag-related queries (v3) ─────────────────────────────────────────────
 
 /// Look up a tag by exact name (COLLATE "C" case-sensitive)
-pub async fn lookup_tag_by_name(pool: &PgPool, name: &str) -> AppResult<Option<(i32, String, i16)>> {
+pub async fn lookup_tag_by_name(
+    pool: &PgPool,
+    name: &str,
+) -> AppResult<Option<(i32, String, i16)>> {
     let row = sqlx::query_as::<_, (i32, String, i16)>(
         "SELECT id, name, tag_type_id FROM tags WHERE name = $1",
     )
@@ -398,13 +440,12 @@ pub async fn lookup_alias(pool: &PgPool, alias_name: &str) -> AppResult<Option<i
 
 /// Create a new canonical tag, returning its ID
 pub async fn create_tag(pool: &PgPool, name: &str, tag_type_id: i16) -> AppResult<i32> {
-    let row: (i32,) = sqlx::query_as(
-        "INSERT INTO tags (name, tag_type_id) VALUES ($1, $2) RETURNING id",
-    )
-    .bind(name)
-    .bind(tag_type_id)
-    .fetch_one(pool)
-    .await?;
+    let row: (i32,) =
+        sqlx::query_as("INSERT INTO tags (name, tag_type_id) VALUES ($1, $2) RETURNING id")
+            .bind(name)
+            .bind(tag_type_id)
+            .fetch_one(pool)
+            .await?;
     Ok(row.0)
 }
 
@@ -532,7 +573,11 @@ pub async fn get_followers(pool: &PgPool, user_id: i32) -> AppResult<Vec<Follow>
 }
 
 /// Check if user follows something
-pub async fn is_following_user(pool: &PgPool, follower_id: i32, followee_id: i32) -> AppResult<bool> {
+pub async fn is_following_user(
+    pool: &PgPool,
+    follower_id: i32,
+    followee_id: i32,
+) -> AppResult<bool> {
     let row: Option<(i64,)> = sqlx::query_as(
         "SELECT id FROM follows WHERE follower_id = $1 AND followee_id = $2 LIMIT 1",
     )
@@ -544,25 +589,27 @@ pub async fn is_following_user(pool: &PgPool, follower_id: i32, followee_id: i32
 }
 
 pub async fn is_following_work(pool: &PgPool, follower_id: i32, work_id: i32) -> AppResult<bool> {
-    let row: Option<(i64,)> = sqlx::query_as(
-        "SELECT id FROM follows WHERE follower_id = $1 AND work_id = $2 LIMIT 1",
-    )
-    .bind(follower_id)
-    .bind(work_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM follows WHERE follower_id = $1 AND work_id = $2 LIMIT 1")
+            .bind(follower_id)
+            .bind(work_id)
+            .fetch_optional(pool)
+            .await?;
     Ok(row.is_some())
 }
 
 /// Get the follow id for (user, work) — used by the fic page follow button.
-pub async fn find_follow_for_work(pool: &PgPool, follower_id: i32, work_id: i32) -> AppResult<Option<i64>> {
-    let row: Option<(i64,)> = sqlx::query_as(
-        "SELECT id FROM follows WHERE follower_id = $1 AND work_id = $2 LIMIT 1",
-    )
-    .bind(follower_id)
-    .bind(work_id)
-    .fetch_optional(pool)
-    .await?;
+pub async fn find_follow_for_work(
+    pool: &PgPool,
+    follower_id: i32,
+    work_id: i32,
+) -> AppResult<Option<i64>> {
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM follows WHERE follower_id = $1 AND work_id = $2 LIMIT 1")
+            .bind(follower_id)
+            .bind(work_id)
+            .fetch_optional(pool)
+            .await?;
     Ok(row.map(|r| r.0))
 }
 
@@ -584,11 +631,12 @@ pub async fn find_follow_for_author(
 
 /// Mark a follow's `last_seen` as now (idempotent; no row → no-op).
 pub async fn mark_follow_seen(pool: &PgPool, follow_id: i64, user_id: i32) -> AppResult<bool> {
-    let result = sqlx::query("UPDATE follows SET last_seen = NOW() WHERE id = $1 AND follower_id = $2")
-        .bind(follow_id)
-        .bind(user_id)
-        .execute(pool)
-        .await?;
+    let result =
+        sqlx::query("UPDATE follows SET last_seen = NOW() WHERE id = $1 AND follower_id = $2")
+            .bind(follow_id)
+            .bind(user_id)
+            .execute(pool)
+            .await?;
     Ok(result.rows_affected() > 0)
 }
 
@@ -609,7 +657,10 @@ pub struct FollowedWorkUpdate {
     pub last_seen: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-pub async fn list_followed_work_updates(pool: &PgPool, user_id: i32) -> AppResult<Vec<FollowedWorkUpdate>> {
+pub async fn list_followed_work_updates(
+    pool: &PgPool,
+    user_id: i32,
+) -> AppResult<Vec<FollowedWorkUpdate>> {
     let rows = sqlx::query_as::<_, FollowedWorkUpdate>(
         r#"SELECT f.id AS follow_id, f.work_id, fi.id AS url_id, fi.title, fi.author,
                   fi.words, fi.chapters, fi.status, fi.fic_updated, f.last_seen
@@ -802,12 +853,11 @@ pub async fn create_notification(
 
 /// Get unread notification count
 pub async fn get_unread_notification_count(pool: &PgPool, user_id: i32) -> AppResult<i64> {
-    let row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND is_read = FALSE",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await?;
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND is_read = FALSE")
+            .bind(user_id)
+            .fetch_one(pool)
+            .await?;
     Ok(row.0)
 }
 
@@ -835,14 +885,17 @@ pub async fn list_notifications(
 }
 
 /// Mark notification as read
-pub async fn mark_notification_read(pool: &PgPool, user_id: i32, notification_id: i64) -> AppResult<bool> {
-    let result = sqlx::query(
-        "UPDATE notifications SET is_read = TRUE WHERE id = $1 AND user_id = $2",
-    )
-    .bind(notification_id)
-    .bind(user_id)
-    .execute(pool)
-    .await?;
+pub async fn mark_notification_read(
+    pool: &PgPool,
+    user_id: i32,
+    notification_id: i64,
+) -> AppResult<bool> {
+    let result =
+        sqlx::query("UPDATE notifications SET is_read = TRUE WHERE id = $1 AND user_id = $2")
+            .bind(notification_id)
+            .bind(user_id)
+            .execute(pool)
+            .await?;
     Ok(result.rows_affected() > 0)
 }
 
@@ -856,7 +909,10 @@ pub async fn mark_all_notifications_read(pool: &PgPool, user_id: i32) -> AppResu
 }
 
 /// Get or create notification preferences
-pub async fn get_notification_preferences(pool: &PgPool, user_id: i32) -> AppResult<NotificationPreference> {
+pub async fn get_notification_preferences(
+    pool: &PgPool,
+    user_id: i32,
+) -> AppResult<NotificationPreference> {
     let prefs = sqlx::query_as::<_, NotificationPreference>(
         r#"SELECT user_id, comment_reply, follow_update, work_update, badge_earned,
                   curator_promotion, recommendation, email_digest, updated_at,
@@ -974,11 +1030,7 @@ pub async fn get_user_badges(pool: &PgPool, user_id: i32) -> AppResult<Vec<UserB
 }
 
 /// Award a badge and create notification
-pub async fn award_badge(
-    pool: &PgPool,
-    user_id: i32,
-    badge_type: &str,
-) -> AppResult<bool> {
+pub async fn award_badge(pool: &PgPool, user_id: i32, badge_type: &str) -> AppResult<bool> {
     // Insert badge (no-op if already earned)
     let result = sqlx::query(
         "INSERT INTO user_badges (user_id, badge_type) VALUES ($1, $2) ON CONFLICT DO NOTHING",
@@ -1012,7 +1064,8 @@ pub async fn award_badge(
             .await?;
 
             // Award reputation for badge
-            update_reputation_and_promote(pool, user_id, 10, &format!("badge_{}", badge_type)).await?;
+            update_reputation_and_promote(pool, user_id, 10, &format!("badge_{}", badge_type))
+                .await?;
         }
         Ok(true)
     } else {
@@ -1125,11 +1178,15 @@ pub async fn record_login_streak(pool: &PgPool, user_id: i32) -> AppResult<i32> 
             user_id,
             "streak_milestone",
             &format!("{}-day Login Streak!", current_streak),
-            Some(&format!("You've logged in for {} consecutive days! Keep it up!", current_streak)),
+            Some(&format!(
+                "You've logged in for {} consecutive days! Keep it up!",
+                current_streak
+            )),
             Some("/reading/streak"),
             Some("streak"),
             Some(&current_streak.to_string()),
-        ).await;
+        )
+        .await;
     }
 
     Ok(current_streak)
@@ -1200,7 +1257,10 @@ pub async fn get_user_reading_stats(pool: &PgPool, user_id: i32) -> AppResult<Ve
 }
 
 /// Get aggregate user reading stats (zeros for unknown users — never 500)
-pub async fn get_user_reading_aggregate(pool: &PgPool, user_id: i32) -> AppResult<(i64, i32, Option<i32>)> {
+pub async fn get_user_reading_aggregate(
+    pool: &PgPool,
+    user_id: i32,
+) -> AppResult<(i64, i32, Option<i32>)> {
     let row = sqlx::query_as::<_, (i64, i32, Option<i32>)>(
         "SELECT total_words_read, total_works_read, COALESCE((SELECT current_streak FROM login_streaks WHERE user_id = $1), 0) FROM users WHERE id = $1",
     )
@@ -1249,7 +1309,10 @@ pub async fn record_read_history(
 
 /// Get paginated reading history for a user.
 /// Aggregate personal reading activity from the durable reading tables.
-pub async fn get_personal_reading_analytics(pool: &PgPool, user_id: i32) -> AppResult<serde_json::Value> {
+pub async fn get_personal_reading_analytics(
+    pool: &PgPool,
+    user_id: i32,
+) -> AppResult<serde_json::Value> {
     let row = sqlx::query(
         r#"SELECT COUNT(*)::BIGINT AS visits, COUNT(DISTINCT work_id)::BIGINT AS works,
                   COUNT(DISTINCT visited_at::date)::BIGINT AS active_days,
@@ -1261,14 +1324,24 @@ pub async fn get_personal_reading_analytics(pool: &PgPool, user_id: i32) -> AppR
         r#"SELECT visited_at::date AS day, COUNT(*)::BIGINT AS visits,
                   COUNT(DISTINCT work_id)::BIGINT AS works
            FROM reading_history WHERE user_id=$1
-           GROUP BY visited_at::date ORDER BY day DESC LIMIT 30"#)
-        .bind(user_id).fetch_all(pool).await?;
-    let days: Vec<_> = recent.into_iter().map(|r| serde_json::json!({
-        "date": r.get::<chrono::NaiveDate, _>("day").to_string(),
-        "visits": r.get::<i64, _>("visits"), "works": r.get::<i64, _>("works")
-    })).collect();
-    Ok(serde_json::json!({"visits": row.get::<i64,_>("visits"), "works": row.get::<i64,_>("works"),
-        "active_days": row.get::<i64,_>("active_days"), "words_read": row.get::<i64,_>("words"), "daily": days}))
+           GROUP BY visited_at::date ORDER BY day DESC LIMIT 30"#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    let days: Vec<_> = recent
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "date": r.get::<chrono::NaiveDate, _>("day").to_string(),
+                "visits": r.get::<i64, _>("visits"), "works": r.get::<i64, _>("works")
+            })
+        })
+        .collect();
+    Ok(
+        serde_json::json!({"visits": row.get::<i64,_>("visits"), "works": row.get::<i64,_>("works"),
+        "active_days": row.get::<i64,_>("active_days"), "words_read": row.get::<i64,_>("words"), "daily": days}),
+    )
 }
 
 /// Aggregate author performance and readership from real work/reading data.
@@ -1281,8 +1354,10 @@ pub async fn get_author_analytics(pool: &PgPool, profile_id: i32) -> AppResult<s
         LEFT JOIN reading_stats rs ON rs.work_id=w.id LEFT JOIN reading_history rh ON rh.work_id=w.id
         WHERE ap.id=$1 GROUP BY ap.id"#).bind(profile_id).fetch_optional(pool).await?;
     let row = row.ok_or_else(|| crate::error::AppError::NotFound("Author not found".into()))?;
-    Ok(serde_json::json!({"author": row.get::<String,_>("canonical_name"), "works": row.get::<i64,_>("works"),
-        "reads": row.get::<i64,_>("reads"), "words_read": row.get::<i64,_>("words"), "unique_readers": row.get::<i64,_>("readers")}))
+    Ok(
+        serde_json::json!({"author": row.get::<String,_>("canonical_name"), "works": row.get::<i64,_>("works"),
+        "reads": row.get::<i64,_>("reads"), "words_read": row.get::<i64,_>("words"), "unique_readers": row.get::<i64,_>("readers")}),
+    )
 }
 
 pub async fn get_reading_history(
@@ -1333,11 +1408,10 @@ pub async fn clear_read_history(pool: &PgPool, user_id: i32) -> AppResult<()> {
 
 /// Get all supported locales
 pub async fn get_locales(pool: &PgPool) -> AppResult<Vec<Locale>> {
-    let rows = sqlx::query_as::<_, Locale>(
-        "SELECT id, code, name, is_rtl FROM locales ORDER BY id",
-    )
-    .fetch_all(pool)
-    .await?;
+    let rows =
+        sqlx::query_as::<_, Locale>("SELECT id, code, name, is_rtl FROM locales ORDER BY id")
+            .fetch_all(pool)
+            .await?;
     Ok(rows)
 }
 
@@ -1484,9 +1558,7 @@ pub async fn compute_weekly_leaderboard(pool: &PgPool) -> AppResult<()> {
 /// Compute monthly leaderboard
 pub async fn compute_monthly_leaderboard(pool: &PgPool) -> AppResult<()> {
     let now = chrono::Utc::now().date_naive();
-    let month_start = {
-        chrono::NaiveDate::from_ymd_opt(now.year(), now.month(), 1).unwrap()
-    };
+    let month_start = { chrono::NaiveDate::from_ymd_opt(now.year(), now.month(), 1).unwrap() };
 
     sqlx::query("DELETE FROM leaderboard_monthly WHERE month_start = $1")
         .bind(month_start)
@@ -1531,10 +1603,14 @@ pub async fn notify_comment_reply(
         "comment_reply",
         &format!("{} replied to your comment", replier_username),
         None,
-        Some(&format!("/api/works/{}/comments#comment-{}", work_id, comment_id)),
+        Some(&format!(
+            "/api/works/{}/comments#comment-{}",
+            work_id, comment_id
+        )),
         Some("comment"),
         Some(&comment_id.to_string()),
-    ).await?;
+    )
+    .await?;
 
     Ok(())
 }
@@ -1545,12 +1621,11 @@ pub async fn notify_work_followers(
     work_id: i32,
     work_title: &str,
 ) -> AppResult<i64> {
-    let followers = sqlx::query_scalar::<_, i32>(
-        "SELECT follower_id FROM follows WHERE work_id = $1",
-    )
-    .bind(work_id)
-    .fetch_all(pool)
-    .await?;
+    let followers =
+        sqlx::query_scalar::<_, i32>("SELECT follower_id FROM follows WHERE work_id = $1")
+            .bind(work_id)
+            .fetch_all(pool)
+            .await?;
 
     for follower_id in &followers {
         // Check preferences
@@ -1565,7 +1640,9 @@ pub async fn notify_work_followers(
                 Some(&format!("/api/works/{}", work_id)),
                 Some("work"),
                 Some(&work_id.to_string()),
-            ).await.ok();
+            )
+            .await
+            .ok();
         }
     }
 
@@ -1662,7 +1739,9 @@ pub async fn insert_tag_flag(
 }
 
 /// List unresolved flags for curator review
-pub async fn list_unresolved_flags(pool: &PgPool) -> AppResult<Vec<(i64, String, i32, String, Option<String>)>> {
+pub async fn list_unresolved_flags(
+    pool: &PgPool,
+) -> AppResult<Vec<(i64, String, i32, String, Option<String>)>> {
     let rows = sqlx::query_as::<_, (i64, String, i32, String, Option<String>)>(
         r#"SELECT f.id, f.url_id, f.tag_id, t.name, f.reason
            FROM tag_flags f
@@ -1750,14 +1829,15 @@ pub async fn merge_tags(pool: &PgPool, source_tag_id: i32, target_tag_id: i32) -
 /// Delete a canonical tag (only if no fics use it)
 pub async fn delete_tag(pool: &PgPool, tag_id: i32, force: bool) -> AppResult<()> {
     if !force {
-        let count: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM fic_tags WHERE tag_id = $1",
-        )
-        .bind(tag_id)
-        .fetch_one(pool)
-        .await?;
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM fic_tags WHERE tag_id = $1")
+            .bind(tag_id)
+            .fetch_one(pool)
+            .await?;
         if count.0 > 0 {
-            return Err(crate::error::AppError::BadRequest(format!("tag {} is used by {} fics, use ?force=true", tag_id, count.0)));
+            return Err(crate::error::AppError::BadRequest(format!(
+                "tag {} is used by {} fics, use ?force=true",
+                tag_id, count.0
+            )));
         }
     }
     sqlx::query("DELETE FROM fic_tags WHERE tag_id = $1")
@@ -1837,10 +1917,7 @@ pub async fn get_work_by_source(pool: &PgPool, url_id: &str) -> AppResult<Option
 }
 
 /// Find work by source URL (searching fic_info.source)
-pub async fn find_work_by_source_url(
-    pool: &PgPool,
-    url: &str,
-) -> AppResult<Option<WorkRow>> {
+pub async fn find_work_by_source_url(pool: &PgPool, url: &str) -> AppResult<Option<WorkRow>> {
     let row = sqlx::query_as::<_, WorkRow>(
         r#"SELECT w.id, w.canonical_title, w.canonical_author, w.description, w.default_source_id, w.created_at, w.updated_at, w.uploader_id, w.is_visible
            FROM works w
@@ -1874,11 +1951,7 @@ pub async fn find_work_by_title_author(
 }
 
 /// Link a fic_info source to a work
-pub async fn link_source_to_work(
-    pool: &PgPool,
-    url_id: &str,
-    work_id: i32,
-) -> AppResult<()> {
+pub async fn link_source_to_work(pool: &PgPool, url_id: &str, work_id: i32) -> AppResult<()> {
     sqlx::query("UPDATE fic_info SET work_id = $1 WHERE id = $2")
         .bind(work_id)
         .bind(url_id)
@@ -1888,10 +1961,7 @@ pub async fn link_source_to_work(
 }
 
 /// Get all sources (fic_info) for a work
-pub async fn get_work_sources(
-    pool: &PgPool,
-    work_id: i32,
-) -> AppResult<Vec<FicInfo>> {
+pub async fn get_work_sources(pool: &PgPool, work_id: i32) -> AppResult<Vec<FicInfo>> {
     let rows = sqlx::query_as::<_, FicInfo>(
         "SELECT id, created, updated, title, author, author_url, author_local_id,
                 chapters, words, description, fic_created, fic_updated, status,
@@ -1996,10 +2066,7 @@ pub async fn cast_proposal_vote(
 }
 
 /// Get vote sum for a proposal
-pub async fn get_proposal_vote_sum(
-    pool: &PgPool,
-    proposal_id: i32,
-) -> AppResult<(i64, i64)> {
+pub async fn get_proposal_vote_sum(pool: &PgPool, proposal_id: i32) -> AppResult<(i64, i64)> {
     let row: (Option<i64>, Option<i64>) = sqlx::query_as(
         r#"SELECT COALESCE(SUM(vote), 0), COUNT(DISTINCT user_id)
            FROM work_proposal_votes WHERE proposal_id = $1"#,
@@ -2012,13 +2079,14 @@ pub async fn get_proposal_vote_sum(
 
 /// Check if user has senior curator role (role >= 2)
 pub async fn is_senior_curator(pool: &PgPool, user_id: i32) -> AppResult<bool> {
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT role FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
-    Ok(matches!(row.as_ref().map(|r| r.0.as_str()), Some("admin") | Some("moderator")))
+    let row: Option<(String,)> = sqlx::query_as("SELECT role FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(matches!(
+        row.as_ref().map(|r| r.0.as_str()),
+        Some("admin") | Some("moderator")
+    ))
 }
 
 /// Update proposal status
@@ -2084,12 +2152,11 @@ pub async fn execute_split(
     // For each source to split off, create a new work and reassign sources
     for &source_id in split_source_ids {
         // Get the source's original title/author before merge
-        let source: Option<(String, String, String)> = sqlx::query_as(
-            "SELECT title, author, description FROM fic_info WHERE id = $1",
-        )
-        .bind(source_id)
-        .fetch_optional(pool)
-        .await?;
+        let source: Option<(String, String, String)> =
+            sqlx::query_as("SELECT title, author, description FROM fic_info WHERE id = $1")
+                .bind(source_id)
+                .fetch_optional(pool)
+                .await?;
 
         if let Some((title, author, desc)) = source {
             // Create new work for this source
@@ -2157,22 +2224,19 @@ pub async fn update_reputation_and_promote(
     .await?;
 
     // Check for auto-promotion to curator (reputation >= 100, role = user)
-    let row: Option<(i32, String)> = sqlx::query_as(
-        "SELECT reputation, role FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(i32, String)> =
+        sqlx::query_as("SELECT reputation, role FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
 
     if let Some((reputation, role)) = row {
         if reputation >= 100 && role == "user" {
             // Promote to curator
-            sqlx::query(
-                "UPDATE users SET role = 'curator', curator_since = NOW() WHERE id = $1",
-            )
-            .bind(user_id)
-            .execute(pool)
-            .await?;
+            sqlx::query("UPDATE users SET role = 'curator', curator_since = NOW() WHERE id = $1")
+                .bind(user_id)
+                .execute(pool)
+                .await?;
 
             // Record promotion event
             sqlx::query(
@@ -2214,10 +2278,7 @@ pub async fn get_daily_stats(
 }
 
 /// Get per-user stats (total requests, downloads, unique fics)
-pub async fn get_user_stats(
-    pool: &PgPool,
-    client_id: &str,
-) -> AppResult<(i64, i64, i64)> {
+pub async fn get_user_stats(pool: &PgPool, client_id: &str) -> AppResult<(i64, i64, i64)> {
     let row = sqlx::query_as::<_, (i64, i64, i64)>(
         r#"SELECT 
             COUNT(*) as total_requests,
@@ -2257,10 +2318,7 @@ pub async fn get_popular_fics(
 }
 
 /// Get download format breakdown
-pub async fn get_format_breakdown(
-    pool: &PgPool,
-    days: i32,
-) -> AppResult<Vec<(String, i64)>> {
+pub async fn get_format_breakdown(pool: &PgPool, days: i32) -> AppResult<Vec<(String, i64)>> {
     let rows = sqlx::query_as::<_, (String, i64)>(
         r#"SELECT 
              CASE 
@@ -2287,10 +2345,7 @@ pub async fn get_format_breakdown(
 }
 
 /// Get total unique visitors (distinct client_ids)
-pub async fn get_total_unique_visitors(
-    pool: &PgPool,
-    days: i32,
-) -> AppResult<i64> {
+pub async fn get_total_unique_visitors(pool: &PgPool, days: i32) -> AppResult<i64> {
     let row = sqlx::query_scalar::<_, i64>(
         r#"SELECT COUNT(DISTINCT client_id)
            FROM request_log
@@ -2304,10 +2359,7 @@ pub async fn get_total_unique_visitors(
 }
 
 /// Get return visitor rate (visitors with 2+ requests)
-pub async fn get_return_visitor_rate(
-    pool: &PgPool,
-    days: i32,
-) -> AppResult<(i64, i64)> {
+pub async fn get_return_visitor_rate(pool: &PgPool, days: i32) -> AppResult<(i64, i64)> {
     let row = sqlx::query_as::<_, (i64, i64)>(
         r#"SELECT 
              COUNT(DISTINCT client_id) as total_visitors,
@@ -2412,10 +2464,7 @@ pub async fn get_monthly_unique_visitors(
 
 /// Active users in a window: distinct client_ids that performed at least one
 /// ACTION (non-view event). Returns (active_count, total_events).
-pub async fn get_active_users(
-    pool: &PgPool,
-    days: i32,
-) -> AppResult<(i64, i64)> {
+pub async fn get_active_users(pool: &PgPool, days: i32) -> AppResult<(i64, i64)> {
     let row = sqlx::query_as::<_, (i64, i64)>(
         r#"SELECT COUNT(DISTINCT client_id) as active_users,
                   COUNT(*) as action_events
@@ -2430,10 +2479,7 @@ pub async fn get_active_users(
 }
 
 /// Distinct client_ids that ONLY viewed (no actions) in the window.
-pub async fn get_view_only_users(
-    pool: &PgPool,
-    days: i32,
-) -> AppResult<i64> {
+pub async fn get_view_only_users(pool: &PgPool, days: i32) -> AppResult<i64> {
     let row = sqlx::query_scalar::<_, i64>(
         r#"SELECT COUNT(DISTINCT client_id)
            FROM usage_events
@@ -2524,10 +2570,7 @@ pub async fn get_endpoint_usage(
     Ok(rows)
 }
 
-pub async fn get_endpoint_group_usage(
-    pool: &PgPool,
-    days: i32,
-) -> AppResult<Vec<(String, i64)>> {
+pub async fn get_endpoint_group_usage(pool: &PgPool, days: i32) -> AppResult<Vec<(String, i64)>> {
     // Use SQL CASE to bucket paths into feature groups server-side.
     let rows = sqlx::query_as::<_, (String, i64)>(
         r#"SELECT
@@ -2554,8 +2597,25 @@ pub async fn get_endpoint_group_usage(
 pub async fn get_recent_events(
     pool: &PgPool,
     limit: i32,
-) -> AppResult<Vec<(chrono::DateTime<chrono::Utc>, String, String, String, Option<String>)>> {
-    let rows = sqlx::query_as::<_, (chrono::DateTime<chrono::Utc>, String, String, String, Option<String>)>(
+) -> AppResult<
+    Vec<(
+        chrono::DateTime<chrono::Utc>,
+        String,
+        String,
+        String,
+        Option<String>,
+    )>,
+> {
+    let rows = sqlx::query_as::<
+        _,
+        (
+            chrono::DateTime<chrono::Utc>,
+            String,
+            String,
+            String,
+            Option<String>,
+        ),
+    >(
         r#"SELECT created_at, client_id, path, event_type, user_agent
            FROM usage_events
            ORDER BY created_at DESC
@@ -2810,13 +2870,11 @@ pub async fn remove_reading_list_item(
     list_id: i32,
     work_id: i32,
 ) -> AppResult<bool> {
-    let result = sqlx::query(
-        "DELETE FROM reading_list_items WHERE list_id = $1 AND work_id = $2",
-    )
-    .bind(list_id)
-    .bind(work_id)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("DELETE FROM reading_list_items WHERE list_id = $1 AND work_id = $2")
+        .bind(list_id)
+        .bind(work_id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected() > 0)
 }
 
@@ -3031,7 +3089,12 @@ pub async fn update_collection(
 }
 
 /// Soft-delete a collection (owner or curator >= 5).
-pub async fn delete_collection(pool: &PgPool, id: i32, user_id: i32, is_curator: bool) -> AppResult<bool> {
+pub async fn delete_collection(
+    pool: &PgPool,
+    id: i32,
+    user_id: i32,
+    is_curator: bool,
+) -> AppResult<bool> {
     let result = if is_curator {
         sqlx::query(
             r#"UPDATE reading_lists
@@ -3107,23 +3170,20 @@ pub async fn add_collection_item(
 }
 
 /// Remove a work from a collection (owner or curator).
-pub async fn remove_collection_item(
-    pool: &PgPool,
-    list_id: i32,
-    work_id: i32,
-) -> AppResult<bool> {
-    let result = sqlx::query(
-        "DELETE FROM reading_list_items WHERE list_id = $1 AND work_id = $2",
-    )
-    .bind(list_id)
-    .bind(work_id)
-    .execute(pool)
-    .await?;
+pub async fn remove_collection_item(pool: &PgPool, list_id: i32, work_id: i32) -> AppResult<bool> {
+    let result = sqlx::query("DELETE FROM reading_list_items WHERE list_id = $1 AND work_id = $2")
+        .bind(list_id)
+        .bind(work_id)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected() > 0)
 }
 
 /// List pending (and recent) add requests for a moderated collection.
-pub async fn list_collection_item_requests(pool: &PgPool, list_id: i32) -> AppResult<Vec<CollectionItemRequestRow>> {
+pub async fn list_collection_item_requests(
+    pool: &PgPool,
+    list_id: i32,
+) -> AppResult<Vec<CollectionItemRequestRow>> {
     let rows = sqlx::query_as::<_, CollectionItemRequestRow>(
         r#"SELECT cir.id, cir.list_id, cir.work_id, cir.requested_by,
                   u.username AS requested_by_username, cir.blurb, cir.status,
@@ -3205,7 +3265,11 @@ pub async fn upsert_collection_submission_vote(
 
 /// Approve a pending collection item (owner/curator): move it into
 /// reading_list_items and mark the request 'approved'.
-pub async fn approve_collection_item(pool: &PgPool, list_id: i32, request_id: i64) -> AppResult<bool> {
+pub async fn approve_collection_item(
+    pool: &PgPool,
+    list_id: i32,
+    request_id: i64,
+) -> AppResult<bool> {
     let mut tx = pool.begin().await?;
     // Grab the pending request
     let req: Option<(i32, i32, String)> = sqlx::query_as(
@@ -3248,7 +3312,11 @@ pub async fn approve_collection_item(pool: &PgPool, list_id: i32, request_id: i6
 }
 
 /// Reject a pending collection item (owner/curator).
-pub async fn reject_collection_item(pool: &PgPool, list_id: i32, request_id: i64) -> AppResult<bool> {
+pub async fn reject_collection_item(
+    pool: &PgPool,
+    list_id: i32,
+    request_id: i64,
+) -> AppResult<bool> {
     let result = sqlx::query(
         r#"UPDATE collection_item_requests
            SET status = 'rejected', reviewed_at = NOW()
@@ -3275,18 +3343,20 @@ pub async fn bookmark_collection(pool: &PgPool, user_id: i32, list_id: i32) -> A
 
 /// Remove a collection bookmark.
 pub async fn unbookmark_collection(pool: &PgPool, user_id: i32, list_id: i32) -> AppResult<bool> {
-    let result = sqlx::query(
-        "DELETE FROM collection_bookmarks WHERE user_id = $1 AND list_id = $2",
-    )
-    .bind(user_id)
-    .bind(list_id)
-    .execute(pool)
-    .await?;
+    let result =
+        sqlx::query("DELETE FROM collection_bookmarks WHERE user_id = $1 AND list_id = $2")
+            .bind(user_id)
+            .bind(list_id)
+            .execute(pool)
+            .await?;
     Ok(result.rows_affected() > 0)
 }
 
 /// List users who bookmarked a collection.
-pub async fn list_collection_bookmarkers(pool: &PgPool, list_id: i32) -> AppResult<Vec<(i32, String, String)>> {
+pub async fn list_collection_bookmarkers(
+    pool: &PgPool,
+    list_id: i32,
+) -> AppResult<Vec<(i32, String, String)>> {
     let rows: Vec<(i32, String, String)> = sqlx::query_as(
         r#"SELECT u.id, u.username, cb.created_at::text
            FROM collection_bookmarks cb
@@ -3378,14 +3448,23 @@ mod tests {
         ];
 
         let uuid_regex = regex_lite::Regex::new(
-            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-        ).unwrap();
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        )
+        .unwrap();
 
         for uuid in valid_uuids {
-            assert!(uuid_regex.is_match(uuid), "Should be valid UUID v4: {}", uuid);
+            assert!(
+                uuid_regex.is_match(uuid),
+                "Should be valid UUID v4: {}",
+                uuid
+            );
         }
         for uuid in invalid_uuids {
-            assert!(!uuid_regex.is_match(uuid), "Should be invalid UUID: {}", uuid);
+            assert!(
+                !uuid_regex.is_match(uuid),
+                "Should be invalid UUID: {}",
+                uuid
+            );
         }
     }
 
@@ -3403,7 +3482,7 @@ mod tests {
         let user_stat: (i64, i64, i64) = (50, 10, 5);
         assert_eq!(user_stat.0, 50); // total_requests
         assert_eq!(user_stat.1, 10); // unique_fics
-        assert_eq!(user_stat.2, 5);  // downloads
+        assert_eq!(user_stat.2, 5); // downloads
 
         let popular_fic: (String, i64, i64) = ("abc123".to_string(), 200, 150);
         assert_eq!(popular_fic.1, 200); // request_count
@@ -3560,17 +3639,41 @@ mod tests {
 
     #[test]
     fn test_endpoint_group_classification() {
-        assert_eq!(crate::db::queries::endpoint_group("/api/search?q=foo"), "search");
-        assert_eq!(crate::db::queries::endpoint_group("/api/tags/search?q=x"), "search");
+        assert_eq!(
+            crate::db::queries::endpoint_group("/api/search?q=foo"),
+            "search"
+        );
+        assert_eq!(
+            crate::db::queries::endpoint_group("/api/tags/search?q=x"),
+            "search"
+        );
         assert_eq!(crate::db::queries::endpoint_group("/feed.xml"), "search");
-        assert_eq!(crate::db::queries::endpoint_group("/api/epub?id=1"), "export");
-        assert_eq!(crate::db::queries::endpoint_group("/cache/epub/1/file.epub"), "export");
-        assert_eq!(crate::db::queries::endpoint_group("/api/download/author"), "export");
+        assert_eq!(
+            crate::db::queries::endpoint_group("/api/epub?id=1"),
+            "export"
+        );
+        assert_eq!(
+            crate::db::queries::endpoint_group("/cache/epub/1/file.epub"),
+            "export"
+        );
+        assert_eq!(
+            crate::db::queries::endpoint_group("/api/download/author"),
+            "export"
+        );
         assert_eq!(crate::db::queries::endpoint_group("/reader/1"), "reader");
         assert_eq!(crate::db::queries::endpoint_group("/api/works/1"), "reader");
-        assert_eq!(crate::db::queries::endpoint_group("/api/comments"), "social");
-        assert_eq!(crate::db::queries::endpoint_group("/api/bookmarks"), "social");
-        assert_eq!(crate::db::queries::endpoint_group("/api/forum/threads"), "social");
+        assert_eq!(
+            crate::db::queries::endpoint_group("/api/comments"),
+            "social"
+        );
+        assert_eq!(
+            crate::db::queries::endpoint_group("/api/bookmarks"),
+            "social"
+        );
+        assert_eq!(
+            crate::db::queries::endpoint_group("/api/forum/threads"),
+            "social"
+        );
         assert_eq!(crate::db::queries::endpoint_group("/api/health"), "other");
         assert_eq!(crate::db::queries::endpoint_group("/"), "other");
     }

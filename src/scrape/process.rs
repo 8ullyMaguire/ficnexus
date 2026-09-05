@@ -4,7 +4,7 @@
 //! Bridges `scrape::quality::classify` with the curator quorum system
 //! (`curator_content` proposals). Pure decision logic — no DB or network.
 
-use crate::scrape::quality::{classify, QualityVerdict};
+use crate::scrape::quality::{QualityVerdict, classify};
 
 /// Action to take for a scraped fic after quality classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,8 +25,8 @@ pub enum ProcessAction {
 pub fn process_scraped_fic(m: &fanfic_scrapers::FicMetadata) -> ProcessAction {
     match classify(m) {
         QualityVerdict::Accept => ProcessAction::Accept,
-        QualityVerdict::Suspicious => ProcessAction::Quarantine,
-        QualityVerdict::Reject => ProcessAction::Reject,
+        QualityVerdict::Suspicious(_) => ProcessAction::Quarantine,
+        QualityVerdict::Reject(_) => ProcessAction::Reject,
     }
 }
 
@@ -88,6 +88,21 @@ mod tests {
     }
 
     #[test]
+    fn quality_verdict_reasons_are_descriptive() {
+        let reject_fic = fic("unknown", "alice42", 5_000);
+        match classify(&reject_fic) {
+            QualityVerdict::Reject(reason) => assert!(!reason.is_empty()),
+            _ => panic!("expected Reject"),
+        }
+
+        let suspicious_fic = fic("Real Title", "real_author", 0);
+        match classify(&suspicious_fic) {
+            QualityVerdict::Suspicious(reason) => assert!(!reason.is_empty()),
+            _ => panic!("expected Suspicious"),
+        }
+    }
+
+    #[test]
     fn process_action_matches_verdict() {
         // Exhaustive mapping check
         let accept_fic = fic("Good Title", "Good Author", 1000);
@@ -95,7 +110,7 @@ mod tests {
         let reject_fic = fic("unknown", "unknown", 100);
 
         assert_eq!(classify(&accept_fic), QualityVerdict::Accept);
-        assert_eq!(classify(&suspicious_fic), QualityVerdict::Suspicious);
-        assert_eq!(classify(&reject_fic), QualityVerdict::Reject);
+        assert!(matches!(classify(&suspicious_fic), QualityVerdict::Suspicious(_)));
+        assert!(matches!(classify(&reject_fic), QualityVerdict::Reject(_)));
     }
 }
