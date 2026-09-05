@@ -20,6 +20,7 @@ pub mod server;
 pub mod services;
 pub mod activitypub;
 pub mod tags;
+pub mod trending;
 pub mod works;
 pub mod progression;
 
