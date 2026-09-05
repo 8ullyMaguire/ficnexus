@@ -118,7 +118,7 @@ impl fmt::Display for LeaderboardCategory {
 }
 
 /// A single leaderboard entry.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct LeaderboardEntry {
     pub user_id: i32,
     pub username: String,
