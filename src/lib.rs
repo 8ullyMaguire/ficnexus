@@ -22,6 +22,7 @@ pub mod server;
 pub mod services;
 pub mod tags;
 pub mod trending;
+pub mod user_formats;
 pub mod visitor;
 pub mod works;
 
