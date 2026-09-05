@@ -313,14 +313,11 @@ impl Config {
     /// Load configuration from environment variables.
     /// Required vars: DATABASE_URL, REDIS_URL, CACHE_DIR
     pub fn from_env() -> Self {
-        let database_url = std::env::var("DATABASE_URL")
-            .expect("DATABASE_URL must be set");
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-        let redis_url = std::env::var("REDIS_URL")
-            .expect("REDIS_URL must be set");
+        let redis_url = std::env::var("REDIS_URL").expect("REDIS_URL must be set");
 
-        let cache_dir = std::env::var("CACHE_DIR")
-            .unwrap_or_else(|_| "./cache".to_string());
+        let cache_dir = std::env::var("CACHE_DIR").unwrap_or_else(|_| "./cache".to_string());
 
         let secondary_cache_dir = std::env::var("SECONDARY_CACHE_DIR")
             .ok()
@@ -337,14 +334,11 @@ impl Config {
             .parse::<bool>()
             .unwrap_or(true);
 
-        let node_name = std::env::var("NODE_NAME")
-            .unwrap_or_else(|_| "orion".to_string());
+        let node_name = std::env::var("NODE_NAME").unwrap_or_else(|_| "orion".to_string());
 
-        let calibre_container = std::env::var("CALIBRE_CONTAINER")
-            .unwrap_or_default();
+        let calibre_container = std::env::var("CALIBRE_CONTAINER").unwrap_or_default();
 
-        let tmp_dir = std::env::var("TMP_DIR")
-            .unwrap_or_else(|_| "./tmp".to_string());
+        let tmp_dir = std::env::var("TMP_DIR").unwrap_or_else(|_| "./tmp".to_string());
 
         let body_cache_dir = std::env::var("BODY_CACHE_DIR")
             .unwrap_or_else(|_| "/public/literature/fichub/bodies".to_string());
@@ -354,8 +348,8 @@ impl Config {
             .parse()
             .unwrap_or(3000);
 
-        let frontend_dir = std::env::var("FRONTEND_DIR")
-            .unwrap_or_else(|_| "./frontend/build".to_string());
+        let frontend_dir =
+            std::env::var("FRONTEND_DIR").unwrap_or_else(|_| "./frontend/build".to_string());
 
         let trusted_proxies = std::env::var("TRUSTED_PROXIES")
             .unwrap_or_default()
@@ -383,63 +377,73 @@ impl Config {
             .collect();
 
         // MaxMind GeoLite2-ASN DB path for datacenter-IP blocking (optional).
-        let maxmind_db = std::env::var("MAXMIND_DB")
-            .ok()
-            .filter(|s| !s.is_empty());
+        let maxmind_db = std::env::var("MAXMIND_DB").ok().filter(|s| !s.is_empty());
 
         // Recommender config
         let rec_default_delay_secs = std::env::var("REC_DEFAULT_DELAY_SECS")
             .unwrap_or_else(|_| "5".to_string())
-            .parse().unwrap_or(5);
+            .parse()
+            .unwrap_or(5);
 
-        let rec_site_rate_limits_str = std::env::var("REC_SITE_RATE_LIMITS")
-            .unwrap_or_else(|_| "{}".to_string());
+        let rec_site_rate_limits_str =
+            std::env::var("REC_SITE_RATE_LIMITS").unwrap_or_else(|_| "{}".to_string());
         let rec_site_rate_limits: HashMap<String, u64> =
             serde_json::from_str(&rec_site_rate_limits_str).unwrap_or_default();
 
         let rec_max_favourite_pages = std::env::var("REC_MAX_FAVOURITE_PAGES")
             .unwrap_or_else(|_| "3".to_string())
-            .parse().unwrap_or(3);
+            .parse()
+            .unwrap_or(3);
 
         let rec_max_user_favourite_pages = std::env::var("REC_MAX_USER_FAVOURITE_PAGES")
             .unwrap_or_else(|_| "3".to_string())
-            .parse().unwrap_or(3);
+            .parse()
+            .unwrap_or(3);
 
         let rec_max_recommendations = std::env::var("REC_MAX_RECOMMENDATIONS")
             .unwrap_or_else(|_| "20".to_string())
-            .parse().unwrap_or(20);
+            .parse()
+            .unwrap_or(20);
 
         let rec_min_favouriters_for_collab = std::env::var("REC_MIN_FAVOURITERS_FOR_COLLAB")
             .unwrap_or_else(|_| "5".to_string())
-            .parse().unwrap_or(5);
+            .parse()
+            .unwrap_or(5);
 
         let rec_voting_boost_gamma = std::env::var("REC_VOTING_BOOST_GAMMA")
             .unwrap_or_else(|_| "0.2".to_string())
-            .parse().unwrap_or(0.2);
+            .parse()
+            .unwrap_or(0.2);
 
         let rec_cache_ttl_hours = std::env::var("REC_CACHE_TTL_HOURS")
             .unwrap_or_else(|_| "12".to_string())
-            .parse().unwrap_or(12);
+            .parse()
+            .unwrap_or(12);
 
         let rec_suggest_limit_per_hour = std::env::var("REC_SUGGEST_LIMIT_PER_HOUR")
             .unwrap_or_else(|_| "5".to_string())
-            .parse().unwrap_or(5);
+            .parse()
+            .unwrap_or(5);
 
         let rec_vote_limit_per_hour = std::env::var("REC_VOTE_LIMIT_PER_HOUR")
             .unwrap_or_else(|_| "10".to_string())
-            .parse().unwrap_or(10);
+            .parse()
+            .unwrap_or(10);
 
         let rec_precompute_enabled = std::env::var("REC_PRECOMPUTE_ENABLED")
             .unwrap_or_else(|_| "true".to_string())
-            .parse::<bool>().unwrap_or(true);
+            .parse::<bool>()
+            .unwrap_or(true);
 
         let rec_precompute_interval_hours = std::env::var("REC_PRECOMPUTE_INTERVAL_HOURS")
             .unwrap_or_else(|_| "6".to_string())
-            .parse().unwrap_or(6);
+            .parse()
+            .unwrap_or(6);
 
         let rec_enable_cross_site = std::env::var("REC_ENABLE_CROSS_SITE")
             .unwrap_or_else(|_| "true".to_string())
-            .parse::<bool>().unwrap_or(true);
+            .parse::<bool>()
+            .unwrap_or(true);
 
         // ── Pluggable recommendation platform (Stage 0+) ────────────────
         let rec_engine_mode = RecEngineMode::from_env();
@@ -447,42 +451,53 @@ impl Config {
             std::env::var("REC_STRATEGIES").unwrap_or_else(|_| "cooccur".to_string());
         let rec_decay_halflife_days = std::env::var("REC_DECAY_HALFLIFE_DAYS")
             .unwrap_or_else(|_| "30".to_string())
-            .parse().unwrap_or(30.0);
+            .parse()
+            .unwrap_or(30.0);
         let rec_embed_model =
             std::env::var("REC_EMBED_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string());
         let rec_embed_dim = std::env::var("REC_EMBED_DIM")
             .unwrap_or_else(|_| "384".to_string())
-            .parse().unwrap_or(384);
+            .parse()
+            .unwrap_or(384);
         let rec_mf_factors = std::env::var("REC_MF_FACTORS")
             .unwrap_or_else(|_| "16".to_string())
-            .parse().unwrap_or(16);
+            .parse()
+            .unwrap_or(16);
         let rec_mf_iters = std::env::var("REC_MF_ITERS")
             .unwrap_or_else(|_| "10".to_string())
-            .parse().unwrap_or(10);
+            .parse()
+            .unwrap_or(10);
         let rec_mf_train_min_signals = std::env::var("REC_MF_TRAIN_MIN_SIGNALS")
             .unwrap_or_else(|_| "500".to_string())
-            .parse().unwrap_or(500);
+            .parse()
+            .unwrap_or(500);
         let rec_bandit_slots = std::env::var("REC_BANDIT_SLOTS")
             .unwrap_or_else(|_| "1".to_string())
-            .parse().unwrap_or(1);
+            .parse()
+            .unwrap_or(1);
         let rec_train_every_h = std::env::var("REC_TRAIN_EVERY_H")
             .unwrap_or_else(|_| "6".to_string())
-            .parse().unwrap_or(6);
+            .parse()
+            .unwrap_or(6);
         let rec_shadow_mode = std::env::var("REC_SHADOW_MODE")
             .unwrap_or_else(|_| "false".to_string())
-            .parse::<bool>().unwrap_or(false);
+            .parse::<bool>()
+            .unwrap_or(false);
         let rec_curator_prior = std::env::var("REC_CURATOR_PRIOR")
             .ok()
             .and_then(|s| s.parse::<i32>().ok());
         let rec_prior_floor = std::env::var("REC_PRIOR_FLOOR")
             .unwrap_or_else(|_| "0.2".to_string())
-            .parse().unwrap_or(0.2);
+            .parse()
+            .unwrap_or(0.2);
         let rec_curator_tau = std::env::var("REC_CURATOR_TAU")
             .unwrap_or_else(|_| "25".to_string())
-            .parse().unwrap_or(25.0);
+            .parse()
+            .unwrap_or(25.0);
         let rec_strategy_timeout_secs = std::env::var("REC_STRATEGY_TIMEOUT_SECS")
             .unwrap_or_else(|_| "10".to_string())
-            .parse().unwrap_or(10);
+            .parse()
+            .unwrap_or(10);
         let rec_external_url = std::env::var("REC_EXTERNAL_URL")
             .ok()
             .filter(|s| !s.is_empty());
@@ -491,19 +506,23 @@ impl Config {
         let curator_token = std::env::var("CURATOR_TOKEN").ok();
         let tag_hidden_threshold = std::env::var("TAG_HIDDEN_THRESHOLD")
             .unwrap_or_else(|_| "-3".to_string())
-            .parse().unwrap_or(-3);
+            .parse()
+            .unwrap_or(-3);
         let tag_auto_delete_threshold = std::env::var("TAG_AUTO_DELETE_THRESHOLD")
             .ok()
             .and_then(|s| s.parse().ok());
         let tag_submit_limit_per_hour = std::env::var("TAG_SUBMIT_LIMIT_PER_HOUR")
             .unwrap_or_else(|_| "10".to_string())
-            .parse().unwrap_or(10);
+            .parse()
+            .unwrap_or(10);
         let tag_vote_limit_per_hour = std::env::var("TAG_VOTE_LIMIT_PER_HOUR")
             .unwrap_or_else(|_| "20".to_string())
-            .parse().unwrap_or(20);
+            .parse()
+            .unwrap_or(20);
         let search_max_per_page = std::env::var("SEARCH_MAX_PER_PAGE")
             .unwrap_or_else(|_| "50".to_string())
-            .parse().unwrap_or(50);
+            .parse()
+            .unwrap_or(50);
         let max_upload_bytes = std::env::var("MAX_UPLOAD_BYTES")
             .unwrap_or_else(|_| (20 * 1024 * 1024).to_string())
             .parse()
@@ -517,11 +536,10 @@ impl Config {
             .unwrap_or_else(|_| "365".to_string())
             .parse()
             .unwrap_or(365);
-        let wayback_cdx_rate_limit_per_sec =
-            std::env::var("WAYBACK_CDX_RATE_LIMIT_PER_SEC")
-                .unwrap_or_else(|_| "1".to_string())
-                .parse()
-                .unwrap_or(1);
+        let wayback_cdx_rate_limit_per_sec = std::env::var("WAYBACK_CDX_RATE_LIMIT_PER_SEC")
+            .unwrap_or_else(|_| "1".to_string())
+            .parse()
+            .unwrap_or(1);
 
         let opds_shelf_token =
             std::env::var("OPDS_SHELF_TOKEN").unwrap_or_else(|_| "fichub".to_string());
@@ -576,10 +594,13 @@ impl Config {
             .unwrap_or(600);
 
         // Ollama embeddings (Roadmap Consensus Engine)
-        let ollama_url = std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-        let ollama_embed_model = std::env::var("OLLAMA_EMBED_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string());
+        let ollama_url =
+            std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+        let ollama_embed_model =
+            std::env::var("OLLAMA_EMBED_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string());
         // Ollama chat model for tiny LLM apps (comment moderation triage).
-        let ollama_chat_model = std::env::var("OLLAMA_CHAT_MODEL").unwrap_or_else(|_| "lfm2.5:8b".to_string());
+        let ollama_chat_model =
+            std::env::var("OLLAMA_CHAT_MODEL").unwrap_or_else(|_| "lfm2.5:8b".to_string());
 
         // Send-to-Kindle (SMTP) — optional; if SMTP_HOST is unset the
         // /api/send-to-kindle endpoint reports SMTP not configured.
@@ -633,8 +654,8 @@ impl Config {
             .unwrap_or_else(|_| "true".to_string())
             .parse::<bool>()
             .unwrap_or(true);
-        let translate_model = std::env::var("TRANSLATE_MODEL")
-                    .unwrap_or_else(|_| ollama_chat_model.clone());
+        let translate_model =
+            std::env::var("TRANSLATE_MODEL").unwrap_or_else(|_| ollama_chat_model.clone());
         let translate_chunk_chars = std::env::var("TRANSLATE_CHUNK_CHARS")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -674,29 +695,51 @@ impl Config {
             .parse::<bool>()
             .unwrap_or(false);
         let translate_points_approved = std::env::var("TRANSLATE_POINTS_APPROVED")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(15);
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(15);
         let translate_points_improved = std::env::var("TRANSLATE_POINTS_IMPROVED")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(25);
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(25);
         let translate_points_reviewed = std::env::var("TRANSLATE_POINTS_REVIEWED")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(2);
         let translate_points_flag = std::env::var("TRANSLATE_POINTS_FLAG")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1);
         let translate_points_daily_cap = std::env::var("TRANSLATE_POINTS_DAILY_CAP")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(100);
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(100);
 
         // ── Universal curator proposals (§3 of translation-everything.md) ──
         let proposal_quorum_translate = std::env::var("PROPOSAL_QUORUM_TRANSLATE")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(2);
         let proposal_quorum_content_fix = std::env::var("PROPOSAL_QUORUM_CONTENT_FIX")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(2);
         let proposal_quorum_post_edit = std::env::var("PROPOSAL_QUORUM_POST_EDIT")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1);
         let proposal_quorum_doc_edit = std::env::var("PROPOSAL_QUORUM_DOC_EDIT")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(1);
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1);
         let proposal_quorum_work_deletion = std::env::var("PROPOSAL_QUORUM_WORK_DELETION")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(2);
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(2);
         let proposals_per_user_per_day = std::env::var("PROPOSALS_PER_USER_PER_DAY")
-            .ok().and_then(|s| s.parse().ok()).unwrap_or(10);
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(10);
 
         // ── Forum moderation points (SPEC-COMMUNITY-PLATFORM §8, F5) ──
         let forum_points_per_window = std::env::var("FORUM_POINTS_PER_WINDOW")
@@ -1025,7 +1068,9 @@ mod tests {
         fn set(&mut self, key: &str, val: &str) {
             self.keys.push(key.to_string());
             // SAFETY: Test-only env var manipulation under ENV_LOCK, single-threaded.
-            unsafe { std::env::set_var(key, val); }
+            unsafe {
+                std::env::set_var(key, val);
+            }
         }
     }
 
@@ -1033,7 +1078,9 @@ mod tests {
         fn drop(&mut self) {
             for key in &self.keys {
                 // SAFETY: Test-only env var cleanup under ENV_LOCK, single-threaded.
-                unsafe { std::env::remove_var(key); }
+                unsafe {
+                    std::env::remove_var(key);
+                }
             }
         }
     }
@@ -1041,43 +1088,108 @@ mod tests {
     /// Clear all known config env vars (before each test).
     fn clear_config_env() {
         let keys = [
-            "DATABASE_URL", "REDIS_URL", "CACHE_DIR", "SECONDARY_CACHE_DIR",
-            "EXPORT_VERSION", "DYNAMIC_RATE_LIMIT", "NODE_NAME", "CALIBRE_CONTAINER",
-            "TMP_DIR", "PORT", "FRONTEND_DIR", "TRUSTED_PROXIES", "IP_TAG_SOURCES", "MAXMIND_DB",
-            "REC_DEFAULT_DELAY_SECS", "REC_SITE_RATE_LIMITS", "REC_MAX_FAVOURITE_PAGES",
-            "REC_MAX_USER_FAVOURITE_PAGES", "REC_MAX_RECOMMENDATIONS",
-            "REC_MIN_FAVOURITERS_FOR_COLLAB", "REC_VOTING_BOOST_GAMMA",
-            "REC_CACHE_TTL_HOURS", "REC_SUGGEST_LIMIT_PER_HOUR", "REC_VOTE_LIMIT_PER_HOUR",
-            "REC_PRECOMPUTE_ENABLED", "REC_PRECOMPUTE_INTERVAL_HOURS", "REC_ENABLE_CROSS_SITE",
-            "REC_ENGINE_MODE", "REC_STRATEGIES", "REC_DECAY_HALFLIFE_DAYS", "REC_EMBED_MODEL",
-            "REC_EMBED_DIM", "REC_MF_FACTORS", "REC_MF_ITERS", "REC_MF_TRAIN_MIN_SIGNALS",
-            "REC_BANDIT_SLOTS", "REC_TRAIN_EVERY_H", "REC_SHADOW_MODE", "REC_CURATOR_PRIOR",
-            "REC_PRIOR_FLOOR", "REC_CURATOR_TAU", "REC_STRATEGY_TIMEOUT_SECS", "REC_EXTERNAL_URL",
-            "RL_DOWNLOAD_CAPACITY", "RL_DOWNLOAD_FLOW", "RL_AUTH_CAPACITY", "RL_AUTH_FLOW",
-            "RL_SEARCH_CAPACITY", "RL_SEARCH_FLOW", "RL_CLIENT_BONUS_CAPACITY", "RL_CLIENT_BONUS_FLOW",
+            "DATABASE_URL",
+            "REDIS_URL",
+            "CACHE_DIR",
+            "SECONDARY_CACHE_DIR",
+            "EXPORT_VERSION",
+            "DYNAMIC_RATE_LIMIT",
+            "NODE_NAME",
+            "CALIBRE_CONTAINER",
+            "TMP_DIR",
+            "PORT",
+            "FRONTEND_DIR",
+            "TRUSTED_PROXIES",
+            "IP_TAG_SOURCES",
+            "MAXMIND_DB",
+            "REC_DEFAULT_DELAY_SECS",
+            "REC_SITE_RATE_LIMITS",
+            "REC_MAX_FAVOURITE_PAGES",
+            "REC_MAX_USER_FAVOURITE_PAGES",
+            "REC_MAX_RECOMMENDATIONS",
+            "REC_MIN_FAVOURITERS_FOR_COLLAB",
+            "REC_VOTING_BOOST_GAMMA",
+            "REC_CACHE_TTL_HOURS",
+            "REC_SUGGEST_LIMIT_PER_HOUR",
+            "REC_VOTE_LIMIT_PER_HOUR",
+            "REC_PRECOMPUTE_ENABLED",
+            "REC_PRECOMPUTE_INTERVAL_HOURS",
+            "REC_ENABLE_CROSS_SITE",
+            "REC_ENGINE_MODE",
+            "REC_STRATEGIES",
+            "REC_DECAY_HALFLIFE_DAYS",
+            "REC_EMBED_MODEL",
+            "REC_EMBED_DIM",
+            "REC_MF_FACTORS",
+            "REC_MF_ITERS",
+            "REC_MF_TRAIN_MIN_SIGNALS",
+            "REC_BANDIT_SLOTS",
+            "REC_TRAIN_EVERY_H",
+            "REC_SHADOW_MODE",
+            "REC_CURATOR_PRIOR",
+            "REC_PRIOR_FLOOR",
+            "REC_CURATOR_TAU",
+            "REC_STRATEGY_TIMEOUT_SECS",
+            "REC_EXTERNAL_URL",
+            "RL_DOWNLOAD_CAPACITY",
+            "RL_DOWNLOAD_FLOW",
+            "RL_AUTH_CAPACITY",
+            "RL_AUTH_FLOW",
+            "RL_SEARCH_CAPACITY",
+            "RL_SEARCH_FLOW",
+            "RL_CLIENT_BONUS_CAPACITY",
+            "RL_CLIENT_BONUS_FLOW",
             "RL_NAT_MULTIPLIER",
-            "RL_SHADOWBAN_CAPACITY", "RL_SHADOWBAN_FLOW", "RL_SHADOWBAN_TTL", "RL_TIERED_ENABLED",
-            "POW_DIFFICULTY", "POW_TTL_SECS",
-            "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM",
-            "FORUM_POINTS_PER_WINDOW", "FORUM_WINDOW_HOURS", "FORUM_MOD_MIN_LEVEL",
-            "FORUM_MOD_MIN_EXP", "FORUM_MOD_MIN_AGE_DAYS", "FORUM_MOD_POOL_MIN",
-            "FORUM_META_MIN_LEVEL", "FORUM_META_MIN_EXP", "FORUM_META_MIN_AGE_DAYS",
-            "FORUM_META_MIN_POSTS", "FORUM_META_RATINGS", "FORUM_META_POOL_MIN",
-            "FORUM_META_AUDIT_WINDOW", "FORUM_META_MIN_RATED", "FORUM_META_UNFAIR_RATE",
+            "RL_SHADOWBAN_CAPACITY",
+            "RL_SHADOWBAN_FLOW",
+            "RL_SHADOWBAN_TTL",
+            "RL_TIERED_ENABLED",
+            "POW_DIFFICULTY",
+            "POW_TTL_SECS",
+            "SMTP_HOST",
+            "SMTP_PORT",
+            "SMTP_USER",
+            "SMTP_PASS",
+            "SMTP_FROM",
+            "FORUM_POINTS_PER_WINDOW",
+            "FORUM_WINDOW_HOURS",
+            "FORUM_MOD_MIN_LEVEL",
+            "FORUM_MOD_MIN_EXP",
+            "FORUM_MOD_MIN_AGE_DAYS",
+            "FORUM_MOD_POOL_MIN",
+            "FORUM_META_MIN_LEVEL",
+            "FORUM_META_MIN_EXP",
+            "FORUM_META_MIN_AGE_DAYS",
+            "FORUM_META_MIN_POSTS",
+            "FORUM_META_RATINGS",
+            "FORUM_META_POOL_MIN",
+            "FORUM_META_AUDIT_WINDOW",
+            "FORUM_META_MIN_RATED",
+            "FORUM_META_UNFAIR_RATE",
             "FORUM_META_COOLDOWN_DAYS",
-            "FORUM_CURATOR_LEVEL", "FORUM_ADMIN_LEVEL", "FORUM_EXP_PER_LEVEL",
-            "FORUM_EXP_TOPIC_CREATE", "FORUM_EXP_POST_CREATE",
-            "FORUM_EXP_MOD_RECEIVED", "FORUM_EXP_MOD_DAILY_CAP",
-            "AGENT_EXTRACT_MAX_SNAPSHOT_CHARS", "FORUM_PUBLIC_READ",
-            "TRANSLATE_READING_LOCALE_ASK", "TRANSLATE_UI_STRINGS",
+            "FORUM_CURATOR_LEVEL",
+            "FORUM_ADMIN_LEVEL",
+            "FORUM_EXP_PER_LEVEL",
+            "FORUM_EXP_TOPIC_CREATE",
+            "FORUM_EXP_POST_CREATE",
+            "FORUM_EXP_MOD_RECEIVED",
+            "FORUM_EXP_MOD_DAILY_CAP",
+            "AGENT_EXTRACT_MAX_SNAPSHOT_CHARS",
+            "FORUM_PUBLIC_READ",
+            "TRANSLATE_READING_LOCALE_ASK",
+            "TRANSLATE_UI_STRINGS",
             "TRANSLATE_KEEP_MACHINE_ON_DISMISS",
-            "TRANSLATE_POINTS_APPROVED", "TRANSLATE_POINTS_IMPROVED",
-            "TRANSLATE_POINTS_REVIEWED", "TRANSLATE_POINTS_FLAG",
+            "TRANSLATE_POINTS_APPROVED",
+            "TRANSLATE_POINTS_IMPROVED",
+            "TRANSLATE_POINTS_REVIEWED",
+            "TRANSLATE_POINTS_FLAG",
             "TRANSLATE_POINTS_DAILY_CAP",
         ];
         for key in &keys {
             // SAFETY: Test-only env var cleanup under ENV_LOCK, single-threaded.
-            unsafe { std::env::remove_var(key); }
+            unsafe {
+                std::env::remove_var(key);
+            }
         }
     }
 
@@ -1141,16 +1253,15 @@ mod tests {
         );
         assert_eq!(config.agent_max_runs_per_day, 6);
         assert_eq!(config.agent_cooldown_domain_secs, 3600);
-        assert!(!config.agent_use_on_fly, "AGENT_USE_ON_FLY defaults to false");
+        assert!(
+            !config.agent_use_on_fly,
+            "AGENT_USE_ON_FLY defaults to false"
+        );
         assert_eq!(
-            config.agent_extract_max_snapshot_chars,
-            120000,
+            config.agent_extract_max_snapshot_chars, 120000,
             "AGENT_EXTRACT_MAX_SNAPSHOT_CHARS defaults to 120000"
         );
-        assert_eq!(
-            config.agent_ollama_url,
-            "http://localhost:11434"
-        );
+        assert_eq!(config.agent_ollama_url, "http://localhost:11434");
         // Forum moderation point defaults (SPEC §8)
         assert_eq!(config.forum_points_per_window, 5);
         assert_eq!(config.forum_window_hours, 72);

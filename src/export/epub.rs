@@ -76,8 +76,7 @@ pub async fn create_epub(
     );
 
     builder.add_content(
-        EpubContent::new("introduction.xhtml", intro_html.as_bytes())
-            .title("Introduction"),
+        EpubContent::new("introduction.xhtml", intro_html.as_bytes()).title("Introduction"),
     )?;
 
     // ---- chapters ---------------------------------------------------------
@@ -101,8 +100,7 @@ pub async fn create_epub(
 
         let filename = format!("chapter_{}.xhtml", chapter.chapter_id);
         builder.add_content(
-            EpubContent::new(filename.as_str(), chapter_html.as_bytes())
-                .title(&chapter.title),
+            EpubContent::new(filename.as_str(), chapter_html.as_bytes()).title(&chapter.title),
         )?;
     }
 

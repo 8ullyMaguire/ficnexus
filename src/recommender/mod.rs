@@ -1,3 +1,23 @@
+pub mod author_graph;
+pub mod bandit;
+pub mod clusters;
+pub mod curator;
+pub mod decay;
+pub mod embedding_recs;
+pub mod embeddings;
+pub mod engine;
+pub mod entities;
+pub mod external;
+pub mod hybrid;
+pub mod legacy_cooccur;
+pub mod mf;
+pub mod ranker;
+pub mod registry;
+pub mod routes;
+pub mod sequential;
+pub mod signals;
+pub mod strategy;
+pub mod tag_graph;
 /// Recommender system — pluggable strategy platform.
 ///
 /// Modules:
@@ -20,32 +40,11 @@
 /// - `clusters`: taste-cluster k-means memberships
 /// - `bandit`: Thompson-sampling contextual bandit exploration
 /// - `external`: HTTP adapter for optional Python sidecars (`REC_EXTERNAL_URL`)
-
 pub mod worker;
-pub mod engine;
-pub mod routes;
-pub mod strategy;
-pub mod registry;
-pub mod ranker;
-pub mod signals;
-pub mod legacy_cooccur;
-pub mod decay;
-pub mod embeddings;
-pub mod mf;
-pub mod hybrid;
-pub mod author_graph;
-pub mod tag_graph;
-pub mod sequential;
-pub mod clusters;
-pub mod bandit;
-pub mod external;
-pub mod curator;
-pub mod entities;
-pub mod embedding_recs;
 
-pub use worker::CollectionWorker;
-pub use engine::{RecommendationEngine, RecQuery, RecResult};
+pub use engine::{RecQuery, RecResult, RecommendationEngine};
 pub use strategy::{RecError, RecStrategy, ScoredRec, StrategyContext};
+pub use worker::CollectionWorker;
 
 /// Assemble the full set of available strategies for the registry.
 /// `external` is included only when `REC_EXTERNAL_URL` is set.

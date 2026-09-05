@@ -1,7 +1,7 @@
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;
@@ -72,15 +72,13 @@ pub async fn trending_by_tag_handler(
             .await?;
 
             match alias {
-                Some(canonical_id) => {
-                    sqlx::query_as::<_, (i32, String, i16)>(
-                        "SELECT id, name, tag_type_id FROM tags WHERE id = $1",
-                    )
-                    .bind(canonical_id)
-                    .fetch_optional(&state.db)
-                    .await?
-                    .ok_or_else(|| AppError::NotFound("Tag not found".into()))?
-                }
+                Some(canonical_id) => sqlx::query_as::<_, (i32, String, i16)>(
+                    "SELECT id, name, tag_type_id FROM tags WHERE id = $1",
+                )
+                .bind(canonical_id)
+                .fetch_optional(&state.db)
+                .await?
+                .ok_or_else(|| AppError::NotFound("Tag not found".into()))?,
                 None => return Err(AppError::NotFound(format!("Tag '{}' not found", tag_name))),
             }
         }
@@ -111,18 +109,23 @@ pub async fn trending_by_tag_handler(
     .fetch_all(&state.db)
     .await?;
 
-    let items: Vec<Value> = rows.into_iter().map(|(id, title, author, words, chapters, status, requests, downloads)| {
-        json!({
-            "url_id": id,
-            "title": title,
-            "author": author,
-            "words": words,
-            "chapters": chapters,
-            "status": status,
-            "requests": requests,
-            "downloads": downloads,
-        })
-    }).collect();
+    let items: Vec<Value> = rows
+        .into_iter()
+        .map(
+            |(id, title, author, words, chapters, status, requests, downloads)| {
+                json!({
+                    "url_id": id,
+                    "title": title,
+                    "author": author,
+                    "words": words,
+                    "chapters": chapters,
+                    "status": status,
+                    "requests": requests,
+                    "downloads": downloads,
+                })
+            },
+        )
+        .collect();
 
     Ok(Json(json!({
         "err": 0,
@@ -167,18 +170,23 @@ pub async fn trending_general_handler(
     .fetch_all(&state.db)
     .await?;
 
-    let items: Vec<Value> = rows.into_iter().map(|(id, title, author, words, chapters, status, requests, downloads)| {
-        json!({
-            "url_id": id,
-            "title": title,
-            "author": author,
-            "words": words,
-            "chapters": chapters,
-            "status": status,
-            "requests": requests,
-            "downloads": downloads,
-        })
-    }).collect();
+    let items: Vec<Value> = rows
+        .into_iter()
+        .map(
+            |(id, title, author, words, chapters, status, requests, downloads)| {
+                json!({
+                    "url_id": id,
+                    "title": title,
+                    "author": author,
+                    "words": words,
+                    "chapters": chapters,
+                    "status": status,
+                    "requests": requests,
+                    "downloads": downloads,
+                })
+            },
+        )
+        .collect();
 
     Ok(Json(json!({
         "err": 0,
@@ -211,15 +219,18 @@ pub async fn trending_tags_handler(
     .fetch_all(&state.db)
     .await?;
 
-    let items: Vec<Value> = rows.into_iter().map(|(id, name, type_id, type_name, count)| {
-        json!({
-            "id": id,
-            "name": name,
-            "tag_type_id": type_id,
-            "type_name": type_name,
-            "fic_count": count,
+    let items: Vec<Value> = rows
+        .into_iter()
+        .map(|(id, name, type_id, type_name, count)| {
+            json!({
+                "id": id,
+                "name": name,
+                "tag_type_id": type_id,
+                "type_name": type_name,
+                "fic_count": count,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({
         "err": 0,

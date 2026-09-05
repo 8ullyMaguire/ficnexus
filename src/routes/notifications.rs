@@ -1,7 +1,7 @@
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::db::queries;
@@ -21,26 +21,31 @@ pub async fn list_notifications_handler(
     State(state): State<Arc<AppState>>,
     Query(params): Query<NotifQueryParams>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
     let limit = params.limit.unwrap_or(20).min(50).max(1);
     let offset = params.offset.unwrap_or(0).max(0);
 
     let notifs = queries::list_notifications(&state.db, user_id, limit, offset).await?;
     let unread_count = queries::get_unread_notification_count(&state.db, user_id).await?;
 
-    let items: Vec<Value> = notifs.into_iter().map(|n| {
-        json!({
-            "id": n.id,
-            "notification_type": n.notification_type,
-            "title": n.title,
-            "body": n.body,
-            "link": n.link,
-            "reference_type": n.reference_type,
-            "reference_id": n.reference_id,
-            "is_read": n.is_read,
-            "created_at": n.created_at.to_rfc3339(),
+    let items: Vec<Value> = notifs
+        .into_iter()
+        .map(|n| {
+            json!({
+                "id": n.id,
+                "notification_type": n.notification_type,
+                "title": n.title,
+                "body": n.body,
+                "link": n.link,
+                "reference_type": n.reference_type,
+                "reference_id": n.reference_id,
+                "is_read": n.is_read,
+                "created_at": n.created_at.to_rfc3339(),
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({
         "err": 0,
@@ -55,7 +60,9 @@ pub async fn mark_notification_read_handler(
     State(state): State<Arc<AppState>>,
     Path(notif_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let marked = queries::mark_notification_read(&state.db, user_id, notif_id).await?;
 
@@ -70,7 +77,9 @@ pub async fn mark_all_read_handler(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     queries::mark_all_notifications_read(&state.db, user_id).await?;
 
@@ -82,7 +91,9 @@ pub async fn unread_count_handler(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let count = queries::get_unread_notification_count(&state.db, user_id).await?;
 
@@ -112,7 +123,9 @@ pub async fn get_preferences_handler(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let prefs = queries::get_notification_preferences(&state.db, user_id).await?;
 
@@ -142,29 +155,57 @@ pub async fn update_preferences_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<PrefsBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let mut prefs = queries::get_notification_preferences(&state.db, user_id).await?;
 
-    if let Some(v) = body.comment_reply { prefs.comment_reply = v; }
-    if let Some(v) = body.follow_update { prefs.follow_update = v; }
-    if let Some(v) = body.work_update { prefs.work_update = v; }
-    if let Some(v) = body.badge_earned { prefs.badge_earned = v; }
-    if let Some(v) = body.curator_promotion { prefs.curator_promotion = v; }
-    if let Some(v) = body.recommendation { prefs.recommendation = v; }
+    if let Some(v) = body.comment_reply {
+        prefs.comment_reply = v;
+    }
+    if let Some(v) = body.follow_update {
+        prefs.follow_update = v;
+    }
+    if let Some(v) = body.work_update {
+        prefs.work_update = v;
+    }
+    if let Some(v) = body.badge_earned {
+        prefs.badge_earned = v;
+    }
+    if let Some(v) = body.curator_promotion {
+        prefs.curator_promotion = v;
+    }
+    if let Some(v) = body.recommendation {
+        prefs.recommendation = v;
+    }
     if let Some(ref d) = body.email_digest {
         if !["instant", "daily", "weekly", "never"].contains(&d.as_str()) {
-            return Err(AppError::BadRequest("email_digest must be one of: instant, daily, weekly, never".to_string()));
+            return Err(AppError::BadRequest(
+                "email_digest must be one of: instant, daily, weekly, never".to_string(),
+            ));
         }
         prefs.email_digest = d.clone();
     }
     // ── Granular toggles (migration 060) ────────────────────────────────
-    if let Some(v) = body.comments_on_work { prefs.comments_on_work = v; }
-    if let Some(v) = body.replies_to_comments { prefs.replies_to_comments = v; }
-    if let Some(v) = body.kudos_on_work { prefs.kudos_on_work = v; }
-    if let Some(v) = body.bookmarks_on_work { prefs.bookmarks_on_work = v; }
-    if let Some(v) = body.follows { prefs.follows = v; }
-    if let Some(v) = body.mentions { prefs.mentions = v; }
+    if let Some(v) = body.comments_on_work {
+        prefs.comments_on_work = v;
+    }
+    if let Some(v) = body.replies_to_comments {
+        prefs.replies_to_comments = v;
+    }
+    if let Some(v) = body.kudos_on_work {
+        prefs.kudos_on_work = v;
+    }
+    if let Some(v) = body.bookmarks_on_work {
+        prefs.bookmarks_on_work = v;
+    }
+    if let Some(v) = body.follows {
+        prefs.follows = v;
+    }
+    if let Some(v) = body.mentions {
+        prefs.mentions = v;
+    }
 
     queries::update_notification_preferences(&state.db, user_id, &prefs).await?;
 

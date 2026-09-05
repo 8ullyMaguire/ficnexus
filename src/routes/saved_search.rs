@@ -12,11 +12,11 @@
 //! `saved_searches` (the saved query + alert state) and `saved_search_matches`
 //! (the works already seen for an alerting search).
 
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::response::IntoResponse;
-use axum::Json;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::{AppError, AppResult};
@@ -79,7 +79,9 @@ pub fn validate_alert_mode(mode: &str) -> Result<(), AppError> {
 pub fn validate_create_request(req: &CreateSavedSearchRequest) -> Result<(), AppError> {
     let name = req.name.trim();
     if name.is_empty() {
-        return Err(AppError::BadRequest("Saved search name is required".to_string()));
+        return Err(AppError::BadRequest(
+            "Saved search name is required".to_string(),
+        ));
     }
     if name.len() > 120 {
         return Err(AppError::BadRequest(
@@ -184,13 +186,11 @@ pub async fn delete_saved_search(
 ) -> AppResult<Json<Value>> {
     let user_id = require_user(&auth)?;
 
-    let deleted = sqlx::query(
-        "DELETE FROM saved_searches WHERE id = $1 AND user_id = $2",
-    )
-    .bind(path.id)
-    .bind(user_id)
-    .execute(&state.db)
-    .await?;
+    let deleted = sqlx::query("DELETE FROM saved_searches WHERE id = $1 AND user_id = $2")
+        .bind(path.id)
+        .bind(user_id)
+        .execute(&state.db)
+        .await?;
 
     if deleted.rows_affected() == 0 {
         return Err(AppError::NotFound(format!(
@@ -212,14 +212,13 @@ pub async fn update_saved_search_alert(
     let user_id = require_user(&auth)?;
     validate_alert_mode(&body.alert_mode)?;
 
-    let updated = sqlx::query(
-        "UPDATE saved_searches SET alert_mode = $1 WHERE id = $2 AND user_id = $3",
-    )
-    .bind(&body.alert_mode)
-    .bind(path.id)
-    .bind(user_id)
-    .execute(&state.db)
-    .await?;
+    let updated =
+        sqlx::query("UPDATE saved_searches SET alert_mode = $1 WHERE id = $2 AND user_id = $3")
+            .bind(&body.alert_mode)
+            .bind(path.id)
+            .bind(user_id)
+            .execute(&state.db)
+            .await?;
 
     if updated.rows_affected() == 0 {
         return Err(AppError::NotFound(format!(
@@ -253,9 +252,8 @@ pub async fn run_saved_search(
     .fetch_optional(&state.db)
     .await?;
 
-    let (name, query_text) = row.ok_or_else(|| {
-        AppError::NotFound(format!("Saved search {} not found", path.id))
-    })?;
+    let (name, query_text) =
+        row.ok_or_else(|| AppError::NotFound(format!("Saved search {} not found", path.id)))?;
 
     // Run through the exact same pipeline as a live /api/search call so the
     // response shape is identical (total / page / per_page / results / facets).
@@ -346,14 +344,13 @@ pub async fn saved_search_feed(
     let search_id = params.search_id;
 
     // Verify the search exists and belongs to the given user.
-    let (name,): (String,) = sqlx::query_as(
-        "SELECT name FROM saved_searches WHERE id = $1 AND user_id = $2",
-    )
-    .bind(search_id)
-    .bind(params.user_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::NotFound("saved search not found".to_string()))?;
+    let (name,): (String,) =
+        sqlx::query_as("SELECT name FROM saved_searches WHERE id = $1 AND user_id = $2")
+            .bind(search_id)
+            .bind(params.user_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("saved search not found".to_string()))?;
 
     let rows = matched_feed_rows(&state, search_id, super::rss::MAX_ENTRIES).await?;
     let now = iso_now();
@@ -393,12 +390,7 @@ pub async fn saved_search_feed(
         &format!("urn:ficnexus:feed:saved:{}:{}", params.user_id, search_id),
         &format!("FicNexus — Saved Search: {}", name),
         "New works matching this saved search",
-        &format!(
-            "/feed/saved/{}/{}{}",
-            params.user_id,
-            search_id,
-            ".xml"
-        ),
+        &format!("/feed/saved/{}/{}{}", params.user_id, search_id, ".xml"),
         &now,
         &entries,
         state.config.opds_base_url.as_deref(),

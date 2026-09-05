@@ -1,10 +1,10 @@
 /// AdultFanFiction.org site scraper
 pub struct AdultFanFictionScraper;
 
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use async_trait::async_trait;
-use crate::{FicMetadata, Chapter, SiteScraper, ScrapeError};
-use scraper::{Html, Selector};
 use chrono::Utc;
+use scraper::{Html, Selector};
 
 #[async_trait]
 impl SiteScraper for AdultFanFictionScraper {
@@ -12,9 +12,16 @@ impl SiteScraper for AdultFanFictionScraper {
         url.contains("adult-fanfiction.org") || url.contains("adultfanfiction.net")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         // AFF uses numeric story IDs
-        let story_id = url.split('/').filter_map(|s| s.parse::<i64>().ok()).next()
+        let story_id = url
+            .split('/')
+            .filter_map(|s| s.parse::<i64>().ok())
+            .next()
             .ok_or_else(|| ScrapeError::ParseError("could not extract story ID".into()))?;
 
         let response = client
@@ -28,7 +35,10 @@ impl SiteScraper for AdultFanFictionScraper {
             return Err(ScrapeError::NotFound);
         }
 
-        let html = response.text().await.map_err(|e| ScrapeError::Network(e.to_string()))?;
+        let html = response
+            .text()
+            .await
+            .map_err(|e| ScrapeError::Network(e.to_string()))?;
         let document = Html::parse_document(&html);
 
         let title = document
@@ -73,7 +83,11 @@ impl SiteScraper for AdultFanFictionScraper {
         })
     }
 
-    async fn fetch_chapters(&self, client: &reqwest::Client, meta: &FicMetadata) -> Result<Vec<Chapter>, ScrapeError> {
+    async fn fetch_chapters(
+        &self,
+        client: &reqwest::Client,
+        meta: &FicMetadata,
+    ) -> Result<Vec<Chapter>, ScrapeError> {
         let response = client
             .get(&meta.source)
             .header("User-Agent", "fichub.net/0.1.0")
@@ -81,7 +95,10 @@ impl SiteScraper for AdultFanFictionScraper {
             .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
 
-        let html = response.text().await.map_err(|e| ScrapeError::Network(e.to_string()))?;
+        let html = response
+            .text()
+            .await
+            .map_err(|e| ScrapeError::Network(e.to_string()))?;
         let document = Html::parse_document(&html);
 
         let content_sel = Selector::parse("div.story_content").unwrap();

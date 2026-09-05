@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
-use sqlx::postgres::PgRow;
+use sqlx::Postgres;
 use sqlx::QueryBuilder;
 use sqlx::Row;
-use sqlx::Postgres;
+use sqlx::postgres::PgRow;
 
 use crate::search::parser::{Field, FieldOp, FieldQuery, RangeExpr};
 
@@ -178,7 +178,11 @@ impl<'r> sqlx::FromRow<'r, PgRow> for FicSearchRow {
 
         Ok(FicSearchRow {
             id: row.try_get("id")?,
-            work_id: if has_work_id { row.try_get("work_id").ok() } else { None },
+            work_id: if has_work_id {
+                row.try_get("work_id").ok()
+            } else {
+                None
+            },
             created: row.try_get("created")?,
             updated: row.try_get("updated")?,
             title: row.try_get("title")?,
@@ -298,9 +302,11 @@ impl SearchQueryBuilder {
         self.push_where_clauses(&mut qb);
 
         // ORDER BY
-        let sort = self.params.sort.as_deref().unwrap_or(
-            if has_q { "-relevance" } else { "-date" },
-        );
+        let sort =
+            self.params
+                .sort
+                .as_deref()
+                .unwrap_or(if has_q { "-relevance" } else { "-date" });
 
         qb.push(" ORDER BY ");
         // When the `works` join is present we can compose a relevance ranking
@@ -412,8 +418,9 @@ impl SearchQueryBuilder {
     /// Build a facet query that returns status counts among fics matching the
     /// active search filters. No LIMIT/OFFSET from the data query is applied.
     pub fn build_status_facet_query(&self) -> QueryBuilder<Postgres> {
-        let mut qb =
-            QueryBuilder::<Postgres>::new("SELECT fi.status AS name, COUNT(*) AS count FROM fic_info fi");
+        let mut qb = QueryBuilder::<Postgres>::new(
+            "SELECT fi.status AS name, COUNT(*) AS count FROM fic_info fi",
+        );
         self.push_works_join(&mut qb);
         qb.push(" WHERE 1=1");
         self.push_where_clauses(&mut qb);
@@ -428,7 +435,11 @@ impl SearchQueryBuilder {
         // Full-text search — use parsed tsquery if available (boolean
         // operators), else websearch_to_tsquery (native boolean syntax:
         // "quoted phrases", OR, -exclusion, implicit AND).
-        let fuzzy_q: Option<&str> = if self.params.fuzzy { self.params.q.as_deref() } else { None };
+        let fuzzy_q: Option<&str> = if self.params.fuzzy {
+            self.params.q.as_deref()
+        } else {
+            None
+        };
         if let Some(ref tsq) = self.params.parsed_tsquery {
             // parsed_tsquery comes from the boolean parser (expr_to_tsquery),
             // which emits to_tsquery-native syntax (& | ! <->). Use
@@ -850,7 +861,10 @@ impl SearchQueryBuilder {
     /// beta live on the `works` table). Kept conservative so the default
     /// search surface emits no join.
     fn needs_works_join(&self) -> bool {
-        self.params.field_queries.iter().any(|q| q.field.needs_works())
+        self.params
+            .field_queries
+            .iter()
+            .any(|q| q.field.needs_works())
             || self.params.beta_status.is_some()
             || self.params.language.is_some()
             || self.params.min_hits.is_some()
@@ -877,7 +891,13 @@ impl SearchQueryBuilder {
 
     /// Emit the WHERE clause for a numeric / date interval, honouring an
     /// (inverted) negation — `-words:>100` becomes `AND words <= 100`.
-    fn push_range(&self, qb: &mut QueryBuilder<Postgres>, col: &'static str, expr: &RangeExpr, negated: bool) {
+    fn push_range(
+        &self,
+        qb: &mut QueryBuilder<Postgres>,
+        col: &'static str,
+        expr: &RangeExpr,
+        negated: bool,
+    ) {
         match expr {
             RangeExpr::Eq(v) => self.push_cmp(qb, col, if negated { "<>" } else { "=" }, *v),
             RangeExpr::Ge(v) => self.push_cmp(qb, col, if negated { "<" } else { ">=" }, *v),
@@ -968,7 +988,13 @@ impl SearchQueryBuilder {
 
     /// Emit the WHERE clause for a single structured v2 field expression.
     pub(crate) fn push_field_query(&self, qb: &mut QueryBuilder<Postgres>, fq: &FieldQuery) {
-        let FieldQuery { field, value, op, role, negated } = fq;
+        let FieldQuery {
+            field,
+            value,
+            op,
+            role,
+            negated,
+        } = fq;
         if *field == Field::Crossover {
             self.push_crossover(qb, fq);
             return;
@@ -976,7 +1002,9 @@ impl SearchQueryBuilder {
         let v = value.as_deref().unwrap_or("");
 
         if field.is_tag() {
-            let Some(type_id) = field.tag_type_id() else { return };
+            let Some(type_id) = field.tag_type_id() else {
+                return;
+            };
             let pattern = self.pattern_for_op(op, v);
             if *negated {
                 qb.push(" AND NOT EXISTS (SELECT 1 FROM fic_tags ft");
@@ -1050,7 +1078,10 @@ pub fn parse_tag_filters(input: &str) -> Result<Vec<TagFilter>, String> {
             continue;
         }
         let colon_pos = part.find(':').ok_or_else(|| {
-            format!("Invalid tag filter format '{}': expected 'type_id:name'", part)
+            format!(
+                "Invalid tag filter format '{}': expected 'type_id:name'",
+                part
+            )
         })?;
         let type_id: i16 = part[..colon_pos]
             .parse()
@@ -1201,12 +1232,21 @@ mod tests {
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
         // 2 words -> 4 word_similarity clauses (title+author per word)
         let ws_count = sql.matches("word_similarity").count();
-        assert_eq!(ws_count, 4, "2 words x (title+author) = 4 word_similarity: {sql}");
+        assert_eq!(
+            ws_count, 4,
+            "2 words x (title+author) = 4 word_similarity: {sql}"
+        );
         // The fallback lives inside the same AND group with OR so exact
         // full-text matches still rank higher under rank DESC.
-        assert!(sql.contains("(fi.text_search @@ websearch_to_tsquery"), "OR group opens: {sql}");
+        assert!(
+            sql.contains("(fi.text_search @@ websearch_to_tsquery"),
+            "OR group opens: {sql}"
+        );
         // Exact full-text clause still present (websearch, not plainto)
-        assert!(sql.contains("websearch_to_tsquery"), "exact clause preserved: {sql}");
+        assert!(
+            sql.contains("websearch_to_tsquery"),
+            "exact clause preserved: {sql}"
+        );
     }
 
     #[test]
@@ -1224,7 +1264,10 @@ mod tests {
             sql.contains("fi.text_search @@ websearch_to_tsquery('english', "),
             "FTS predicate must use websearch_to_tsquery: {sql}"
         );
-        assert!(!sql.contains("plainto_tsquery"), "no plainto_tsquery: {sql}");
+        assert!(
+            !sql.contains("plainto_tsquery"),
+            "no plainto_tsquery: {sql}"
+        );
     }
 
     #[test]
@@ -1236,7 +1279,10 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(!sql.contains("ILIKE"), "no fuzzy -> no ILIKE fallback: {sql}");
+        assert!(
+            !sql.contains("ILIKE"),
+            "no fuzzy -> no ILIKE fallback: {sql}"
+        );
     }
 
     #[test]
@@ -1255,13 +1301,22 @@ mod tests {
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
         // 2 words -> 4 word_similarity clauses in the parsed_tsquery branch
         let ws_count = sql.matches("word_similarity").count();
-        assert_eq!(ws_count, 4, "fuzzy + parsed_tsquery: 4 word_similarity: {sql}");
+        assert_eq!(
+            ws_count, 4,
+            "fuzzy + parsed_tsquery: 4 word_similarity: {sql}"
+        );
         // parsed_tsquery comes from the boolean parser (expr_to_tsquery),
         // which emits to_tsquery-native syntax — so the parsed branch uses
         // to_tsquery, NOT websearch_to_tsquery (websearch is for raw text).
-        assert!(sql.contains("to_tsquery"), "parsed path uses to_tsquery: {sql}");
+        assert!(
+            sql.contains("to_tsquery"),
+            "parsed path uses to_tsquery: {sql}"
+        );
         // Fuzzy ORs are still present alongside the exact tsquery
-        assert!(sql.contains("fi.text_search @@ to_tsquery"), "exact clause preserved: {sql}");
+        assert!(
+            sql.contains("fi.text_search @@ to_tsquery"),
+            "exact clause preserved: {sql}"
+        );
     }
 
     #[test]
@@ -1346,7 +1401,9 @@ mod tests {
         assert!(sql.contains("ts_rank"));
         assert!(sql.contains("websearch_to_tsquery"));
         // ts_headline snippet must be selected alongside rank
-        assert!(sql.contains("ts_headline('english', fi.description, websearch_to_tsquery('english', "));
+        assert!(
+            sql.contains("ts_headline('english', fi.description, websearch_to_tsquery('english', ")
+        );
         assert!(sql.contains("'StartSel=<b>, StopSel=</b>, MaxWords=35, MinWords=15') AS snippet"));
     }
 
@@ -1450,8 +1507,14 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("fi.chapters >="), "should contain min_chapters");
-        assert!(sql.contains("fi.chapters <="), "should contain max_chapters");
+        assert!(
+            sql.contains("fi.chapters >="),
+            "should contain min_chapters"
+        );
+        assert!(
+            sql.contains("fi.chapters <="),
+            "should contain max_chapters"
+        );
     }
 
     #[test]
@@ -1463,7 +1526,10 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("fi.fic_updated >="), "should contain date_from");
+        assert!(
+            sql.contains("fi.fic_updated >="),
+            "should contain date_from"
+        );
         assert!(sql.contains("fi.fic_updated <="), "should contain date_to");
     }
 
@@ -1478,7 +1544,10 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("ORDER BY ft2.score DESC LIMIT 1"), "should have primary_tag subquery");
+        assert!(
+            sql.contains("ORDER BY ft2.score DESC LIMIT 1"),
+            "should have primary_tag subquery"
+        );
     }
 
     #[test]
@@ -1489,7 +1558,10 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("SELECT COUNT(*) FROM comments"), "should have comments subquery");
+        assert!(
+            sql.contains("SELECT COUNT(*) FROM comments"),
+            "should have comments subquery"
+        );
     }
 
     #[test]
@@ -1500,7 +1572,10 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, false, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(!sql.contains("SELECT COUNT(*) FROM comments"), "should NOT have comments subquery");
+        assert!(
+            !sql.contains("SELECT COUNT(*) FROM comments"),
+            "should NOT have comments subquery"
+        );
     }
 
     #[test]
@@ -1543,7 +1618,10 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("tag_type_id = 5"), "should filter archive warnings");
+        assert!(
+            sql.contains("tag_type_id = 5"),
+            "should filter archive warnings"
+        );
         assert!(sql.contains("NOT EXISTS"), "should be NOT EXISTS");
     }
 
@@ -1555,13 +1633,22 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("NOT EXISTS (SELECT 1 FROM fic_tags"), "should be NOT EXISTS");
-        assert!(sql.contains("t.tag_type_id = ANY("), "should exclude by type: {sql}");
+        assert!(
+            sql.contains("NOT EXISTS (SELECT 1 FROM fic_tags"),
+            "should be NOT EXISTS"
+        );
+        assert!(
+            sql.contains("t.tag_type_id = ANY("),
+            "should exclude by type: {sql}"
+        );
         // The bound value is an array parameter ($1); the type ids ride in the
         // bind, so assert the placeholder form rather than literal digits.
         assert!(sql.contains("ANY($1)"), "should bind the type array: {sql}");
         // Without strict_gen the query must NOT mention type 6 (as a literal).
-        assert!(!sql.contains("tag_type_id = 6"), "should NOT exclude type 6 by default: {sql}");
+        assert!(
+            !sql.contains("tag_type_id = 6"),
+            "should NOT exclude type 6 by default: {sql}"
+        );
     }
 
     #[test]
@@ -1572,7 +1659,10 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("t.tag_type_id = ANY("), "should exclude by type: {sql}");
+        assert!(
+            sql.contains("t.tag_type_id = ANY("),
+            "should exclude by type: {sql}"
+        );
         assert!(sql.contains("ANY($1)"), "should bind the type array: {sql}");
     }
 
@@ -1587,9 +1677,18 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("NOT EXISTS (SELECT 1 FROM fic_tags"), "should be NOT EXISTS");
-        assert!(sql.contains("t.tag_type_id = ANY("), "should exclude by type: {sql}");
-        assert!(sql.contains("ANY($1)"), "strict_gen binds both types: {sql}");
+        assert!(
+            sql.contains("NOT EXISTS (SELECT 1 FROM fic_tags"),
+            "should be NOT EXISTS"
+        );
+        assert!(
+            sql.contains("t.tag_type_id = ANY("),
+            "should exclude by type: {sql}"
+        );
+        assert!(
+            sql.contains("ANY($1)"),
+            "strict_gen binds both types: {sql}"
+        );
     }
 
     #[test]
@@ -1599,9 +1698,15 @@ mod tests {
         let params = SearchParams::default();
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(!sql.contains("exclude_tag_types"), "no exclusion clause: {sql}");
+        assert!(
+            !sql.contains("exclude_tag_types"),
+            "no exclusion clause: {sql}"
+        );
         // The only NOT EXISTS here would come from exclude_tags (none set).
-        assert!(!sql.contains("NOT EXISTS"), "default has no NOT EXISTS: {sql}");
+        assert!(
+            !sql.contains("NOT EXISTS"),
+            "default has no NOT EXISTS: {sql}"
+        );
     }
 
     #[test]
@@ -1612,10 +1717,11 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("ft.tag_id = ANY("), "should have tag_ids filter");
+        assert!(
+            sql.contains("ft.tag_id = ANY("),
+            "should have tag_ids filter"
+        );
     }
-
-
 
     #[test]
     fn test_build_count_query_complete_false() {
@@ -1625,7 +1731,10 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("fi.status != 'complete'"), "should filter incomplete fics");
+        assert!(
+            sql.contains("fi.status != 'complete'"),
+            "should filter incomplete fics"
+        );
     }
 
     #[test]
@@ -1639,7 +1748,10 @@ mod tests {
         let sql = qb.build_data_query().into_sql().as_ref().to_owned();
         assert!(sql.contains("LIMIT"), "should contain LIMIT");
         assert!(sql.contains("OFFSET"), "should contain OFFSET");
-        assert!(sql.contains("LIMIT $"), "LIMIT must be a bind, not a literal");
+        assert!(
+            sql.contains("LIMIT $"),
+            "LIMIT must be a bind, not a literal"
+        );
     }
 
     #[test]
@@ -1788,14 +1900,8 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(
-            sql.contains(") >="),
-            "min_bookmarks >= clause: {sql}"
-        );
-        assert!(
-            sql.contains(") <="),
-            "max_bookmarks <= clause: {sql}"
-        );
+        assert!(sql.contains(") >="), "min_bookmarks >= clause: {sql}");
+        assert!(sql.contains(") <="), "max_bookmarks <= clause: {sql}");
     }
 
     #[test]
@@ -1843,7 +1949,10 @@ mod tests {
         params.field_queries = vec![one_fq("@char:Harry", Field::Char)];
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("ft.role_confidence >= $"), "role threshold: {sql}");
+        assert!(
+            sql.contains("ft.role_confidence >= $"),
+            "role threshold: {sql}"
+        );
     }
 
     #[test]
@@ -1852,7 +1961,10 @@ mod tests {
         params.field_queries = vec![one_fq("romship:Harry/Ginny", Field::Romship)];
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("t.rel_polarity = $"), "romship polarity: {sql}");
+        assert!(
+            sql.contains("t.rel_polarity = $"),
+            "romship polarity: {sql}"
+        );
     }
 
     #[test]
@@ -1909,7 +2021,10 @@ mod tests {
         params.field_queries = vec![one_fq("kudos:>=100", Field::Kudos)];
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("LEFT JOIN works w ON w.id = fi.work_id"), "{sql}");
+        assert!(
+            sql.contains("LEFT JOIN works w ON w.id = fi.work_id"),
+            "{sql}"
+        );
         assert!(sql.contains("w.kudos_count >= $"), "{sql}");
     }
 
@@ -1937,7 +2052,10 @@ mod tests {
     fn test_build_no_works_join_by_default() {
         let qb = SearchQueryBuilder::new(SearchParams::default(), 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(!sql.contains("LEFT JOIN works"), "default query has no works join: {sql}");
+        assert!(
+            !sql.contains("LEFT JOIN works"),
+            "default query has no works join: {sql}"
+        );
     }
 
     #[test]
@@ -1956,7 +2074,10 @@ mod tests {
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
         assert!(sql.contains("fi.status = $"), "status: {sql}");
-        assert!(sql.contains("EXISTS (SELECT 1 FROM fic_tags ft"), "main_char: {sql}");
+        assert!(
+            sql.contains("EXISTS (SELECT 1 FROM fic_tags ft"),
+            "main_char: {sql}"
+        );
         assert!(sql.contains("ft.role_confidence >= $"), "main role: {sql}");
         assert!(sql.contains(") > 1"), "crossover: {sql}");
     }
@@ -1986,7 +2107,10 @@ mod tests {
         params.field_queries = vec![one_fq("kudos:>=50", Field::Kudos)];
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_data_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("COALESCE(w.kudos_count, 0) DESC"), "composite ranking: {sql}");
+        assert!(
+            sql.contains("COALESCE(w.kudos_count, 0) DESC"),
+            "composite ranking: {sql}"
+        );
     }
 
     #[test]
@@ -1998,7 +2122,10 @@ mod tests {
         };
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_data_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("rank DESC, fi.fic_updated DESC"), "legacy relevance: {sql}");
+        assert!(
+            sql.contains("rank DESC, fi.fic_updated DESC"),
+            "legacy relevance: {sql}"
+        );
         assert!(!sql.contains("COALESCE(w."), "{sql}");
     }
 
@@ -2008,8 +2135,14 @@ mod tests {
         params.field_queries = vec![one_fq("published:2018-2021", Field::Published)];
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
-        assert!(sql.contains("EXTRACT(YEAR FROM fi.fic_created)::int >= $"), "{sql}");
-        assert!(sql.contains("EXTRACT(YEAR FROM fi.fic_created)::int <= $"), "{sql}");
+        assert!(
+            sql.contains("EXTRACT(YEAR FROM fi.fic_created)::int >= $"),
+            "{sql}"
+        );
+        assert!(
+            sql.contains("EXTRACT(YEAR FROM fi.fic_created)::int <= $"),
+            "{sql}"
+        );
     }
 
     #[test]
@@ -2019,7 +2152,9 @@ mod tests {
         let qb = SearchQueryBuilder::new(params, 100, true, true, true);
         let sql = qb.build_count_query().into_sql().as_ref().to_owned();
         assert!(sql.contains("t.tag_type_id = $"), "fandom type {sql}");
-        assert!(sql.contains("ft.role_confidence >= $"), "primary role {sql}");
+        assert!(
+            sql.contains("ft.role_confidence >= $"),
+            "primary role {sql}"
+        );
     }
 }
-

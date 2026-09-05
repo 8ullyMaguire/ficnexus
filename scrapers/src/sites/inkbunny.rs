@@ -17,8 +17,8 @@ use chrono::TimeZone;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 use super::{http, login};
+use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 
 pub struct InkBunnyScraper;
 
@@ -62,8 +62,13 @@ impl SiteScraper for InkBunnyScraper {
         Ok(())
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("inkbunny: bad url".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("inkbunny: bad url".into()))?;
         let html = http::fetch(client, url).await?;
 
         if html.contains("ERROR: Invalid submission_id") {
@@ -91,7 +96,9 @@ impl SiteScraper for InkBunnyScraper {
         }
 
         // Author
-        if let Ok(a_sel) = Selector::parse("table.pooltable a[href*='/gallery/'], table.pooltable a[href*='/scraps/']") {
+        if let Ok(a_sel) = Selector::parse(
+            "table.pooltable a[href*='/gallery/'], table.pooltable a[href*='/scraps/']",
+        ) {
             if let Some(a) = doc.select(&a_sel).next() {
                 author = a.text().collect::<String>().trim().to_string();
                 author_local_id = author.clone();
@@ -230,8 +237,14 @@ mod tests {
 
     #[test]
     fn parses_story_id() {
-        assert_eq!(InkBunnyScraper::story_id("https://inkbunny.net/s/1234567"), Some("1234567".to_string()));
-        assert_eq!(InkBunnyScraper::story_id("https://inkbunny.net/submissionview.php?id=1234567"), Some("1234567".to_string()));
+        assert_eq!(
+            InkBunnyScraper::story_id("https://inkbunny.net/s/1234567"),
+            Some("1234567".to_string())
+        );
+        assert_eq!(
+            InkBunnyScraper::story_id("https://inkbunny.net/submissionview.php?id=1234567"),
+            Some("1234567".to_string())
+        );
         assert_eq!(InkBunnyScraper::story_id("https://x.com/foo"), None);
     }
 
@@ -243,10 +256,15 @@ mod tests {
 
     #[test]
     fn extracts_chapter_body() {
-        let html = r#"<html><body><div id="storysectionbar"><p>Story text.</p></div></body></html>"#;
+        let html =
+            r#"<html><body><div id="storysectionbar"><p>Story text.</p></div></body></html>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("div#storysectionbar").unwrap();
-        let s = doc.select(&sel).next().map(|el| el.inner_html()).unwrap_or_default();
+        let s = doc
+            .select(&sel)
+            .next()
+            .map(|el| el.inner_html())
+            .unwrap_or_default();
         assert!(s.contains("Story text."));
     }
 }

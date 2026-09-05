@@ -14,8 +14,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct NovelAllScraper;
 
@@ -32,8 +32,13 @@ impl SiteScraper for NovelAllScraper {
         url.contains("novelall.com/") && (url.contains("/novel/") || url.contains("/chapter/"))
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("novelall: bad url".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("novelall: bad url".into()))?;
         let html = http::fetch(client, url).await?;
 
         if html.contains("Please click here to continue the reading.") {
@@ -239,8 +244,16 @@ mod tests {
 
     #[test]
     fn parses_story_id() {
-        assert_eq!(NovelAllScraper::story_id("https://www.novelall.com/novel/Castle-of-Black-Iron.html"), Some("Castle-of-Black-Iron".to_string()));
-        assert_eq!(NovelAllScraper::story_id("https://www.novelall.com/chapter/The-Legendary-Moonlight-Sculptor-Volume-1-Chapter-1/1048282/"), Some("The-Legendary-Moonlight-Sculptor-Volume-1-Chapter-1".to_string()));
+        assert_eq!(
+            NovelAllScraper::story_id("https://www.novelall.com/novel/Castle-of-Black-Iron.html"),
+            Some("Castle-of-Black-Iron".to_string())
+        );
+        assert_eq!(
+            NovelAllScraper::story_id(
+                "https://www.novelall.com/chapter/The-Legendary-Moonlight-Sculptor-Volume-1-Chapter-1/1048282/"
+            ),
+            Some("The-Legendary-Moonlight-Sculptor-Volume-1-Chapter-1".to_string())
+        );
         assert_eq!(NovelAllScraper::story_id("https://x.com/foo"), None);
     }
 

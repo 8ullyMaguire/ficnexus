@@ -36,10 +36,7 @@ pub enum QueryTerm {
     /// An excluded term: -angst or -"major character death"
     Excluded(String),
     /// A fielded search: title:something → applies as a separate WHERE clause
-    Fielded {
-        field: String,
-        value: String,
-    },
+    Fielded { field: String, value: String },
     /// A v2 structured field expression: `@field:val`, `field~val`,
     /// `field:val*`, ranges, comparisons, romship/platship, crossover, etc.
     FieldQuery(FieldQuery),
@@ -268,9 +265,27 @@ impl fmt::Display for QueryTerm {
             QueryTerm::FieldQuery(q) => {
                 let role = if q.role { "@" } else { "" };
                 match &q.op {
-                    FieldOp::Contains => write!(f, "{}{}:{}", role, q.field.as_str(), q.value.as_deref().unwrap_or("")),
-                    FieldOp::Prefix => write!(f, "{}{}:{}*", role, q.field.as_str(), q.value.as_deref().unwrap_or("")),
-                    FieldOp::ContainsWide => write!(f, "{}{}:*{}", role, q.field.as_str(), q.value.as_deref().unwrap_or("")),
+                    FieldOp::Contains => write!(
+                        f,
+                        "{}{}:{}",
+                        role,
+                        q.field.as_str(),
+                        q.value.as_deref().unwrap_or("")
+                    ),
+                    FieldOp::Prefix => write!(
+                        f,
+                        "{}{}:{}*",
+                        role,
+                        q.field.as_str(),
+                        q.value.as_deref().unwrap_or("")
+                    ),
+                    FieldOp::ContainsWide => write!(
+                        f,
+                        "{}{}:*{}",
+                        role,
+                        q.field.as_str(),
+                        q.value.as_deref().unwrap_or("")
+                    ),
                     FieldOp::Range(r) => write!(f, "{}{}:{:?}", role, q.field.as_str(), r),
                 }
             }
@@ -362,7 +377,14 @@ fn tokenize(input: &str) -> Vec<Token> {
                 // Read a word (up to whitespace, parens, or quote)
                 let mut word = String::new();
                 while let Some(&ch) = chars.peek() {
-                    if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '(' || ch == ')' || ch == '"' {
+                    if ch == ' '
+                        || ch == '\t'
+                        || ch == '\n'
+                        || ch == '\r'
+                        || ch == '('
+                        || ch == ')'
+                        || ch == '"'
+                    {
                         break;
                     }
                     word.push(ch);
@@ -484,12 +506,12 @@ fn parse_not_expr(tokens: &[Token], pos: &mut usize) -> BooleanExpression {
             *pos += 1;
             let inner = parse_primary(tokens, pos);
             match inner {
-                BooleanExpression::Term(QueryTerm::Word(w)) => {
-                    BooleanExpression::Not(Box::new(BooleanExpression::Term(QueryTerm::Excluded(w))))
-                }
-                BooleanExpression::Term(QueryTerm::Phrase(p)) => {
-                    BooleanExpression::Not(Box::new(BooleanExpression::Term(QueryTerm::Excluded(p))))
-                }
+                BooleanExpression::Term(QueryTerm::Word(w)) => BooleanExpression::Not(Box::new(
+                    BooleanExpression::Term(QueryTerm::Excluded(w)),
+                )),
+                BooleanExpression::Term(QueryTerm::Phrase(p)) => BooleanExpression::Not(Box::new(
+                    BooleanExpression::Term(QueryTerm::Excluded(p)),
+                )),
                 other => BooleanExpression::Not(Box::new(other)),
             }
         }
@@ -812,9 +834,8 @@ fn find_range_dash(s: &str) -> Option<usize> {
             let after = &s[i + 1..];
             let numeral = |t: &str| -> bool {
                 !t.is_empty()
-                    && t.bytes().all(|b| {
-                        b.is_ascii_digit() || matches!(b, b'k' | b'K' | b'm' | b'M')
-                    })
+                    && t.bytes()
+                        .all(|b| b.is_ascii_digit() || matches!(b, b'k' | b'K' | b'm' | b'M'))
             };
             if numeral(before) && numeral(after) {
                 return Some(i);
@@ -891,7 +912,12 @@ pub fn expr_to_tsquery(expr: &BooleanExpression) -> String {
 /// `/api/search?q=Jillian+Holtzmann:+Ace+Attorney` return a database error.
 fn sanitize_tsquery_word(w: &str) -> String {
     w.chars()
-        .filter(|c| !matches!(c, ':' | '\'' | '"' | '\\' | '(' | ')' | '&' | '|' | '!' | '<' | '>' | ',' | ';'))
+        .filter(|c| {
+            !matches!(
+                c,
+                ':' | '\'' | '"' | '\\' | '(' | ')' | '&' | '|' | '!' | '<' | '>' | ',' | ';'
+            )
+        })
         .collect::<String>()
         .to_lowercase()
 }
@@ -1231,7 +1257,8 @@ mod tests {
 
     #[test]
     fn test_parse_complex_nested_parentheses() {
-        let expr = parse_query("(fluff OR humor OR angst) AND (\"slow burn\" OR \"enemies to lovers\")");
+        let expr =
+            parse_query("(fluff OR humor OR angst) AND (\"slow burn\" OR \"enemies to lovers\")");
         let ts = expr_to_tsquery(&expr);
         assert!(ts.contains("fluff:* | humor:* | angst:*"));
         // The other side has phrases with <-> operator
@@ -1363,9 +1390,9 @@ mod tests {
     /// Pull a single field query of the given field out of an expression.
     fn one(expr: &BooleanExpression, field: Field) -> FieldQuery {
         let qs = extract_field_queries(expr);
-        qs.into_iter().find(|q| q.field == field).unwrap_or_else(|| {
-            panic!("no field query for {:?} in {:?}", field, expr)
-        })
+        qs.into_iter()
+            .find(|q| q.field == field)
+            .unwrap_or_else(|| panic!("no field query for {:?} in {:?}", field, expr))
     }
 
     #[test]
@@ -1556,9 +1583,15 @@ mod tests {
         let qs = extract_field_queries(&expr);
         let harry = qs.iter().find(|q| q.field == Field::Char).unwrap();
         assert!(!harry.negated);
-        let slow = qs.iter().find(|q| q.field == Field::Attr && q.value.as_deref() == Some("Slow Burn")).unwrap();
+        let slow = qs
+            .iter()
+            .find(|q| q.field == Field::Attr && q.value.as_deref() == Some("Slow Burn"))
+            .unwrap();
         assert!(!slow.negated);
-        let dark = qs.iter().find(|q| q.field == Field::Attr && q.value.as_deref() == Some("Dark")).unwrap();
+        let dark = qs
+            .iter()
+            .find(|q| q.field == Field::Attr && q.value.as_deref() == Some("Dark"))
+            .unwrap();
         assert!(dark.negated, "NOT with attr:Dark must be negated");
     }
 
@@ -1568,7 +1601,10 @@ mod tests {
         let qs = extract_field_queries(&expr);
         assert!(qs.iter().any(|q| q.field == Field::Char && q.role));
         assert!(qs.iter().any(|q| q.field == Field::Romship));
-        assert!(qs.iter().any(|q| q.field == Field::Words && q.op == FieldOp::Range(RangeExpr::Gt(100000))));
+        assert!(
+            qs.iter()
+                .any(|q| q.field == Field::Words && q.op == FieldOp::Range(RangeExpr::Gt(100000)))
+        );
     }
 
     #[test]

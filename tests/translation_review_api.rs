@@ -16,24 +16,28 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::{get, post, put},
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
-    DB_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+    DB_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
 }
 
 const PREFIX: &str = "trv";
 
 async fn pool() -> sqlx::PgPool {
-    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
+    let url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
     sqlx::PgPool::connect(&url).await.expect("connect pool")
 }
 
@@ -44,8 +48,14 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
     let redis_client = redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL");
-    let redis = redis_client.get_multiplexed_async_connection().await.expect("redis conn");
-    let http_client = reqwest::Client::builder().user_agent("fichub-test/0.1.0").build().expect("reqwest");
+    let redis = redis_client
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis conn");
+    let http_client = reqwest::Client::builder()
+        .user_agent("fichub-test/0.1.0")
+        .build()
+        .expect("reqwest");
     let scraper_registry = Arc::new(fichub::scrape::registry::ScraperRegistry::new());
 
     let ollama_client = fichub::services::ollama::OllamaClient::new(
@@ -66,15 +76,21 @@ async fn app() -> Router {
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         rate_limiter: Box::new(
             fichub::limiter::redis_bucket::RedisBucketLimiter::with_config(
-                redis_client.get_multiplexed_async_connection().await.expect("redis"),
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
                 false,
                 Some(&config),
             )
             .await
             .expect("rate limiter"),
         ),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -93,13 +109,34 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/admin/translations", get(fichub::routes::admin::admin_list_translations))
-        .route("/api/admin/translations/{id}/approve", post(fichub::routes::admin::admin_approve_translation))
-        .route("/api/admin/translations/{id}/reject", post(fichub::routes::admin::admin_reject_translation))
-        .route("/api/admin/translations/{id}/edit", post(fichub::routes::admin::admin_edit_translation))
-        .route("/api/admin/rating-checks", get(fichub::routes::admin::admin_rating_checks))
-        .route("/api/admin/rating-checks/{work_id}/verify", post(fichub::routes::admin::admin_verify_rating))
-        .route("/api/admin/characters/{id}/score", put(fichub::routes::admin::admin_fix_tag_score))
+        .route(
+            "/api/admin/translations",
+            get(fichub::routes::admin::admin_list_translations),
+        )
+        .route(
+            "/api/admin/translations/{id}/approve",
+            post(fichub::routes::admin::admin_approve_translation),
+        )
+        .route(
+            "/api/admin/translations/{id}/reject",
+            post(fichub::routes::admin::admin_reject_translation),
+        )
+        .route(
+            "/api/admin/translations/{id}/edit",
+            post(fichub::routes::admin::admin_edit_translation),
+        )
+        .route(
+            "/api/admin/rating-checks",
+            get(fichub::routes::admin::admin_rating_checks),
+        )
+        .route(
+            "/api/admin/rating-checks/{work_id}/verify",
+            post(fichub::routes::admin::admin_verify_rating),
+        )
+        .route(
+            "/api/admin/characters/{id}/score",
+            put(fichub::routes::admin::admin_fix_tag_score),
+        )
         .with_state(state)
 }
 
@@ -129,7 +166,12 @@ fn auth_header(user_id: i32, username: &str, role: i16) -> String {
 }
 
 /// Seed a work + fic_info pair; returns (work_id, url_id). Idempotent.
-async fn seed_work(db: &sqlx::PgPool, url_id: &str, title: &str, extra_meta: Option<&str>) -> (i32, String) {
+async fn seed_work(
+    db: &sqlx::PgPool,
+    url_id: &str,
+    title: &str,
+    extra_meta: Option<&str>,
+) -> (i32, String) {
     sqlx::query(
         r#"INSERT INTO fic_info (
             id, title, author, author_url, author_local_id,
@@ -150,11 +192,12 @@ async fn seed_work(db: &sqlx::PgPool, url_id: &str, title: &str, extra_meta: Opt
     .await
     .expect("seed fic_info failed");
 
-    let existing: Option<i32> = sqlx::query_scalar("SELECT id FROM works WHERE canonical_title = $1")
-        .bind(title)
-        .fetch_optional(db)
-        .await
-        .expect("work lookup failed");
+    let existing: Option<i32> =
+        sqlx::query_scalar("SELECT id FROM works WHERE canonical_title = $1")
+            .bind(title)
+            .fetch_optional(db)
+            .await
+            .expect("work lookup failed");
 
     let work_id = match existing {
         Some(id) => id,
@@ -180,7 +223,14 @@ async fn seed_work(db: &sqlx::PgPool, url_id: &str, title: &str, extra_meta: Opt
 
 /// Insert a draft work translation directly (bypasses the public submit
 /// endpoint which does reputation work); returns its id.
-async fn seed_translation(db: &sqlx::PgPool, work_id: i32, locale: &str, title: &str, summary: &str, translator: i32) -> i64 {
+async fn seed_translation(
+    db: &sqlx::PgPool,
+    work_id: i32,
+    locale: &str,
+    title: &str,
+    summary: &str,
+    translator: i32,
+) -> i64 {
     sqlx::query_scalar(
         r#"INSERT INTO work_translations (work_id, locale_code, title, summary, translated_by)
            VALUES ($1, $2, $3, $4, $5)
@@ -222,7 +272,13 @@ async fn seed_char_tag(db: &sqlx::PgPool, url_id: &str, tag_name: &str, score: i
     tag_id
 }
 
-async fn send(app: &Router, method: &str, uri: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {
+async fn send(
+    app: &Router,
+    method: &str,
+    uri: &str,
+    token: Option<&str>,
+    body: Option<Value>,
+) -> (StatusCode, Value) {
     let mut builder = Request::builder().method(method).uri(uri);
     if let Some(t) = token {
         builder = builder.header("authorization", t);
@@ -236,26 +292,40 @@ async fn send(app: &Router, method: &str, uri: &str, token: Option<&str>, body: 
     };
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
 async fn cleanup(db: &sqlx::PgPool, users: &[&str]) {
     for u in users {
-        let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(db).await;
+        let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+            .bind(u)
+            .execute(db)
+            .await;
     }
     // Self-heal on the unique seed prefixes.
     let _ = sqlx::query("DELETE FROM work_translations WHERE locale_code = 'es' AND work_id IN (SELECT id FROM works WHERE canonical_title LIKE 'Trv %')")
         .execute(db)
         .await;
-    let _ = sqlx::query("DELETE FROM fic_info WHERE id LIKE 'trv-%'").execute(db).await;
-    let _ = sqlx::query("DELETE FROM works WHERE canonical_title LIKE 'Trv %'").execute(db).await;
-    let _ = sqlx::query("DELETE FROM tags WHERE name LIKE 'Trv Char %'").execute(db).await;
+    let _ = sqlx::query("DELETE FROM fic_info WHERE id LIKE 'trv-%'")
+        .execute(db)
+        .await;
+    let _ = sqlx::query("DELETE FROM works WHERE canonical_title LIKE 'Trv %'")
+        .execute(db)
+        .await;
+    let _ = sqlx::query("DELETE FROM tags WHERE name LIKE 'Trv Char %'")
+        .execute(db)
+        .await;
     let _ = sqlx::query("DELETE FROM work_rating_verifications WHERE work_id IN (SELECT id FROM works WHERE canonical_title LIKE 'Trv %')")
         .execute(db)
         .await;
-    let _ = sqlx::query("DELETE FROM tag_score_fixes WHERE url_id LIKE 'trv-%'").execute(db).await;
+    let _ = sqlx::query("DELETE FROM tag_score_fixes WHERE url_id LIKE 'trv-%'")
+        .execute(db)
+        .await;
 }
 
 // ── Translation review workflow ────────────────────────────────────────
@@ -271,17 +341,33 @@ async fn translation_review_full_flow() {
 
     let admin = seed_user(&db, &format!("{PREFIX}_t_admin"), 10).await;
     let translator = seed_user(&db, &format!("{PREFIX}_t_translator"), 0).await;
-    let (work_id, _) = seed_work(&db, "trv-flow", "Trv Flow Fic", Some(r#"{"rating":"Explicit"}"#)).await;
+    let (work_id, _) = seed_work(
+        &db,
+        "trv-flow",
+        "Trv Flow Fic",
+        Some(r#"{"rating":"Explicit"}"#),
+    )
+    .await;
     let tid = seed_translation(&db, work_id, "es", "Máquina", "Resumen máquina", translator).await;
 
     let tok = auth_header(admin, &format!("{PREFIX}_t_admin"), 10);
 
     // Draft appears in the queue.
-    let (s, body) = send(&app, "GET", "/api/admin/translations?status=draft", Some(&tok), None).await;
+    let (s, body) = send(
+        &app,
+        "GET",
+        "/api/admin/translations?status=draft",
+        Some(&tok),
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::OK);
     assert_eq!(body["err"], 0);
     let items = body["items"].as_array().unwrap();
-    let mine = items.iter().find(|i| i["id"] == tid as i64).expect("draft in queue");
+    let mine = items
+        .iter()
+        .find(|i| i["id"] == tid as i64)
+        .expect("draft in queue");
     assert_eq!(mine["status"], "draft");
     assert_eq!(mine["title"], "Máquina");
 
@@ -297,27 +383,53 @@ async fn translation_review_full_flow() {
     assert_eq!(s, StatusCode::OK);
 
     // Approve it.
-    let (s, _) = send(&app, "POST", &format!("/api/admin/translations/{tid}/approve"), Some(&tok), None).await;
+    let (s, _) = send(
+        &app,
+        "POST",
+        &format!("/api/admin/translations/{tid}/approve"),
+        Some(&tok),
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::OK);
 
     // DB state: approved + edited title + reviewer stamp.
-    let row: (String, Option<String>, Option<i32>) = sqlx::query_as(
-        "SELECT status, title, reviewed_by FROM work_translations WHERE id = $1",
-    )
-    .bind(tid)
-    .fetch_one(&db)
-    .await
-    .expect("row exists");
+    let row: (String, Option<String>, Option<i32>) =
+        sqlx::query_as("SELECT status, title, reviewed_by FROM work_translations WHERE id = $1")
+            .bind(tid)
+            .fetch_one(&db)
+            .await
+            .expect("row exists");
     assert_eq!(row.0, "approved");
     assert_eq!(row.1.as_deref(), Some("La Máquina Editada"));
     assert_eq!(row.2, Some(admin));
 
     // No longer in the draft queue.
-    let (s, body) = send(&app, "GET", "/api/admin/translations?status=draft", Some(&tok), None).await;
+    let (s, body) = send(
+        &app,
+        "GET",
+        "/api/admin/translations?status=draft",
+        Some(&tok),
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::OK);
-    assert!(body["items"].as_array().unwrap().iter().all(|i| i["id"] != tid as i64));
+    assert!(
+        body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|i| i["id"] != tid as i64)
+    );
 
-    cleanup(&db, &[&format!("{PREFIX}_t_admin"), &format!("{PREFIX}_t_translator")]).await;
+    cleanup(
+        &db,
+        &[
+            &format!("{PREFIX}_t_admin"),
+            &format!("{PREFIX}_t_translator"),
+        ],
+    )
+    .await;
 }
 
 /// Rejecting a draft removes it from the queue and stamps reviewer.
@@ -330,28 +442,56 @@ async fn translation_review_reject() {
 
     let admin = seed_user(&db, &format!("{PREFIX}_r_admin"), 10).await;
     let translator = seed_user(&db, &format!("{PREFIX}_r_translator"), 0).await;
-    let (work_id, _) = seed_work(&db, "trv-reject", "Trv Reject Fic", Some(r#"{"rating":"Mature"}"#)).await;
+    let (work_id, _) = seed_work(
+        &db,
+        "trv-reject",
+        "Trv Reject Fic",
+        Some(r#"{"rating":"Mature"}"#),
+    )
+    .await;
     let tid = seed_translation(&db, work_id, "fr", "Machine", "Machine summary", translator).await;
 
     let tok = auth_header(admin, &format!("{PREFIX}_r_admin"), 10);
 
-    let (s, _) = send(&app, "POST", &format!("/api/admin/translations/{tid}/reject"), Some(&tok), None).await;
+    let (s, _) = send(
+        &app,
+        "POST",
+        &format!("/api/admin/translations/{tid}/reject"),
+        Some(&tok),
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::OK);
 
-    let row: (String, Option<i32>) = sqlx::query_as("SELECT status, reviewed_by FROM work_translations WHERE id = $1")
-        .bind(tid)
-        .fetch_one(&db)
-        .await
-        .expect("row exists");
+    let row: (String, Option<i32>) =
+        sqlx::query_as("SELECT status, reviewed_by FROM work_translations WHERE id = $1")
+            .bind(tid)
+            .fetch_one(&db)
+            .await
+            .expect("row exists");
     assert_eq!(row.0, "rejected");
     assert_eq!(row.1, Some(admin));
 
     // Re-approving a rejected row fails (only drafts can transition).
-    let (s, body) = send(&app, "POST", &format!("/api/admin/translations/{tid}/approve"), Some(&tok), None).await;
+    let (s, body) = send(
+        &app,
+        "POST",
+        &format!("/api/admin/translations/{tid}/approve"),
+        Some(&tok),
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::NOT_FOUND);
     assert!(body.to_string().contains("draft"));
 
-    cleanup(&db, &[&format!("{PREFIX}_r_admin"), &format!("{PREFIX}_r_translator")]).await;
+    cleanup(
+        &db,
+        &[
+            &format!("{PREFIX}_r_admin"),
+            &format!("{PREFIX}_r_translator"),
+        ],
+    )
+    .await;
 }
 
 /// Role gating: anonymous → 400 {err:401}, sub-admin → HTTP 403.
@@ -394,7 +534,13 @@ async fn rating_check_verify_flow() {
 
     let admin = seed_user(&db, &format!("{PREFIX}_rc_admin"), 10).await;
     // No rating anywhere (extra_meta is a plain genre list) → must land in the queue.
-    let (work_id, _) = seed_work(&db, "trv-rc-norating", "Trv Rc Fic", Some("fantasy, adventure")).await;
+    let (work_id, _) = seed_work(
+        &db,
+        "trv-rc-norating",
+        "Trv Rc Fic",
+        Some("fantasy, adventure"),
+    )
+    .await;
     // Verified + rated → must NOT land in the queue.
     let (work_id2, _) = seed_work(&db, "trv-rc-rated", "Trv Rc Rated Fic", Some("fantasy")).await;
     sqlx::query(
@@ -419,9 +565,19 @@ async fn rating_check_verify_flow() {
     assert_eq!(s, StatusCode::OK);
     assert_eq!(body["err"], 0);
     let items = body["items"].as_array().unwrap();
-    let my_ids: Vec<i64> = items.iter().filter(|i| i["title"].as_str().map_or(false, |t| t.starts_with("Trv "))).map(|i| i["work_id"].as_i64().unwrap()).collect();
-    assert!(my_ids.contains(&(work_id as i64)), "unrated work in queue: {body}");
-    assert!(!my_ids.contains(&(work_id2 as i64)), "rated work not in queue: {body}");
+    let my_ids: Vec<i64> = items
+        .iter()
+        .filter(|i| i["title"].as_str().map_or(false, |t| t.starts_with("Trv ")))
+        .map(|i| i["work_id"].as_i64().unwrap())
+        .collect();
+    assert!(
+        my_ids.contains(&(work_id as i64)),
+        "unrated work in queue: {body}"
+    );
+    assert!(
+        !my_ids.contains(&(work_id2 as i64)),
+        "rated work not in queue: {body}"
+    );
 
     // Verify work 1: rating + warnings.
     let (s, _) = send(
@@ -438,9 +594,19 @@ async fn rating_check_verify_flow() {
     let (s, body) = send(&app, "GET", "/api/admin/rating-checks", Some(&tok), None).await;
     assert_eq!(s, StatusCode::OK);
     let items = body["items"].as_array().unwrap();
-    let my_ids: Vec<i64> = items.iter().filter(|i| i["title"].as_str().map_or(false, |t| t.starts_with("Trv "))).map(|i| i["work_id"].as_i64().unwrap()).collect();
-    assert!(!my_ids.contains(&(work_id as i64)), "verified work leaves queue: {body}");
-    assert!(!my_ids.contains(&(work_id2 as i64)), "verified work2 stays out: {body}");
+    let my_ids: Vec<i64> = items
+        .iter()
+        .filter(|i| i["title"].as_str().map_or(false, |t| t.starts_with("Trv ")))
+        .map(|i| i["work_id"].as_i64().unwrap())
+        .collect();
+    assert!(
+        !my_ids.contains(&(work_id as i64)),
+        "verified work leaves queue: {body}"
+    );
+    assert!(
+        !my_ids.contains(&(work_id2 as i64)),
+        "verified work2 stays out: {body}"
+    );
 
     // Verification row + works stamp exist.
     let row: (String, serde_json::Value, Option<i32>) = sqlx::query_as(
@@ -511,7 +677,13 @@ async fn char_score_fix_flow() {
     let app = app().await;
 
     let admin = seed_user(&db, &format!("{PREFIX}_cs_admin"), 10).await;
-    let (_, url_id) = seed_work(&db, "trv-cs", "Trv Cs Fic", Some(r#"{"rating":"Teen And Up"}"#)).await;
+    let (_, url_id) = seed_work(
+        &db,
+        "trv-cs",
+        "Trv Cs Fic",
+        Some(r#"{"rating":"Teen And Up"}"#),
+    )
+    .await;
     // Scraper misordered: this character got score 1, should be 10 (main).
     let tag_id = seed_char_tag(&db, &url_id, "Trv Char Hermione", 1).await;
 
@@ -529,12 +701,13 @@ async fn char_score_fix_flow() {
     assert_eq!(body["old_score"], 1);
     assert_eq!(body["new_score"], 10);
 
-    let score: i16 = sqlx::query_scalar("SELECT score FROM fic_tags WHERE url_id = $1 AND tag_id = $2")
-        .bind(&url_id)
-        .bind(tag_id)
-        .fetch_one(&db)
-        .await
-        .expect("fic_tags row");
+    let score: i16 =
+        sqlx::query_scalar("SELECT score FROM fic_tags WHERE url_id = $1 AND tag_id = $2")
+            .bind(&url_id)
+            .bind(tag_id)
+            .fetch_one(&db)
+            .await
+            .expect("fic_tags row");
     assert_eq!(score, 10);
 
     let log: (i16, i16, Option<i32>) = sqlx::query_as(
@@ -560,12 +733,14 @@ async fn char_score_fix_flow() {
     .await;
     assert_eq!(s, StatusCode::OK);
     assert!(body.to_string().contains("unchanged"));
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tag_score_fixes WHERE url_id = $1 AND tag_id = $2")
-        .bind(&url_id)
-        .bind(tag_id)
-        .fetch_one(&db)
-        .await
-        .expect("count");
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM tag_score_fixes WHERE url_id = $1 AND tag_id = $2",
+    )
+    .bind(&url_id)
+    .bind(tag_id)
+    .fetch_one(&db)
+    .await
+    .expect("count");
     assert_eq!(count, 1);
 
     cleanup(&db, &[&format!("{PREFIX}_cs_admin")]).await;
@@ -625,5 +800,9 @@ async fn char_score_fix_validation() {
     .await;
     assert_eq!(s, StatusCode::FORBIDDEN);
 
-    cleanup(&db, &[&format!("{PREFIX}_cv_admin"), &format!("{PREFIX}_cv_low")]).await;
+    cleanup(
+        &db,
+        &[&format!("{PREFIX}_cv_admin"), &format!("{PREFIX}_cv_low")],
+    )
+    .await;
 }

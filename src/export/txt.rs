@@ -102,11 +102,7 @@ fn strip_html(input: &str) -> String {
     // Step 4: Collapse whitespace — split on newlines, trim each line, join.
     let lines: Vec<String> = result
         .split('\n')
-        .map(|line| {
-            line.split_whitespace()
-                .collect::<Vec<&str>>()
-                .join(" ")
-        })
+        .map(|line| line.split_whitespace().collect::<Vec<&str>>().join(" "))
         .collect();
     let mut cleaned = lines.join("\n");
 
@@ -257,10 +253,7 @@ mod tests {
     fn test_strip_html_preserves_content() {
         let input = "<p>The quick brown fox jumps over the lazy dog.</p>";
         let result = strip_html(input);
-        assert_eq!(
-            result,
-            "The quick brown fox jumps over the lazy dog."
-        );
+        assert_eq!(result, "The quick brown fox jumps over the lazy dog.");
     }
 
     #[test]

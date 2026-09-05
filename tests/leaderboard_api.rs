@@ -15,10 +15,10 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
 use serde_json::Value;
 use tower::ServiceExt; // oneshot
@@ -53,8 +53,8 @@ async fn app() -> Router {
     let config = test_config();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -75,21 +75,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -100,7 +108,7 @@ async fn app() -> Router {
             test_config(),
             scraper_registry,
         ),
-                suggest_cache: Arc::new(tokio::sync::Mutex::new(None)),
+        suggest_cache: Arc::new(tokio::sync::Mutex::new(None)),
         heal: fichub::heal::HealService::new(db.clone(), config.clone()),
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
@@ -214,7 +222,9 @@ async fn weekly_leaderboard_returns_rows() {
     assert_eq!(body["err"], 0, "weekly err: {body}");
     let entries = body["leaderboard"].as_array().unwrap();
     assert!(
-        entries.iter().any(|e| e["username"] == username && e["score"] == 42 && e["rank"] == 1),
+        entries
+            .iter()
+            .any(|e| e["username"] == username && e["score"] == 42 && e["rank"] == 1),
         "seeded user should appear in weekly leaderboard: {body}"
     );
 
@@ -235,7 +245,9 @@ async fn monthly_leaderboard_returns_rows() {
     assert_eq!(body["err"], 0, "monthly err: {body}");
     let entries = body["leaderboard"].as_array().unwrap();
     assert!(
-        entries.iter().any(|e| e["username"] == username && e["score"] == 100 && e["rank"] == 2),
+        entries
+            .iter()
+            .any(|e| e["username"] == username && e["score"] == 100 && e["rank"] == 2),
         "seeded user should appear in monthly leaderboard: {body}"
     );
 
@@ -249,5 +261,8 @@ async fn leaderboard_empty_is_ok() {
     let _guard = db_guard();
     let body = get_leaderboard("/api/leaderboard/curators/weekly").await;
     assert_eq!(body["err"], 0, "empty weekly err: {body}");
-    assert!(body["leaderboard"].as_array().is_some(), "leaderboard must be a list: {body}");
+    assert!(
+        body["leaderboard"].as_array().is_some(),
+        "leaderboard must be a list: {body}"
+    );
 }

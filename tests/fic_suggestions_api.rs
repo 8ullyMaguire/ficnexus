@@ -16,13 +16,13 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     extract::connect_info::MockConnectInfo,
     http::{Request, StatusCode},
     routing::{get, post},
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -48,8 +48,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -77,15 +77,17 @@ async fn app() -> Router {
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
         recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
         strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
             vec![std::sync::Arc::new(
@@ -108,8 +110,14 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/fic-suggestions", get(fichub::fic_suggestions::list_suggestions))
-        .route("/api/fic-suggestions", post(fichub::fic_suggestions::create_suggestion))
+        .route(
+            "/api/fic-suggestions",
+            get(fichub::fic_suggestions::list_suggestions),
+        )
+        .route(
+            "/api/fic-suggestions",
+            post(fichub::fic_suggestions::create_suggestion),
+        )
         .route(
             "/api/fic-suggestions/{id}/vote",
             post(fichub::fic_suggestions::vote_suggestion),
@@ -118,7 +126,9 @@ async fn app() -> Router {
             "/api/fic-suggestions/{id}/remove",
             post(fichub::fic_suggestions::remove_suggestion),
         )
-        .layer(MockConnectInfo("127.0.0.1:54321".parse::<std::net::SocketAddr>().unwrap()))
+        .layer(MockConnectInfo(
+            "127.0.0.1:54321".parse::<std::net::SocketAddr>().unwrap(),
+        ))
         .with_state(state)
 }
 
@@ -237,7 +247,12 @@ async fn get_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCode, 
     (status, v)
 }
 
-async fn post_json(app: &Router, uri: &str, token: Option<&str>, body: Value) -> (StatusCode, Value) {
+async fn post_json(
+    app: &Router,
+    uri: &str,
+    token: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
     let mut req = Request::builder()
         .method("POST")
         .uri(uri)
@@ -276,7 +291,12 @@ async fn fs_full_lifecycle() {
         format!("{prefix}_sug_b"),
     ];
     let fic_refs: Vec<&str> = fics.iter().map(|s| s.as_str()).collect();
-    cleanup(&db, &users.iter().map(|u| u.as_str()).collect::<Vec<_>>(), &fic_refs.iter().map(|f| *f).collect::<Vec<_>>()).await;
+    cleanup(
+        &db,
+        &users.iter().map(|u| u.as_str()).collect::<Vec<_>>(),
+        &fic_refs.iter().map(|f| *f).collect::<Vec<_>>(),
+    )
+    .await;
     seed_fic(&db, &fics[0], "Life Seed", "Author S").await;
     seed_fic(&db, &fics[1], "Life Sug A", "Author A").await;
     seed_fic(&db, &fics[2], "Life Sug B", "Author B").await;
@@ -330,7 +350,12 @@ async fn fs_full_lifecycle() {
     assert_eq!(b["err"], -1, "duplicate pair rejected: {b}");
 
     // List: ordered by score desc; bob's upvote on sug_a puts it first.
-    let (s, b) = get_json(&app, &format!("/api/fic-suggestions?url_id={}", fics[0]), Some(&at)).await;
+    let (s, b) = get_json(
+        &app,
+        &format!("/api/fic-suggestions?url_id={}", fics[0]),
+        Some(&at),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "list: {b}");
     assert_eq!(b["err"], 0, "list err: {b}");
     let items = b["suggestions"].as_array().expect("suggestions array");
@@ -401,22 +426,40 @@ async fn fs_full_lifecycle() {
     // sug_b because it's also hers: both suggestions belong to alice.)
 
     // List again: sug_a (anon +1 vote) ranks above sug_b (0) by score.
-    let (_s, b) = get_json(&app, &format!("/api/fic-suggestions?url_id={}", fics[0]), Some(&at)).await;
+    let (_s, b) = get_json(
+        &app,
+        &format!("/api/fic-suggestions?url_id={}", fics[0]),
+        Some(&at),
+    )
+    .await;
     let items = b["suggestions"].as_array().expect("suggestions array");
     assert_eq!(items.len(), 2, "two active suggestions: {b}");
     assert_eq!(items[0]["suggested_url_id"], fics[1], "top by score: {b}");
     assert_eq!(items[0]["score"], 1, "top score: {b}");
-    assert_eq!(items[0]["suggested_title"], "Life Sug A", "title joined: {b}");
+    assert_eq!(
+        items[0]["suggested_title"], "Life Sug A",
+        "title joined: {b}"
+    );
     assert_eq!(items[0]["total_votes"], 1, "total votes: {b}");
     assert_eq!(items[0]["my_vote"], 0, "alice my_vote: {b}");
 
     // my_vote for bob: he retracted his sug_a vote → 0 on both; the anon IP
     // vote still shows +1 for anonymous callers.
-    let (_s, b) = get_json(&app, &format!("/api/fic-suggestions?url_id={}", fics[0]), Some(&bt)).await;
+    let (_s, b) = get_json(
+        &app,
+        &format!("/api/fic-suggestions?url_id={}", fics[0]),
+        Some(&bt),
+    )
+    .await;
     let items = b["suggestions"].as_array().expect("suggestions array");
     assert_eq!(items[0]["my_vote"], 0, "bob my_vote after retract: {b}");
     assert_eq!(items[1]["my_vote"], 0, "bob my_vote second: {b}");
-    let (_s, b) = get_json(&app, &format!("/api/fic-suggestions?url_id={}", fics[0]), None).await;
+    let (_s, b) = get_json(
+        &app,
+        &format!("/api/fic-suggestions?url_id={}", fics[0]),
+        None,
+    )
+    .await;
     let items = b["suggestions"].as_array().expect("suggestions array");
     assert_eq!(items[0]["my_vote"], 1, "anon my_vote: {b}");
 
@@ -440,12 +483,22 @@ async fn fs_full_lifecycle() {
     .await;
     assert_eq!(s, StatusCode::OK, "owner remove: {b}");
     assert_eq!(b["removed"], true, "removed flag: {b}");
-    let (_s, b) = get_json(&app, &format!("/api/fic-suggestions?url_id={}", fics[0]), None).await;
+    let (_s, b) = get_json(
+        &app,
+        &format!("/api/fic-suggestions?url_id={}", fics[0]),
+        None,
+    )
+    .await;
     let items = b["suggestions"].as_array().expect("suggestions array");
     assert_eq!(items.len(), 1, "one remains after remove: {b}");
     assert_eq!(items[0]["suggested_url_id"], fics[2], "remaining: {b}");
 
-    cleanup(&db, &users.iter().map(|u| u.as_str()).collect::<Vec<_>>(), &fic_refs.iter().map(|f| *f).collect::<Vec<_>>()).await;
+    cleanup(
+        &db,
+        &users.iter().map(|u| u.as_str()).collect::<Vec<_>>(),
+        &fic_refs.iter().map(|f| *f).collect::<Vec<_>>(),
+    )
+    .await;
 }
 
 /// URL-scrape mode: unsupported host → friendly err -5; supported-host URL
@@ -460,7 +513,12 @@ async fn fs_url_resolution_and_invalid_votes() {
     let users = [format!("{prefix}_alice")];
     let fics = [format!("{prefix}_seed")];
     let fic_refs: Vec<&str> = fics.iter().map(|s| s.as_str()).collect();
-    cleanup(&db, &users.iter().map(|u| u.as_str()).collect::<Vec<_>>(), &fic_refs.iter().map(|f| *f).collect::<Vec<_>>()).await;
+    cleanup(
+        &db,
+        &users.iter().map(|u| u.as_str()).collect::<Vec<_>>(),
+        &fic_refs.iter().map(|f| *f).collect::<Vec<_>>(),
+    )
+    .await;
     seed_fic(&db, &fics[0], "Url Seed", "Author S").await;
     let alice = seed_user(&db, &users[0], 0).await;
     let at = auth_header(alice, &users[0], 0);
@@ -514,7 +572,12 @@ async fn fs_url_resolution_and_invalid_votes() {
     .await;
     assert_eq!(b["err"], -1, "invalid vote err: {b}");
 
-    cleanup(&db, &users.iter().map(|u| u.as_str()).collect::<Vec<_>>(), &fic_refs.iter().map(|f| *f).collect::<Vec<_>>()).await;
+    cleanup(
+        &db,
+        &users.iter().map(|u| u.as_str()).collect::<Vec<_>>(),
+        &fic_refs.iter().map(|f| *f).collect::<Vec<_>>(),
+    )
+    .await;
 }
 
 /// Admin (role 10) can remove anyone's suggestion.
@@ -528,7 +591,12 @@ async fn fs_admin_remove() {
     let users = [format!("{prefix}_owner"), format!("{prefix}_admin")];
     let fics = [format!("{prefix}_seed"), format!("{prefix}_sug")];
     let fic_refs: Vec<&str> = fics.iter().map(|s| s.as_str()).collect();
-    cleanup(&db, &users.iter().map(|u| u.as_str()).collect::<Vec<_>>(), &fic_refs.iter().map(|f| *f).collect::<Vec<_>>()).await;
+    cleanup(
+        &db,
+        &users.iter().map(|u| u.as_str()).collect::<Vec<_>>(),
+        &fic_refs.iter().map(|f| *f).collect::<Vec<_>>(),
+    )
+    .await;
     seed_fic(&db, &fics[0], "Admin Seed", "Author S").await;
     seed_fic(&db, &fics[1], "Admin Sug", "Author A").await;
     let owner = seed_user(&db, &users[0], 0).await;
@@ -569,5 +637,10 @@ async fn fs_admin_remove() {
     assert_eq!(s, StatusCode::UNAUTHORIZED, "anon remove status: {b}");
     assert_eq!(b["err"], 401, "anon remove err: {b}");
 
-    cleanup(&db, &users.iter().map(|u| u.as_str()).collect::<Vec<_>>(), &fic_refs.iter().map(|f| *f).collect::<Vec<_>>()).await;
+    cleanup(
+        &db,
+        &users.iter().map(|u| u.as_str()).collect::<Vec<_>>(),
+        &fic_refs.iter().map(|f| *f).collect::<Vec<_>>(),
+    )
+    .await;
 }

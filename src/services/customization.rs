@@ -2,7 +2,7 @@
 //! and navigation-item derivation from activated features.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 
 use crate::error::AppError;
@@ -95,7 +95,10 @@ impl CustomizationService {
     /// - Authenticated users see every feature whose `nav_target` is set
     ///   **and** which is enabled for them (or is a default feature).
     /// - Anonymous users see only default features with a nav_target.
-    pub async fn get_nav_items(pool: &PgPool, user_id: Option<i32>) -> Result<Vec<NavItem>, AppError> {
+    pub async fn get_nav_items(
+        pool: &PgPool,
+        user_id: Option<i32>,
+    ) -> Result<Vec<NavItem>, AppError> {
         let rows: Vec<(String, String, Option<String>)> = match user_id {
             Some(uid) => {
                 sqlx::query_as(
@@ -126,7 +129,11 @@ impl CustomizationService {
         let items = rows
             .into_iter()
             .filter_map(|(slug, name, nav_target)| {
-                nav_target.map(|nt| NavItem { slug, name, nav_target: nt })
+                nav_target.map(|nt| NavItem {
+                    slug,
+                    name,
+                    nav_target: nt,
+                })
             })
             .collect();
 

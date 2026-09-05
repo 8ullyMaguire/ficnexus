@@ -14,8 +14,8 @@
 //!   roadmap      — roadmap consensus clusters   (feature_clusters; formerly
 //!                                                 admin-dashboard-only)
 
-use axum::{extract::State, Json};
-use serde_json::{json, Value};
+use axum::{Json, extract::State};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::routes::auth::AuthUser;
@@ -55,7 +55,18 @@ pub async fn consensus_feed(
 
     // ── content fixes ──────────────────────────────────────────────────
     if want(kind, "content") {
-        let rows = sqlx::query_as::<_, (i64, String, String, String, i32, i32, chrono::DateTime<chrono::Utc>)>(
+        let rows = sqlx::query_as::<
+            _,
+            (
+                i64,
+                String,
+                String,
+                String,
+                i32,
+                i32,
+                chrono::DateTime<chrono::Utc>,
+            ),
+        >(
             r#"SELECT id, url_id, reason, status, upvotes, downvotes, created_at
                FROM curator_fix_proposals
                WHERE ($1 = '' OR status = $1)
@@ -108,7 +119,16 @@ pub async fn consensus_feed(
     // ── tag flags ──────────────────────────────────────────────────────
     if want(kind, "flag") {
         let resolved_only = matches!(status.as_str(), "resolved" | "applied" | "closed");
-        let rows = sqlx::query_as::<_, (i64, String, Option<String>, bool, chrono::DateTime<chrono::Utc>)>(
+        let rows = sqlx::query_as::<
+            _,
+            (
+                i64,
+                String,
+                Option<String>,
+                bool,
+                chrono::DateTime<chrono::Utc>,
+            ),
+        >(
             r#"SELECT id, url_id, COALESCE(reason, ''), resolved, created_at
                FROM tag_flags WHERE resolved = $1
                ORDER BY created_at DESC LIMIT 200"#,
@@ -119,7 +139,10 @@ pub async fn consensus_feed(
         .unwrap_or_default();
         for (id, url_id, reason, res, created) in rows {
             let title = format!("Tag flag on {}", url_id);
-            if !matches_q(q, &format!("{} {}", title, reason.clone().unwrap_or_default())) {
+            if !matches_q(
+                q,
+                &format!("{} {}", title, reason.clone().unwrap_or_default()),
+            ) {
                 continue;
             }
             items.push(json!({
@@ -157,17 +180,18 @@ pub async fn consensus_feed(
 
     // ── author merges ──────────────────────────────────────────────────
     if want(kind, "author_merge") {
-        let rows = sqlx::query_as::<_, (i32, String, String, String, chrono::DateTime<chrono::Utc>)>(
-            r#"SELECT amp.id, amp.source_author, ap.canonical_name, amp.status, amp.created_at
+        let rows =
+            sqlx::query_as::<_, (i32, String, String, String, chrono::DateTime<chrono::Utc>)>(
+                r#"SELECT amp.id, amp.source_author, ap.canonical_name, amp.status, amp.created_at
                FROM author_merge_proposals amp
                JOIN author_profiles ap ON ap.id = amp.target_profile_id
                WHERE ($1 = '' OR amp.status = $1)
                ORDER BY amp.created_at DESC LIMIT 200"#,
-        )
-        .bind(&status)
-        .fetch_all(&state.db)
-        .await
-        .unwrap_or_default();
+            )
+            .bind(&status)
+            .fetch_all(&state.db)
+            .await
+            .unwrap_or_default();
         for (id, source_author, target, st, created) in rows {
             let detail = format!("{} → {}", source_author, target);
             if !matches_q(q, &detail) {
@@ -220,7 +244,12 @@ pub async fn consensus_feed(
     let mut counts = std::collections::BTreeMap::new();
     for it in &items {
         *counts
-            .entry(it.get("kind").and_then(|v| v.as_str()).unwrap_or("?").to_string())
+            .entry(
+                it.get("kind")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?")
+                    .to_string(),
+            )
             .or_insert(0i64) += 1;
     }
 
@@ -231,4 +260,3 @@ pub async fn consensus_feed(
         "counts": counts,
     })))
 }
-

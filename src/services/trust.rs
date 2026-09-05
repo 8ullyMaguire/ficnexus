@@ -126,36 +126,34 @@ pub async fn assert_staff_or_min_trust(
 /// Upsert a user's cached `tl_metrics` jsonb. Called after reads/engagement.
 pub async fn refresh_metrics(db: &PgPool, user_id: i32) -> AppResult<()> {
     let m = compute_metrics(db, user_id).await?;
-    let json =
-        serde_json::to_value(&m).map_err(|e| AppError::Internal(format!("tl_metrics serialize: {e}")))?;
-    sqlx::query(
-        "UPDATE users SET tl_metrics = $1, tl_updated_at = NOW() WHERE id = $2",
-    )
-    .bind(json)
-    .bind(user_id)
-    .execute(db)
-    .await
-    .map_err(|e| db_err("refresh tl_metrics", e))?;
+    let json = serde_json::to_value(&m)
+        .map_err(|e| AppError::Internal(format!("tl_metrics serialize: {e}")))?;
+    sqlx::query("UPDATE users SET tl_metrics = $1, tl_updated_at = NOW() WHERE id = $2")
+        .bind(json)
+        .bind(user_id)
+        .execute(db)
+        .await
+        .map_err(|e| db_err("refresh tl_metrics", e))?;
     Ok(())
 }
 
 /// Compute the raw metrics that drive trust promotions from live tables.
 pub async fn compute_metrics(db: &PgPool, user_id: i32) -> AppResult<TlMetrics> {
-    let works_entered: i64 =
-        sqlx::query_scalar("SELECT COUNT(DISTINCT work_id) FROM reading_history WHERE user_id = $1")
-            .bind(user_id)
-            .fetch_one(db)
-            .await
-            .map_err(|e| db_err("works_entered", e))?;
+    let works_entered: i64 = sqlx::query_scalar(
+        "SELECT COUNT(DISTINCT work_id) FROM reading_history WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(db)
+    .await
+    .map_err(|e| db_err("works_entered", e))?;
 
     // total_works_read is INT4, total_words_read is INT8 — decode separately.
-    let (works_read,): (i32,) =
-        sqlx::query_as("SELECT total_works_read FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(db)
-            .await
-            .map_err(|e| db_err("user works_read col", e))?
-            .unwrap_or((0,));
+    let (works_read,): (i32,) = sqlx::query_as("SELECT total_works_read FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(db)
+        .await
+        .map_err(|e| db_err("user works_read col", e))?
+        .unwrap_or((0,));
     let words_read: i64 = sqlx::query_scalar("SELECT total_words_read FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(db)
@@ -255,10 +253,7 @@ pub async fn set_trust_level(
         return Ok(to_level);
     }
 
-    let mut tx = db
-        .begin()
-        .await
-        .map_err(|e| db_err("trust tx begin", e))?;
+    let mut tx = db.begin().await.map_err(|e| db_err("trust tx begin", e))?;
 
     // Increment trust_loss_count on demotion (for diminishing recovery)
     if to_level < from_level {
@@ -272,15 +267,13 @@ pub async fn set_trust_level(
         .await
         .map_err(|e| db_err("trust update", e))?;
     } else {
-        sqlx::query(
-            "UPDATE users SET trust_level = $1, trust = $1, tl_notes = $2 WHERE id = $3",
-        )
-        .bind(to_level)
-        .bind(reason)
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| db_err("trust update", e))?;
+        sqlx::query("UPDATE users SET trust_level = $1, trust = $1, tl_notes = $2 WHERE id = $3")
+            .bind(to_level)
+            .bind(reason)
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| db_err("trust update", e))?;
     }
 
     sqlx::query(
@@ -295,7 +288,9 @@ pub async fn set_trust_level(
     .execute(&mut *tx)
     .await
     .map_err(|e| db_err("trust event insert", e))?;
-    tx.commit().await.map_err(|e| db_err("trust tx commit", e))?;
+    tx.commit()
+        .await
+        .map_err(|e| db_err("trust tx commit", e))?;
 
     if let Some(actor) = actor_username {
         crate::modlog::record(
@@ -370,14 +365,13 @@ pub async fn run_trust_promotion(
         // Apply diminishing recovery: reduce effective metrics based on loss count.
         // Each trust loss event reduces effective metrics by trust_recovery_decay^loss_count.
         // Example: decay=0.7, losses=1 → metrics * 0.7; losses=2 → metrics * 0.49.
-        let loss_count: i32 = sqlx::query_scalar(
-            "SELECT COALESCE(trust_loss_count, 0) FROM users WHERE id = $1",
-        )
-        .bind(uid)
-        .fetch_one(db)
-        .await
-        .unwrap_or(Some(0))
-        .unwrap_or(0);
+        let loss_count: i32 =
+            sqlx::query_scalar("SELECT COALESCE(trust_loss_count, 0) FROM users WHERE id = $1")
+                .bind(uid)
+                .fetch_one(db)
+                .await
+                .unwrap_or(Some(0))
+                .unwrap_or(0);
 
         let decay_factor = if loss_count > 0 {
             config.trust_recovery_decay.powi(loss_count)
@@ -521,8 +515,10 @@ pub async fn preference_similarity_boost(
     }
 
     // Compute Jaccard similarity between user preferences and work tags
-    let user_set: std::collections::HashSet<&str> = user_tags.iter().map(|(n,)| n.as_str()).collect();
-    let work_set: std::collections::HashSet<&str> = work_tags.iter().map(|(n,)| n.as_str()).collect();
+    let user_set: std::collections::HashSet<&str> =
+        user_tags.iter().map(|(n,)| n.as_str()).collect();
+    let work_set: std::collections::HashSet<&str> =
+        work_tags.iter().map(|(n,)| n.as_str()).collect();
 
     let intersection = user_set.intersection(&work_set).count();
     let union = user_set.union(&work_set).count();
@@ -542,7 +538,9 @@ pub async fn preference_similarity_boost(
     if boost > 0 {
         tracing::debug!(
             "preference similarity boost for user {}: sim={:.2}, boost={}",
-            user_id, similarity, boost
+            user_id,
+            similarity,
+            boost
         );
     }
     boost
@@ -569,14 +567,7 @@ mod tests {
         assert_eq!(flag_weight(6), 5);
     }
 
-    fn m(
-        entered: i64,
-        wr: i64,
-        words: i64,
-        days: i64,
-        posts: i64,
-        spam: i64,
-    ) -> TlMetrics {
+    fn m(entered: i64, wr: i64, words: i64, days: i64, posts: i64, spam: i64) -> TlMetrics {
         TlMetrics {
             works_entered: entered,
             works_read: wr,

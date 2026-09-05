@@ -25,7 +25,11 @@ impl SiteScraper for FimFictionScraper {
         url.contains("fimfiction.net/story/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         // Normalize to the story page: /story/{id}/{slug}
         let story_id = url
             .split("/story/")
@@ -52,8 +56,8 @@ impl SiteScraper for FimFictionScraper {
             .ok_or_else(|| ScrapeError::ParseError("no story_content_box".into()))?;
 
         // Title
-        let title_sel = Selector::parse("a.story_name")
-            .map_err(|e| ScrapeError::ParseError(e.to_string()))?;
+        let title_sel =
+            Selector::parse("a.story_name").map_err(|e| ScrapeError::ParseError(e.to_string()))?;
         let title = story_box
             .select(&title_sel)
             .next()
@@ -245,18 +249,34 @@ mod tests {
     #[test]
     fn parses_story_id() {
         let url = "https://www.fimfiction.net/story/12345678/hello-world/";
-        let id = url.split("/story/").nth(1).and_then(|s| s.split('/').next()).unwrap();
+        let id = url
+            .split("/story/")
+            .nth(1)
+            .and_then(|s| s.split('/').next())
+            .unwrap();
         assert_eq!(id, "12345678");
     }
 
     #[test]
     fn status_mapping() {
         let mut meta = FicMetadata {
-            url_id: "fimf_1".into(), title: "t".into(), author: "a".into(),
-            chapters: 0, words: 0, desc: String::new(), published: 0, updated: 0,
-            status: "ongoing".into(), source: "u".into(), source_id: 0,
-            author_id: 0, author_url: String::new(), author_local_id: String::new(),
-            content_hash: None, extra_meta: None, raw_extended_meta: None,
+            url_id: "fimf_1".into(),
+            title: "t".into(),
+            author: "a".into(),
+            chapters: 0,
+            words: 0,
+            desc: String::new(),
+            published: 0,
+            updated: 0,
+            status: "ongoing".into(),
+            source: "u".into(),
+            source_id: 0,
+            author_id: 0,
+            author_url: String::new(),
+            author_local_id: String::new(),
+            content_hash: None,
+            extra_meta: None,
+            raw_extended_meta: None,
         };
         // The adapter maps raw status strings; verify the mapping table.
         assert_eq!(raw_to_status("Completed"), "complete");

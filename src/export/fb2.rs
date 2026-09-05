@@ -132,11 +132,7 @@ fn strip_html(input: &str) -> String {
     let s = decode_entities(&s);
     let lines: Vec<String> = s
         .split('\n')
-        .map(|line| {
-            line.split_whitespace()
-                .collect::<Vec<&str>>()
-                .join(" ")
-        })
+        .map(|line| line.split_whitespace().collect::<Vec<&str>>().join(" "))
         .filter(|line| !line.is_empty())
         .collect();
     lines.join("\n")
@@ -303,8 +299,12 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
 
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let (_, a) = rt.block_on(create_fb2(&make_meta(), &make_chapters(), &tmp)).unwrap();
-        let (_, b) = rt.block_on(create_fb2(&make_meta(), &make_chapters(), &tmp)).unwrap();
+        let (_, a) = rt
+            .block_on(create_fb2(&make_meta(), &make_chapters(), &tmp))
+            .unwrap();
+        let (_, b) = rt
+            .block_on(create_fb2(&make_meta(), &make_chapters(), &tmp))
+            .unwrap();
         assert_eq!(a, b);
 
         let _ = std::fs::remove_dir_all(&tmp);

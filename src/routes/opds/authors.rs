@@ -8,9 +8,7 @@ use std::sync::Arc;
 use crate::error::{AppError, AppResult};
 use crate::server::AppState;
 
-use super::{
-    build_feed, fic_entry, html_escape, iso_now, opds_response, FeedKind,
-};
+use super::{FeedKind, build_feed, fic_entry, html_escape, iso_now, opds_response};
 
 /// Query params for author feeds
 #[derive(Debug, Deserialize)]
@@ -140,12 +138,10 @@ async fn build_author_fic_feed(
     .fetch_all(&state.db)
     .await?;
 
-    let total: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM fic_info WHERE author = $1",
-    )
-    .bind(author_name)
-    .fetch_one(&state.db)
-    .await?;
+    let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM fic_info WHERE author = $1")
+        .bind(author_name)
+        .fetch_one(&state.db)
+        .await?;
 
     let now = iso_now();
     let base_url = state.config.opds_base_url.as_deref();
@@ -154,10 +150,7 @@ async fn build_author_fic_feed(
     let mut entries = String::new();
 
     for row in &rows {
-        let updated = row
-            .fic_updated
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string();
+        let updated = row.fic_updated.format("%Y-%m-%dT%H:%M:%SZ").to_string();
         let acq = acq_map.get(&row.id).map(|v| v.as_slice()).unwrap_or(&[]);
         entries.push_str(&fic_entry(
             &row.id,

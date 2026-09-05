@@ -80,14 +80,13 @@ pub async fn log_impression(
     work_id: &str,
     strategy: &str,
 ) {
-    let _ = sqlx::query(
-        "INSERT INTO rec_impressions (user_id, work_id, strategy) VALUES ($1, $2, $3)",
-    )
-    .bind(user_id)
-    .bind(work_id)
-    .bind(strategy)
-    .execute(&ctx.db)
-    .await;
+    let _ =
+        sqlx::query("INSERT INTO rec_impressions (user_id, work_id, strategy) VALUES ($1, $2, $3)")
+            .bind(user_id)
+            .bind(work_id)
+            .bind(strategy)
+            .execute(&ctx.db)
+            .await;
 }
 
 /// Update arm posteriors from impressions: engagement → alpha+1, shown-but-
@@ -294,7 +293,12 @@ mod tests {
             .map(|_| beta_sample(1.0, 1.0, &mut rng))
             .collect::<Vec<_>>();
         let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
-        assert!(mean(&high) > mean(&low), "high={:?} low={:?}", mean(&high), mean(&low));
+        assert!(
+            mean(&high) > mean(&low),
+            "high={:?} low={:?}",
+            mean(&high),
+            mean(&low)
+        );
         assert!(high.iter().all(|s| (0.0..=1.0).contains(s)));
     }
 

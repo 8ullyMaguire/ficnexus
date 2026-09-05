@@ -93,7 +93,11 @@ pub async fn work_feedback_signals(pool: &PgPool, work_id: i32) -> AppResult<Wor
 
     // Sentiment: star scale is [-1, 1] ((avg-3)/2), nudged up when someone
     // wrote a review, nudged down per internal dislike.
-    let mut sentiment = if rating_count > 0 { (avg_rating - 3.0) / 2.0 } else { 0.0 };
+    let mut sentiment = if rating_count > 0 {
+        (avg_rating - 3.0) / 2.0
+    } else {
+        0.0
+    };
     if review_count > 0 {
         sentiment += 0.15;
     }

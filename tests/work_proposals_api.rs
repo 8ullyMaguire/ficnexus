@@ -13,12 +13,12 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::{get, post},
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -45,8 +45,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -74,17 +74,22 @@ async fn app() -> Router {
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -103,9 +108,18 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/work-proposals", post(fichub::routes::work_proposals::create_proposal_handler))
-        .route("/api/work-proposals", get(fichub::routes::work_proposals::list_proposals_handler))
-        .route("/api/work-proposals/{id}", get(fichub::routes::work_proposals::get_proposal_handler))
+        .route(
+            "/api/work-proposals",
+            post(fichub::routes::work_proposals::create_proposal_handler),
+        )
+        .route(
+            "/api/work-proposals",
+            get(fichub::routes::work_proposals::list_proposals_handler),
+        )
+        .route(
+            "/api/work-proposals/{id}",
+            get(fichub::routes::work_proposals::get_proposal_handler),
+        )
         .route(
             "/api/work-proposals/{id}/vote",
             post(fichub::routes::work_proposals::vote_proposal_handler),
@@ -200,8 +214,16 @@ async fn cleanup(pool: &sqlx::PgPool) {
         .await;
 }
 
-async fn post_json(app: &Router, uri: &str, token: Option<&str>, body: Value) -> (StatusCode, Value) {
-    let mut req = Request::builder().method("POST").uri(uri).header("content-type", "application/json");
+async fn post_json(
+    app: &Router,
+    uri: &str,
+    token: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
+    let mut req = Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json");
     if let Some(t) = token {
         req = req.header("authorization", t);
     }
@@ -211,8 +233,11 @@ async fn post_json(app: &Router, uri: &str, token: Option<&str>, body: Value) ->
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -227,8 +252,11 @@ async fn get_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCode, 
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -290,7 +318,10 @@ async fn work_split_proposal_create_and_list() {
     // The pending list contains it, and GET /{id} returns the details.
     let (s, b) = get_json(&app, "/api/work-proposals", None).await;
     assert_eq!(s, StatusCode::OK, "list: {b}");
-    let mine = b["proposals"].as_array().unwrap().iter()
+    let mine = b["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
         .find(|p| p["id"].as_i64() == Some(proposal_id as i64))
         .expect("split proposal in pending list");
     assert_eq!(mine["action_type"], "split", "list entry: {b}");
@@ -300,7 +331,10 @@ async fn work_split_proposal_create_and_list() {
     assert_eq!(s, StatusCode::OK, "get: {b}");
     assert_eq!(b["proposal"]["action_type"], "split");
     assert_eq!(b["proposal"]["work_id"].as_i64(), Some(work_a as i64));
-    assert_eq!(b["proposal"]["details"]["chapters"][0], 1, "details preserved: {b}");
+    assert_eq!(
+        b["proposal"]["details"]["chapters"][0], 1,
+        "details preserved: {b}"
+    );
 
     cleanup(&db).await;
 }

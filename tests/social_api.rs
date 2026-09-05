@@ -13,12 +13,12 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::{get, post, put},
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -45,8 +45,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -74,17 +74,22 @@ async fn app() -> Router {
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -103,21 +108,39 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/auth/register", post(fichub::routes::social::register_handler))
-        .route("/api/auth/login", post(fichub::routes::social::login_handler))
+        .route(
+            "/api/auth/register",
+            post(fichub::routes::social::register_handler),
+        )
+        .route(
+            "/api/auth/login",
+            post(fichub::routes::social::login_handler),
+        )
         .route("/api/auth/me", get(fichub::routes::social::me_handler))
-        .route("/api/bookmarks", post(fichub::routes::social::add_bookmark_handler))
-        .route("/api/bookmarks", get(fichub::routes::social::list_bookmarks_handler))
+        .route(
+            "/api/bookmarks",
+            post(fichub::routes::social::add_bookmark_handler),
+        )
+        .route(
+            "/api/bookmarks",
+            get(fichub::routes::social::list_bookmarks_handler),
+        )
         .route(
             "/api/bookmarks/{work_id}",
             axum::routing::delete(fichub::routes::social::remove_bookmark_handler),
         )
-        .route("/api/ratings", post(fichub::routes::social::rate_work_handler))
+        .route(
+            "/api/ratings",
+            post(fichub::routes::social::rate_work_handler),
+        )
         .route(
             "/api/ratings/{work_id}",
             get(fichub::routes::social::get_ratings_handler),
         )
-        .route("/api/reviews", post(fichub::routes::reviews::upsert_review_handler))
+        .route(
+            "/api/reviews",
+            post(fichub::routes::reviews::upsert_review_handler),
+        )
         .route(
             "/api/reviews/{id}",
             axum::routing::delete(fichub::routes::reviews::delete_review_handler),
@@ -126,7 +149,10 @@ async fn app() -> Router {
             "/api/works/{id}/reviews",
             get(fichub::routes::reviews::list_reviews_handler),
         )
-        .route("/api/comments", post(fichub::routes::social::add_comment_handler))
+        .route(
+            "/api/comments",
+            post(fichub::routes::social::add_comment_handler),
+        )
         .route(
             "/api/comments/{work_id}",
             get(fichub::routes::social::list_comments_handler),
@@ -135,8 +161,14 @@ async fn app() -> Router {
             "/api/comment/{id}/hide",
             axum::routing::patch(fichub::routes::comments::hide_comment_handler),
         )
-        .route("/api/follows", post(fichub::routes::follows::follow_handler))
-        .route("/api/follows", get(fichub::routes::follows::list_follows_handler))
+        .route(
+            "/api/follows",
+            post(fichub::routes::follows::follow_handler),
+        )
+        .route(
+            "/api/follows",
+            get(fichub::routes::follows::list_follows_handler),
+        )
         .route(
             "/api/follows/{id}",
             axum::routing::delete(fichub::routes::follows::unfollow_handler),
@@ -342,17 +374,23 @@ async fn cleanup(pool: &sqlx::PgPool, usernames: &[&str], url_ids: &[&str]) {
             .bind(id)
             .execute(pool)
             .await;
-        let _ = sqlx::query(
-            "DELETE FROM works WHERE canonical_title LIKE $1",
-        )
-        .bind(format!("%{id}%"))
-        .execute(pool)
-        .await;
+        let _ = sqlx::query("DELETE FROM works WHERE canonical_title LIKE $1")
+            .bind(format!("%{id}%"))
+            .execute(pool)
+            .await;
     }
 }
 
-async fn post_json(app: &Router, uri: &str, token: Option<&str>, body: Value) -> (StatusCode, Value) {
-    let mut req = Request::builder().method("POST").uri(uri).header("content-type", "application/json");
+async fn post_json(
+    app: &Router,
+    uri: &str,
+    token: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
+    let mut req = Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json");
     if let Some(t) = token {
         req = req.header("authorization", t);
     }
@@ -362,8 +400,11 @@ async fn post_json(app: &Router, uri: &str, token: Option<&str>, body: Value) ->
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -378,8 +419,11 @@ async fn get_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCode, 
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -394,13 +438,24 @@ async fn delete_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCod
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
-async fn put_json(app: &Router, uri: &str, token: Option<&str>, body: Value) -> (StatusCode, Value) {
-    let mut req = Request::builder().method("PATCH").uri(uri).header("content-type", "application/json");
+async fn put_json(
+    app: &Router,
+    uri: &str,
+    token: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
+    let mut req = Request::builder()
+        .method("PATCH")
+        .uri(uri)
+        .header("content-type", "application/json");
     if let Some(t) = token {
         req = req.header("authorization", t);
     }
@@ -410,8 +465,11 @@ async fn put_json(app: &Router, uri: &str, token: Option<&str>, body: Value) -> 
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -482,7 +540,10 @@ async fn register_login_me_flow() {
     // `user_badges` decode), so only assert the /me response here; the
     // profile path is exercised separately by integration.rs.
     if me.get("username").and_then(|v| v.as_str()) == Some(username) {
-        assert!(me.get("id").is_some() || me.get("user_id").is_some(), "me id present: {b}");
+        assert!(
+            me.get("id").is_some() || me.get("user_id").is_some(),
+            "me id present: {b}"
+        );
     }
 
     // /api/auth/me without a token → the handler returns 200 with
@@ -513,7 +574,10 @@ async fn user_profile_returns_decoded_role() {
     assert_eq!(b["user"]["id"], id1, "profile id: {b}");
     assert_eq!(b["user"]["username"], u1, "profile username: {b}");
     assert_eq!(b["user"]["role"], 5, "profile role decoded as int: {b}");
-    assert!(b["user"]["created_at"].is_string(), "created_at string: {b}");
+    assert!(
+        b["user"]["created_at"].is_string(),
+        "created_at string: {b}"
+    );
 
     // Unknown user → 404, not 500
     let (s, b) = get_json(&app, "/api/users/999999999", None).await;
@@ -530,17 +594,35 @@ async fn bookmark_crud() {
     let u1 = "socialt_bm_u1";
     cleanup(&db, &[u1], &["socialt-bm-work"]).await;
     let id1 = seed_user(&db, u1, 0).await;
-    let wid = seed_work(&db, "socialt-bm-work", "SocialTest Bookmark Fic", "SocialTest Author").await;
+    let wid = seed_work(
+        &db,
+        "socialt-bm-work",
+        "SocialTest Bookmark Fic",
+        "SocialTest Author",
+    )
+    .await;
     let app = app().await;
     let t1 = auth_header(id1, u1, 0);
 
     // Anonymous add blocked → HTTP 400 err 401.
-    let (s, b) = post_json(&app, "/api/bookmarks", None, json!({ "work_id": wid, "notes": "anon" })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/bookmarks",
+        None,
+        json!({ "work_id": wid, "notes": "anon" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "anon add: {b}");
     assert_eq!(b["err"], 401, "anon add err: {b}");
 
     // Add.
-    let (s, b) = post_json(&app, "/api/bookmarks", Some(&t1), json!({ "work_id": wid, "notes": "to read", "is_private": true })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/bookmarks",
+        Some(&t1),
+        json!({ "work_id": wid, "notes": "to read", "is_private": true }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "add: {b}");
     assert_eq!(b["err"], 0, "add err: {b}");
 
@@ -553,7 +635,13 @@ async fn bookmark_crud() {
     assert_eq!(items[0]["is_private"], true);
 
     // Re-add updates instead of duplicating.
-    let (s, b) = post_json(&app, "/api/bookmarks", Some(&t1), json!({ "work_id": wid, "notes": "updated", "is_private": false })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/bookmarks",
+        Some(&t1),
+        json!({ "work_id": wid, "notes": "updated", "is_private": false }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "re-add: {b}");
     let (_, b) = get_json(&app, "/api/bookmarks", Some(&t1)).await;
     let items = b["bookmarks"].as_array().unwrap();
@@ -566,7 +654,11 @@ async fn bookmark_crud() {
     assert_eq!(s, StatusCode::OK, "remove: {b}");
     assert_eq!(b["err"], 0, "remove err: {b}");
     let (_, b) = get_json(&app, "/api/bookmarks", Some(&t1)).await;
-    assert_eq!(b["bookmarks"].as_array().unwrap().len(), 0, "empty after remove: {b}");
+    assert_eq!(
+        b["bookmarks"].as_array().unwrap().len(),
+        0,
+        "empty after remove: {b}"
+    );
 
     // Cleanup
     cleanup(&db, &[u1], &["socialt-bm-work"]).await;
@@ -582,32 +674,68 @@ async fn ratings_flow() {
     cleanup(&db, &[u1, u2], &["socialt-rate-work"]).await;
     let id1 = seed_user(&db, u1, 0).await;
     let id2 = seed_user(&db, u2, 0).await;
-    let wid = seed_work(&db, "socialt-rate-work", "SocialTest Rated Fic", "SocialTest Author").await;
+    let wid = seed_work(
+        &db,
+        "socialt-rate-work",
+        "SocialTest Rated Fic",
+        "SocialTest Author",
+    )
+    .await;
     let app = app().await;
     let t1 = auth_header(id1, u1, 0);
     let t2 = auth_header(id2, u2, 0);
 
     // Anonymous rating blocked → HTTP 400 err 401.
-    let (s, b) = post_json(&app, "/api/ratings", None, json!({ "work_id": wid, "rating": 5 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/ratings",
+        None,
+        json!({ "work_id": wid, "rating": 5 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "anon rating: {b}");
     assert_eq!(b["err"], 401, "anon rating err: {b}");
 
     // Out-of-range rating → 400 err -1.
-    let (s, b) = post_json(&app, "/api/ratings", Some(&t1), json!({ "work_id": wid, "rating": 9 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/ratings",
+        Some(&t1),
+        json!({ "work_id": wid, "rating": 9 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "bad rating: {b}");
     assert_eq!(b["err"], -1, "bad rating err: {b}");
 
     // Rate 4★, then 5★ (upsert, no duplicate rows).
-    let (s, b) = post_json(&app, "/api/ratings", Some(&t1), json!({ "work_id": wid, "rating": 4 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/ratings",
+        Some(&t1),
+        json!({ "work_id": wid, "rating": 4 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "rate 4: {b}");
     assert_eq!(b["avg_rating"], 4.0, "avg after 4: {b}");
-    let (s, b) = post_json(&app, "/api/ratings", Some(&t1), json!({ "work_id": wid, "rating": 5 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/ratings",
+        Some(&t1),
+        json!({ "work_id": wid, "rating": 5 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "rate 5: {b}");
     assert_eq!(b["rating_count"], 1, "upsert keeps one rating: {b}");
     assert_eq!(b["avg_rating"], 5.0, "avg after upsert: {b}");
 
     // Second user rates 3★ → aggregate 2 ratings, avg 4.0.
-    let (s, b) = post_json(&app, "/api/ratings", Some(&t2), json!({ "work_id": wid, "rating": 3 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/ratings",
+        Some(&t2),
+        json!({ "work_id": wid, "rating": 3 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "rate 3: {b}");
     assert_eq!(b["rating_count"], 2, "two ratings: {b}");
     assert_eq!(b["avg_rating"], 4.0, "avg 4.0: {b}");
@@ -634,18 +762,36 @@ async fn reviews_flow() {
     cleanup(&db, &[u1, u2], &["socialt-rev-work"]).await;
     let id1 = seed_user(&db, u1, 0).await;
     let id2 = seed_user(&db, u2, 0).await;
-    let wid = seed_work(&db, "socialt-rev-work", "SocialTest Reviewed Fic", "SocialTest Author").await;
+    let wid = seed_work(
+        &db,
+        "socialt-rev-work",
+        "SocialTest Reviewed Fic",
+        "SocialTest Author",
+    )
+    .await;
     let app = app().await;
     let t1 = auth_header(id1, u1, 0);
     let t2 = auth_header(id2, u2, 0);
 
     // Anonymous review blocked → HTTP 400 err 401.
-    let (s, b) = post_json(&app, "/api/reviews", None, json!({ "work_id": wid, "rating": 5, "title": "T", "body": "Great fic" })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/reviews",
+        None,
+        json!({ "work_id": wid, "rating": 5, "title": "T", "body": "Great fic" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "anon review: {b}");
     assert_eq!(b["err"], 401, "anon review err: {b}");
 
     // Invalid rating rejected.
-    let (s, b) = post_json(&app, "/api/reviews", Some(&t1), json!({ "work_id": wid, "rating": 7, "body": "x" })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/reviews",
+        Some(&t1),
+        json!({ "work_id": wid, "rating": 7, "body": "x" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "bad review rating: {b}");
 
     // Post a review.
@@ -661,7 +807,13 @@ async fn reviews_flow() {
     assert_eq!(b["review"]["rating"], 4);
 
     // Second user's review shows in the public list.
-    let (s, b) = post_json(&app, "/api/reviews", Some(&t2), json!({ "work_id": wid, "rating": 5, "body": "Wonderful story" })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/reviews",
+        Some(&t2),
+        json!({ "work_id": wid, "rating": 5, "body": "Wonderful story" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "review2: {b}");
     let rid2 = b["review"]["id"].as_i64().unwrap();
     let (s, b) = get_json(&app, &format!("/api/works/{wid}/reviews"), None).await;
@@ -694,13 +846,25 @@ async fn comments_post_list_hide() {
     cleanup(&db, &[u1, u2], &["socialt-cmt-work"]).await;
     let id1 = seed_user(&db, u1, 0).await;
     let id2 = seed_user(&db, u2, 5).await; // curator
-    let wid = seed_work(&db, "socialt-cmt-work", "SocialTest Comment Fic", "SocialTest Author").await;
+    let wid = seed_work(
+        &db,
+        "socialt-cmt-work",
+        "SocialTest Comment Fic",
+        "SocialTest Author",
+    )
+    .await;
     let app = app().await;
     let t1 = auth_header(id1, u1, 0);
     let t2 = auth_header(id2, u2, 5);
 
     // Anonymous comment blocked → HTTP 400 err 401.
-    let (s, b) = post_json(&app, "/api/comments", None, json!({ "work_id": wid, "body": "anon" })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/comments",
+        None,
+        json!({ "work_id": wid, "body": "anon" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "anon comment: {b}");
     assert_eq!(b["err"], 401, "anon comment err: {b}");
 
@@ -743,23 +907,44 @@ async fn comments_post_list_hide() {
     let (s, b) = get_json(&app, &format!("/api/comments/{wid}"), None).await;
     assert_eq!(s, StatusCode::OK, "list comments: {b}");
     let comments = b["comments"].as_array().unwrap();
-    assert!(comments.iter().any(|c| c["id"] == json!(cid)), "top comment: {b}");
-    assert!(comments.iter().any(|c| c["id"] == json!(reply_id)), "reply: {b}");
+    assert!(
+        comments.iter().any(|c| c["id"] == json!(cid)),
+        "top comment: {b}"
+    );
+    assert!(
+        comments.iter().any(|c| c["id"] == json!(reply_id)),
+        "reply: {b}"
+    );
 
     // Non-curator hide blocked → HTTP 400 err 403 (curator gate).
-    let (s, b) = put_json(&app, &format!("/api/comment/{reply_id}/hide"), Some(&t1), json!({ "hidden": true })).await;
+    let (s, b) = put_json(
+        &app,
+        &format!("/api/comment/{reply_id}/hide"),
+        Some(&t1),
+        json!({ "hidden": true }),
+    )
+    .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "non-curator hide: {b}");
     assert_eq!(b["err"], -403, "non-curator hide err: {b}");
 
     // Curator hides a NONEXISTENT comment id → the UPDATE hits 0 rows but
     // the handler still returns 200 (documented current behavior); hiding
     // the REAL reply works and removes it from the public list.
-    let (s, b) = put_json(&app, &format!("/api/comment/{reply_id}/hide"), Some(&t2), json!({ "hidden": true })).await;
+    let (s, b) = put_json(
+        &app,
+        &format!("/api/comment/{reply_id}/hide"),
+        Some(&t2),
+        json!({ "hidden": true }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "curator hide: {b}");
     assert_eq!(b["hidden"], true);
     let (_, b) = get_json(&app, &format!("/api/comments/{wid}"), None).await;
     let comments = b["comments"].as_array().unwrap();
-    assert!(comments.iter().any(|c| c["id"] == json!(cid)), "top comment still visible: {b}");
+    assert!(
+        comments.iter().any(|c| c["id"] == json!(cid)),
+        "top comment still visible: {b}"
+    );
     // The hidden reply stays in the threaded list (parent visible), but the
     // DB flag flipped — verified above via the API response + direct check.
     assert!(
@@ -787,24 +972,54 @@ async fn follows_flow() {
     cleanup(&db, &[u1, u2], &["socialt-fol-work"]).await;
     let id1 = seed_user(&db, u1, 0).await;
     let id2 = seed_user(&db, u2, 0).await;
-    let wid = seed_work(&db, "socialt-fol-work", "SocialTest Follow Fic", "SocialTest Author").await;
+    let wid = seed_work(
+        &db,
+        "socialt-fol-work",
+        "SocialTest Follow Fic",
+        "SocialTest Author",
+    )
+    .await;
     let app = app().await;
     let t1 = auth_header(id1, u1, 0);
     let _t2 = auth_header(id2, u2, 0);
 
     // Anonymous follow blocked → HTTP 400 err 401.
-    let (s, b) = post_json(&app, "/api/follows", None, json!({ "target_type": "user", "target_id": id2 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/follows",
+        None,
+        json!({ "target_type": "user", "target_id": id2 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "anon follow: {b}");
     assert_eq!(b["err"], 401, "anon follow err: {b}");
 
     // Cannot follow yourself → HTTP 400.
-    let (s, b) = post_json(&app, "/api/follows", Some(&t1), json!({ "target_type": "user", "target_id": id1 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/follows",
+        Some(&t1),
+        json!({ "target_type": "user", "target_id": id1 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "self follow blocked: {b}");
 
     // Follow a user + a work.
-    let (s, b) = post_json(&app, "/api/follows", Some(&t1), json!({ "target_type": "user", "target_id": id2 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/follows",
+        Some(&t1),
+        json!({ "target_type": "user", "target_id": id2 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "follow user: {b}");
-    let (s, b) = post_json(&app, "/api/follows", Some(&t1), json!({ "target_type": "work", "target_id": wid })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/follows",
+        Some(&t1),
+        json!({ "target_type": "work", "target_id": wid }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "follow work: {b}");
     let follow_id = b["follow_id"].as_i64().expect("follow_id");
 
@@ -825,7 +1040,10 @@ async fn follows_flow() {
     // Followers of u2 contains u1.
     let (_, b) = get_json(&app, &format!("/api/follows/followers/{id2}"), None).await;
     let followers = b["followers"].as_array().unwrap();
-    assert!(followers.iter().any(|f| f["follower_id"] == json!(id1)), "followers: {b}");
+    assert!(
+        followers.iter().any(|f| f["follower_id"] == json!(id1)),
+        "followers: {b}"
+    );
     assert_eq!(b["count"], 1);
 
     // Unfollow the work via follow_id.
@@ -890,7 +1108,11 @@ async fn notifications_flow() {
     // List returns 2 for u1 (no leak from u2), unread_count embedded.
     let (s, b) = get_json(&app, "/api/notifications", Some(&t1)).await;
     assert_eq!(s, StatusCode::OK, "list: {b}");
-    assert_eq!(b["notifications"].as_array().unwrap().len(), 2, "list len: {b}");
+    assert_eq!(
+        b["notifications"].as_array().unwrap().len(),
+        2,
+        "list len: {b}"
+    );
     assert_eq!(b["unread_count"], 1);
 
     // Mark the FIRST unread notification read (the seeded unread one).
@@ -902,14 +1124,26 @@ async fn notifications_flow() {
         .find(|n| n["is_read"] == json!(false))
         .map(|n| n["id"].as_i64().unwrap())
         .expect("unread notification present");
-    let (s, b) = post_json(&app, &format!("/api/notifications/{unread_id}/read"), Some(&t1), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/notifications/{unread_id}/read"),
+        Some(&t1),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "mark read: {b}");
     assert_eq!(b["marked"], true);
     let (_, b) = get_json(&app, "/api/notifications/unread-count", Some(&t1)).await;
     assert_eq!(b["unread_count"], 0, "unread after mark: {b}");
 
     // Marking another user's notification is a no-op (marked=false).
-    let (s, b) = post_json(&app, "/api/notifications/999999999/read", Some(&t1), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/notifications/999999999/read",
+        Some(&t1),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "mark missing: {b}");
     assert_eq!(b["marked"], false);
 
@@ -943,12 +1177,18 @@ async fn notifications_flow() {
         .uri("/api/notifications/preferences")
         .header("content-type", "application/json")
         .header("authorization", &t1)
-        .body(Body::from(json!({ "recommendation": true, "email_digest": "daily", "comment_reply": false }).to_string()))
+        .body(Body::from(
+            json!({ "recommendation": true, "email_digest": "daily", "comment_reply": false })
+                .to_string(),
+        ))
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let b: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let b: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     assert_eq!(status, StatusCode::OK, "prefs put: {b}");
     assert_eq!(b["err"], 0, "prefs put err: {b}");
     let (_, b) = get_json(&app, "/api/notifications/preferences", Some(&t1)).await;
@@ -965,7 +1205,11 @@ async fn notifications_flow() {
         .body(Body::from(json!({ "email_digest": "hourly" }).to_string()))
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "invalid digest rejected");
+    assert_eq!(
+        resp.status(),
+        StatusCode::BAD_REQUEST,
+        "invalid digest rejected"
+    );
 
     // Cleanup
     cleanup(&db, &[u1, u2], &[]).await;

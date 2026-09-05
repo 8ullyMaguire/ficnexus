@@ -157,4 +157,3 @@ mod tests {
         assert!(geo.is_none(), "missing file → None (fail-open)");
     }
 }
-

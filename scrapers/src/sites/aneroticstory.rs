@@ -16,8 +16,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 
 pub struct AnEroticStoryScraper {
     adult_ok: AtomicBool,
@@ -70,15 +70,24 @@ impl SiteScraper for AnEroticStoryScraper {
             self.adult_ok.store(true, Ordering::Relaxed);
             Ok(())
         } else {
-            Err(ScrapeError::AuthRequired("aneroticstory: is_adult not set".into()))
+            Err(ScrapeError::AuthRequired(
+                "aneroticstory: is_adult not set".into(),
+            ))
         }
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         if !self.adult_ok.load(Ordering::Relaxed) {
-            return Err(ScrapeError::AuthRequired("aneroticstory: adult gate".into()));
+            return Err(ScrapeError::AuthRequired(
+                "aneroticstory: adult gate".into(),
+            ));
         }
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("aneroticstory: bad url".into()))?;
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("aneroticstory: bad url".into()))?;
         let html = http::fetch(client, url).await?;
 
         let (title, author, author_url, author_local_id, desc, published, genre) = {
@@ -104,7 +113,12 @@ impl SiteScraper for AnEroticStoryScraper {
                     author = a.text().collect::<String>().trim().to_string();
                     if let Some(h) = a.value().attr("href") {
                         author_url = format!("https://www.aneroticstory.com{h}");
-                        author_local_id = h.trim_end_matches('/').rsplit('/').next().unwrap_or("").to_string();
+                        author_local_id = h
+                            .trim_end_matches('/')
+                            .rsplit('/')
+                            .next()
+                            .unwrap_or("")
+                            .to_string();
                     }
                 }
             }
@@ -146,7 +160,15 @@ impl SiteScraper for AnEroticStoryScraper {
                     .unwrap_or_default();
             }
 
-            (title, author, author_url, author_local_id, desc, published, genre)
+            (
+                title,
+                author,
+                author_url,
+                author_local_id,
+                desc,
+                published,
+                genre,
+            )
         };
 
         if title.is_empty() {
@@ -182,7 +204,9 @@ impl SiteScraper for AnEroticStoryScraper {
     ) -> Result<Vec<Chapter>, ScrapeError> {
         let content = fetch_chapter_text(client, &meta.source).await;
         if content.is_empty() {
-            return Err(ScrapeError::ParseError("aneroticstory: no story text".into()));
+            return Err(ScrapeError::ParseError(
+                "aneroticstory: no story text".into(),
+            ));
         }
         Ok(vec![Chapter {
             chapter_id: 1,
@@ -226,13 +250,21 @@ mod tests {
 
     #[test]
     fn parses_story_id() {
-        assert_eq!(AnEroticStoryScraper::story_id("https://www.aneroticstory.com/story/565-daddy-explores-jessica"), Some("565-daddy-explores-jessica".to_string()));
+        assert_eq!(
+            AnEroticStoryScraper::story_id(
+                "https://www.aneroticstory.com/story/565-daddy-explores-jessica"
+            ),
+            Some("565-daddy-explores-jessica".to_string())
+        );
         assert_eq!(AnEroticStoryScraper::story_id("https://x.com/foo"), None);
     }
 
     #[test]
     fn title_cases() {
-        assert_eq!(AnEroticStoryScraper::title_case("daddy explores jessica"), "Daddy Explores Jessica");
+        assert_eq!(
+            AnEroticStoryScraper::title_case("daddy explores jessica"),
+            "Daddy Explores Jessica"
+        );
         assert_eq!(AnEroticStoryScraper::title_case("hello"), "Hello");
     }
 
@@ -241,7 +273,11 @@ mod tests {
         let html = r#"<html><body><div class="tes"><p>Story text.</p></div></body></html>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("div.tes").unwrap();
-        let s = doc.select(&sel).next().map(|el| el.inner_html()).unwrap_or_default();
+        let s = doc
+            .select(&sel)
+            .next()
+            .map(|el| el.inner_html())
+            .unwrap_or_default();
         assert!(s.contains("Story text."));
     }
 }

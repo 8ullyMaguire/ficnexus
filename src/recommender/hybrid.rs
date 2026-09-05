@@ -75,8 +75,7 @@ pub fn ctr_weights(shown: &[i64; 3], engaged: &[i64; 3]) -> (f64, f64, f64) {
     let mut n_measured = 0usize;
     for i in 0..3 {
         if shown[i] > 0 {
-            ctrs[i] =
-                (engaged[i] as f64 + CTR_PRIOR_ENGAGED) / (shown[i] as f64 + CTR_PRIOR_SHOWN);
+            ctrs[i] = (engaged[i] as f64 + CTR_PRIOR_ENGAGED) / (shown[i] as f64 + CTR_PRIOR_SHOWN);
             measured[i] = true;
             n_measured += 1;
         }
@@ -245,7 +244,11 @@ impl RecStrategy for HybridStrategy {
             }
         }
 
-        blended.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        blended.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         blended.truncate(ctx.config.rec_max_recommendations);
         if blended.is_empty() {
             return Err(RecError::NotEnoughData("hybrid produced nothing".into()));
@@ -294,10 +297,7 @@ pub fn normalize(scores: &[(String, f64)]) -> Vec<(String, f64)> {
         .iter()
         .map(|(_, s)| *s)
         .fold(f64::NEG_INFINITY, f64::max);
-    let min = scores
-        .iter()
-        .map(|(_, s)| *s)
-        .fold(f64::INFINITY, f64::min);
+    let min = scores.iter().map(|(_, s)| *s).fold(f64::INFINITY, f64::min);
     let range = max - min;
     if range <= 1e-12 {
         return scores.iter().map(|(w, _)| (w.clone(), 1.0)).collect();
@@ -308,10 +308,7 @@ pub fn normalize(scores: &[(String, f64)]) -> Vec<(String, f64)> {
         .collect()
 }
 
-async fn mf_component_scores(
-    ctx: &StrategyContext,
-    user_id: Option<i32>,
-) -> Vec<(String, f64)> {
+async fn mf_component_scores(ctx: &StrategyContext, user_id: Option<i32>) -> Vec<(String, f64)> {
     let Some(uid) = user_id else {
         return Vec::new();
     };
@@ -414,7 +411,10 @@ mod tests {
         let shown = [100, 100, 0];
         let engaged = [2, 0, 0];
         let (mf, emb, tag) = ctr_weights(&shown, &engaged);
-        assert!(mf > emb, "2% CTR beats the no-data imputation: mf={mf} emb={emb}");
+        assert!(
+            mf > emb,
+            "2% CTR beats the no-data imputation: mf={mf} emb={emb}"
+        );
         assert!(mf > tag);
         assert!((mf + emb + tag - 1.0).abs() < 1e-9);
     }
@@ -428,7 +428,10 @@ mod tests {
         let (mf, emb, tag) = ctr_weights(&shown, &engaged);
         // emb ctr = 22/72 ≈ 0.306, tag ctr = 3/52 ≈ 0.058,
         // mf imputed at the mean ≈ 0.182 → emb must win.
-        assert!(emb > mf && emb > tag, "strongest measured component wins: emb={emb} mf={mf} tag={tag}");
+        assert!(
+            emb > mf && emb > tag,
+            "strongest measured component wins: emb={emb} mf={mf} tag={tag}"
+        );
         assert!((mf + emb + tag - 1.0).abs() < 1e-9);
     }
 

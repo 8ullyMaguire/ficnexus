@@ -6,12 +6,9 @@
 // falling back to their account email (users.email) when unset. The EPUB
 // is also cached and recorded in export_log, matching the export pipeline.
 
-use axum::{
-    extract::State,
-    Json,
-};
+use axum::{Json, extract::State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;
@@ -35,92 +32,91 @@ async fn build_and_send(
     _title: &str,
 ) -> Result<Value, AppError> {
     // Resolve chapters: prefer a cached fic_info entry, else scrape live.
-    let (meta, chapters) = if let Some(fic) =
-        crate::db::queries::get_fic_info(&state.db, url_id).await?
-    {
-        let meta = crate::scrape::FicMetadata {
-            url_id: fic.id.clone(),
-            title: fic.title.clone(),
-            author: fic.author.clone(),
-            chapters: fic.chapters,
-            words: fic.words,
-            desc: fic.description,
-            published: fic.fic_created.timestamp_millis(),
-            updated: fic.fic_updated.timestamp_millis(),
-            status: fic.status.clone(),
-            source: fic.source.clone(),
-            source_id: fic.source_id.unwrap_or(0),
-            author_id: fic.author_id.unwrap_or(0),
-            author_url: fic.author_url.clone().unwrap_or_default(),
-            author_local_id: fic.author_local_id.clone().unwrap_or_default(),
-            content_hash: None,
-            extra_meta: None,
-            raw_extended_meta: None,
+    let (meta, chapters) =
+        if let Some(fic) = crate::db::queries::get_fic_info(&state.db, url_id).await? {
+            let meta = crate::scrape::FicMetadata {
+                url_id: fic.id.clone(),
+                title: fic.title.clone(),
+                author: fic.author.clone(),
+                chapters: fic.chapters,
+                words: fic.words,
+                desc: fic.description,
+                published: fic.fic_created.timestamp_millis(),
+                updated: fic.fic_updated.timestamp_millis(),
+                status: fic.status.clone(),
+                source: fic.source.clone(),
+                source_id: fic.source_id.unwrap_or(0),
+                author_id: fic.author_id.unwrap_or(0),
+                author_url: fic.author_url.clone().unwrap_or_default(),
+                author_local_id: fic.author_local_id.clone().unwrap_or_default(),
+                content_hash: None,
+                extra_meta: None,
+                raw_extended_meta: None,
+            };
+            // Cached metadata only: fetch chapters from the source.
+            let scraper = state
+                .scraper_registry
+                .find_specific_or_fff(&meta.source)
+                .ok_or_else(|| AppError::BadRequest(format!("no scraper for {}", meta.source)))?;
+            let chapters = match scraper.fetch_chapters(&state.http_client, &meta).await {
+                Ok(ch) => ch,
+                Err(e) => {
+                    state
+                        .heal
+                        .record_failure(
+                            &meta.source,
+                            Some(&meta.url_id),
+                            &crate::heal::classifier::ErrorKind::from(&e),
+                            Some(&e.to_string()),
+                            None,
+                        )
+                        .await;
+                    return Err(AppError::ScrapeError(format!(
+                        "failed to fetch chapters: {e}"
+                    )));
+                }
+            };
+            (meta, chapters)
+        } else {
+            // Not in DB: scrape fresh
+            let scraper = state
+                .scraper_registry
+                .find_specific_or_fff(url_id)
+                .ok_or_else(|| AppError::NotFound(format!("fic {url_id} not found")))?;
+            let meta = match scraper.lookup(&state.http_client, url_id).await {
+                Ok(m) => m,
+                Err(e) => {
+                    state
+                        .heal
+                        .record_failure(
+                            url_id,
+                            None,
+                            &crate::heal::classifier::ErrorKind::from(&e),
+                            Some(&e.to_string()),
+                            None,
+                        )
+                        .await;
+                    return Err(AppError::ScrapeError(e.to_string()));
+                }
+            };
+            let chapters = match scraper.fetch_chapters(&state.http_client, &meta).await {
+                Ok(ch) => ch,
+                Err(e) => {
+                    state
+                        .heal
+                        .record_failure(
+                            &meta.source,
+                            Some(&meta.url_id),
+                            &crate::heal::classifier::ErrorKind::from(&e),
+                            Some(&e.to_string()),
+                            None,
+                        )
+                        .await;
+                    return Err(AppError::ScrapeError(e.to_string()));
+                }
+            };
+            (meta, chapters)
         };
-        // Cached metadata only: fetch chapters from the source.
-        let scraper = state
-            .scraper_registry
-            .find_specific_or_fff(&meta.source)
-            .ok_or_else(|| {
-                AppError::BadRequest(format!("no scraper for {}", meta.source))
-            })?;
-        let chapters = match scraper.fetch_chapters(&state.http_client, &meta).await {
-            Ok(ch) => ch,
-            Err(e) => {
-                state
-                    .heal
-                    .record_failure(
-                        &meta.source,
-                        Some(&meta.url_id),
-                        &crate::heal::classifier::ErrorKind::from(&e),
-                        Some(&e.to_string()),
-                        None,
-                    )
-                    .await;
-                return Err(AppError::ScrapeError(format!("failed to fetch chapters: {e}")));
-            }
-        };
-        (meta, chapters)
-    } else {
-        // Not in DB: scrape fresh
-        let scraper = state
-            .scraper_registry
-            .find_specific_or_fff(url_id)
-            .ok_or_else(|| AppError::NotFound(format!("fic {url_id} not found")))?;
-        let meta = match scraper.lookup(&state.http_client, url_id).await {
-            Ok(m) => m,
-            Err(e) => {
-                state
-                    .heal
-                    .record_failure(
-                        url_id,
-                        None,
-                        &crate::heal::classifier::ErrorKind::from(&e),
-                        Some(&e.to_string()),
-                        None,
-                    )
-                    .await;
-                return Err(AppError::ScrapeError(e.to_string()));
-            }
-        };
-        let chapters = match scraper.fetch_chapters(&state.http_client, &meta).await {
-            Ok(ch) => ch,
-            Err(e) => {
-                state
-                    .heal
-                    .record_failure(
-                        &meta.source,
-                        Some(&meta.url_id),
-                        &crate::heal::classifier::ErrorKind::from(&e),
-                        Some(&e.to_string()),
-                        None,
-                    )
-                    .await;
-                return Err(AppError::ScrapeError(e.to_string()));
-            }
-        };
-        (meta, chapters)
-    };
 
     // Generate the EPUB
     let (epub_path, epub_hash) =
@@ -159,7 +155,13 @@ async fn build_and_send(
     let slug: String = meta
         .title
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == ' ' { c } else { ' ' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == ' ' {
+                c
+            } else {
+                ' '
+            }
+        })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -219,7 +221,9 @@ pub async fn send_to_kindle_handler(
     let resolved_url_id = match (&req.url, &req.url_id) {
         (Some(url), None) => {
             if !url.starts_with("http") {
-                return Err(AppError::BadRequest("url must be an http(s) fic URL".to_string()));
+                return Err(AppError::BadRequest(
+                    "url must be an http(s) fic URL".to_string(),
+                ));
             }
             let scraper = state
                 .scraper_registry
@@ -238,7 +242,9 @@ pub async fn send_to_kindle_handler(
             url_id.clone()
         }
         _ => {
-            return Err(AppError::BadRequest("provide exactly one of url or url_id".to_string()));
+            return Err(AppError::BadRequest(
+                "provide exactly one of url or url_id".to_string(),
+            ));
         }
     };
 
@@ -250,14 +256,16 @@ pub async fn send_to_kindle_handler(
     .fetch_optional(&state.db)
     .await?;
 
-    let (account_email, kindle_email) = row
-        .ok_or_else(|| AppError::NotFound("user not found".into()))?;
+    let (account_email, kindle_email) =
+        row.ok_or_else(|| AppError::NotFound("user not found".into()))?;
     let to = kindle_email
         .filter(|s| !s.trim().is_empty())
         .unwrap_or(account_email.clone());
 
     if to.trim().is_empty() {
-        return Err(AppError::BadRequest("no email on file — add an email or a Kindle address to your account".to_string()));
+        return Err(AppError::BadRequest(
+            "no email on file — add an email or a Kindle address to your account".to_string(),
+        ));
     }
 
     // Graceful invalid-email handling: reject before any EPUB work so the
@@ -281,7 +289,10 @@ mod tests {
             "url": "https://archiveofourown.org/works/123"
         }))
         .unwrap();
-        assert_eq!(by_url.url.as_deref(), Some("https://archiveofourown.org/works/123"));
+        assert_eq!(
+            by_url.url.as_deref(),
+            Some("https://archiveofourown.org/works/123")
+        );
         assert!(by_url.url_id.is_none());
 
         let by_id: SendToKindleReq = serde_json::from_value(json!({

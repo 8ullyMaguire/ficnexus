@@ -104,16 +104,36 @@ fn html_to_md(input: &str) -> String {
     let s = regex_replace(r"(?i)<em[^>]*>(.*?)</em>", &s, "*$1*");
 
     // Inline: links
-    let s = regex_replace(r#"(?i)<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>"#, &s, "[$2]($1)");
-    let s = regex_replace(r#"(?i)<a[^>]*href='([^']*)'[^>]*>(.*?)</a>"#, &s, "[$2]($1)");
+    let s = regex_replace(
+        r#"(?i)<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>"#,
+        &s,
+        "[$2]($1)",
+    );
+    let s = regex_replace(
+        r#"(?i)<a[^>]*href='([^']*)'[^>]*>(.*?)</a>"#,
+        &s,
+        "[$2]($1)",
+    );
 
     // Images
-    let s = regex_replace(r#"(?i)<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*/?>"#, &s, "![$2]($1)");
-    let s = regex_replace(r#"(?i)<img[^>]*alt="([^"]*)"[^>]*src="([^"]*)"[^>]*/?>"#, &s, "![$1]($2)");
+    let s = regex_replace(
+        r#"(?i)<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*/?>"#,
+        &s,
+        "![$2]($1)",
+    );
+    let s = regex_replace(
+        r#"(?i)<img[^>]*alt="([^"]*)"[^>]*src="([^"]*)"[^>]*/?>"#,
+        &s,
+        "![$1]($2)",
+    );
     let s = regex_replace(r#"(?i)<img[^>]*src="([^"]*)"[^>]*/?>"#, &s, "![]($1)");
 
     // Remove remaining HTML tags
-    let s = regex_replace(r"(?i)</?(?:p|div|span|br|hr|table|thead|tbody|tr|td|th|ul|ol|dl|dt|dd|figure|figcaption|section|article|header|footer|nav|aside|main|details|summary|pre|code|tt|small|sub|sup|u|s|del|ins|mark|abbr|cite|q|var|kbd|samp|dfn|time|address|bdi|bdo|ruby|rt|rp|wbr)[^>]*>", &s, "");
+    let s = regex_replace(
+        r"(?i)</?(?:p|div|span|br|hr|table|thead|tbody|tr|td|th|ul|ol|dl|dt|dd|figure|figcaption|section|article|header|footer|nav|aside|main|details|summary|pre|code|tt|small|sub|sup|u|s|del|ins|mark|abbr|cite|q|var|kbd|samp|dfn|time|address|bdi|bdo|ruby|rt|rp|wbr)[^>]*>",
+        &s,
+        "",
+    );
 
     // Remove any remaining tags
     let s = regex_replace(r"<[^>]+>", &s, "");
@@ -204,15 +224,27 @@ mod tests {
     fn test_html_to_md_bold_italic() {
         let input = "<p>This is <b>bold</b> and <i>italic</i> text.</p>";
         let result = html_to_md(input);
-        assert!(result.contains("**bold**"), "Expected **bold** in: {}", result);
-        assert!(result.contains("*italic*"), "Expected *italic* in: {}", result);
+        assert!(
+            result.contains("**bold**"),
+            "Expected **bold** in: {}",
+            result
+        );
+        assert!(
+            result.contains("*italic*"),
+            "Expected *italic* in: {}",
+            result
+        );
     }
 
     #[test]
     fn test_html_to_md_links() {
         let input = r#"<p>Visit <a href="https://example.com">Example</a></p>"#;
         let result = html_to_md(input);
-        assert!(result.contains("[Example](https://example.com)"), "Expected link in: {}", result);
+        assert!(
+            result.contains("[Example](https://example.com)"),
+            "Expected link in: {}",
+            result
+        );
     }
 
     #[test]
@@ -255,7 +287,11 @@ mod tests {
     fn test_html_to_md_images() {
         let input = r#"<img src="https://example.com/image.png" alt="Cover">"#;
         let result = html_to_md(input);
-        assert!(result.contains("![Cover](https://example.com/image.png)"), "Expected image in: {}", result);
+        assert!(
+            result.contains("![Cover](https://example.com/image.png)"),
+            "Expected image in: {}",
+            result
+        );
     }
 
     #[test]
@@ -272,7 +308,11 @@ mod tests {
             <p>She said "hello" &amp; he waved.</p>
         </div>"#;
         let result = html_to_md(input);
-        assert!(result.contains("## Chapter 1"), "Missing header in: {}", result);
+        assert!(
+            result.contains("## Chapter 1"),
+            "Missing header in: {}",
+            result
+        );
         assert!(result.contains("*dark*"), "Missing italic in: {}", result);
         assert!(result.contains("**stormy**"), "Missing bold in: {}", result);
         assert!(result.contains("She said \"hello\" & he waved."));

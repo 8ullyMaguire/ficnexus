@@ -1,26 +1,26 @@
 use axum::{
-    extract::{Query, State},
     Json,
+    extract::{Query, State},
 };
 use chrono::Utc;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::FromRow;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use crate::error::AppError;
-use crate::server::AppState;
-use crate::db::queries;
-use crate::recommender::{RecQuery, RecResult};
-use crate::recommender::engine::{
-    submit_suggestion, cast_vote, get_community_suggestions, tag_overlap, personal_score,
-    popularity_norm, PERSONAL_RECS_MIN_SIGNAL, PERSONAL_RECS_N, FicInfoRow,
-};
-use crate::routes::auth::AuthUser;
-use std::collections::HashMap;
-use sqlx::PgPool;
 use crate::config::Config;
+use crate::db::queries;
+use crate::error::AppError;
+use crate::recommender::engine::{
+    FicInfoRow, PERSONAL_RECS_MIN_SIGNAL, PERSONAL_RECS_N, cast_vote, get_community_suggestions,
+    personal_score, popularity_norm, submit_suggestion, tag_overlap,
+};
+use crate::recommender::{RecQuery, RecResult};
+use crate::routes::auth::AuthUser;
+use crate::server::AppState;
+use sqlx::PgPool;
+use std::collections::HashMap;
 
 /// Query parameters for GET /api/v0/recommendations
 #[derive(Debug, Deserialize)]
@@ -119,9 +119,13 @@ pub async fn recommendations_handler(
     // --- Resolve url_id and build seed_meta ---
     let (url_id, _seed_meta) = if let Some(q) = &params.q {
         // Scrape metadata to resolve the URL to a url_id (same flow as v1 export/meta handlers)
-        let scraper = state.scraper_registry.find_specific_or_fff(q)
+        let scraper = state
+            .scraper_registry
+            .find_specific_or_fff(q)
             .ok_or_else(|| AppError::BadRequest(format!("unsupported URL: {}", q)))?;
-        let meta = scraper.lookup(&state.http_client, q).await
+        let meta = scraper
+            .lookup(&state.http_client, q)
+            .await
             .map_err(|e| AppError::ScrapeError(e.to_string()))?;
         let seed = build_seed_meta_from_meta(&meta);
         (meta.url_id, seed)
@@ -133,7 +137,9 @@ pub async fn recommendations_handler(
         };
         (id.clone(), seed)
     } else {
-        return Ok(Json(json!({"err": -1, "msg": "no query or url_id provided"})));
+        return Ok(Json(
+            json!({"err": -1, "msg": "no query or url_id provided"}),
+        ));
     };
 
     let n = params.n.unwrap_or(20).max(1).min(100) as usize;
@@ -154,7 +160,10 @@ pub async fn recommendations_handler(
     };
 
     // --- Compute recommendations ---
-    let recommendations = state.recommender_engine.get_recommendations(&rec_query, &state.config).await?;
+    let recommendations = state
+        .recommender_engine
+        .get_recommendations(&rec_query, &state.config)
+        .await?;
 
     // --- Build response ---
     Ok(Json(json!({
@@ -200,10 +209,7 @@ fn empty_personal_response() -> Json<Value> {
 /// Extract the tag ids of a user's bookmarks (their "profile tags").
 /// Reuses the exact SQL from the personal-recs handler so the legacy path
 /// and the pluggable path agree byte-for-byte.
-pub async fn fetch_user_top_tags(
-    db: &PgPool,
-    user_id: i32,
-) -> Result<Vec<i32>, AppError> {
+pub async fn fetch_user_top_tags(db: &PgPool, user_id: i32) -> Result<Vec<i32>, AppError> {
     Ok(sqlx::query_scalar(
         r#"SELECT ft.tag_id
            FROM bookmarks b
@@ -293,10 +299,11 @@ pub async fn compute_personal_recommendations(
     let now = Utc::now();
     let mut scored: Vec<(f64, PersonalCandidateRow)> = Vec::with_capacity(candidates.len());
     for c in candidates {
-        let fic_tags: Vec<i32> = sqlx::query_scalar("SELECT tag_id FROM fic_tags WHERE url_id = $1")
-            .bind(&c.id)
-            .fetch_all(db)
-            .await?;
+        let fic_tags: Vec<i32> =
+            sqlx::query_scalar("SELECT tag_id FROM fic_tags WHERE url_id = $1")
+                .bind(&c.id)
+                .fetch_all(db)
+                .await?;
         let overlap = tag_overlap(&top_tag_ids, &fic_tags);
         let popularity = popularity_norm(c.updated, now);
         scored.push((personal_score(overlap, popularity), c));
@@ -426,7 +433,10 @@ pub async fn pluggable_personal_handler(
     );
 
     // Check for an active recipe — override strategy weights if found
-    let recipe = RecipeService::get_active(&state.db, user_id).await.ok().flatten();
+    let recipe = RecipeService::get_active(&state.db, user_id)
+        .await
+        .ok()
+        .flatten();
     let recipe_weights = recipe.as_ref().and_then(|r| {
         let w = RecipeService::to_strategy_weights(r);
         if w.is_empty() { None } else { Some(w) }
@@ -472,20 +482,22 @@ pub async fn pluggable_personal_handler(
         .fetch_optional(&state.db)
         .await?;
         if let Some(info) = info {
-            recs.push(serde_json::to_value(RecResult {
-                url_id: info.id,
-                title: info.title,
-                author: info.author,
-                words: info.words,
-                chapters: info.chapters,
-                status: info.status,
-                site_domain: info.source,
-                summary: info.description,
-                score: br.score,
-                community_score: 0,
-                download_urls: HashMap::new(),
-            })
-            .unwrap_or(Value::Null));
+            recs.push(
+                serde_json::to_value(RecResult {
+                    url_id: info.id,
+                    title: info.title,
+                    author: info.author,
+                    words: info.words,
+                    chapters: info.chapters,
+                    status: info.status,
+                    site_domain: info.source,
+                    summary: info.description,
+                    score: br.score,
+                    community_score: 0,
+                    download_urls: HashMap::new(),
+                })
+                .unwrap_or(Value::Null),
+            );
         }
     }
 
@@ -545,11 +557,13 @@ pub async fn strategies_handler(
         )
         .fetch_all(&state.db)
         .await?;
-    let run_map: std::collections::HashMap<String, (Option<serde_json::Value>, Option<bool>, Option<i64>)> =
-        last_runs
-            .into_iter()
-            .map(|(s, m, ok, d)| (s, (m, ok, d)))
-            .collect();
+    let run_map: std::collections::HashMap<
+        String,
+        (Option<serde_json::Value>, Option<bool>, Option<i64>),
+    > = last_runs
+        .into_iter()
+        .map(|(s, m, ok, d)| (s, (m, ok, d)))
+        .collect();
 
     let strategies: Vec<Value> = state
         .strategy_registry
@@ -557,7 +571,8 @@ pub async fn strategies_handler(
         .into_iter()
         .map(|s| {
             let name = s.name().to_string();
-            let (metrics, ok, duration_ms) = run_map.get(&name).cloned().unwrap_or((None, None, None));
+            let (metrics, ok, duration_ms) =
+                run_map.get(&name).cloned().unwrap_or((None, None, None));
             json!({
                 "name": name,
                 "enabled": enabled.contains_key(&name),
@@ -614,19 +629,29 @@ pub async fn suggest_handler(
 ) -> Result<Json<Value>, AppError> {
     // Validate the body
     if body.url_id.is_empty() || body.suggested_url.is_empty() {
-        return Ok(Json(json!({"err": -1, "msg": "url_id and suggested_url are required"})));
+        return Ok(Json(
+            json!({"err": -1, "msg": "url_id and suggested_url are required"}),
+        ));
     }
 
     // Resolve the suggested_url to a url_id via the scraper
-    let scraper = state.scraper_registry.find_specific_or_fff(&body.suggested_url)
+    let scraper = state
+        .scraper_registry
+        .find_specific_or_fff(&body.suggested_url)
         .ok_or_else(|| AppError::BadRequest(format!("unsupported URL: {}", body.suggested_url)))?;
-    let meta = scraper.lookup(&state.http_client, &body.suggested_url).await
+    let meta = scraper
+        .lookup(&state.http_client, &body.suggested_url)
+        .await
         .map_err(|e| AppError::ScrapeError(e.to_string()))?;
     let suggested_url_id = meta.url_id;
 
     // Validate that both url_ids exist in the DB
-    let seed_exists = queries::get_fic_info(&state.db, &body.url_id).await?.is_some();
-    let suggestion_exists = queries::get_fic_info(&state.db, &suggested_url_id).await?.is_some();
+    let seed_exists = queries::get_fic_info(&state.db, &body.url_id)
+        .await?
+        .is_some();
+    let suggestion_exists = queries::get_fic_info(&state.db, &suggested_url_id)
+        .await?
+        .is_some();
 
     if !seed_exists {
         // Enqueue the seed for collection and return an error
@@ -639,7 +664,10 @@ pub async fn suggest_handler(
 
     if !suggestion_exists {
         // Enqueue the suggestion for collection
-        state.collection_worker.enqueue_fic(&suggested_url_id).await?;
+        state
+            .collection_worker
+            .enqueue_fic(&suggested_url_id)
+            .await?;
         return Ok(Json(json!({
             "err": -5,
             "msg": "suggested fic not yet collected — enqueued for processing"
@@ -653,7 +681,8 @@ pub async fn suggest_handler(
         &suggested_url_id,
         "0.0.0.0",
         body.comment.as_deref(),
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(json!({
         "err": 0,
@@ -670,15 +699,12 @@ pub async fn vote_handler(
 ) -> Result<Json<Value>, AppError> {
     // Validate vote value
     if body.vote != 1 && body.vote != -1 {
-        return Ok(Json(json!({"err": -1, "msg": "vote must be 1 (upvote) or -1 (downvote)"})));
+        return Ok(Json(
+            json!({"err": -1, "msg": "vote must be 1 (upvote) or -1 (downvote)"}),
+        ));
     }
 
-    let new_score = cast_vote(
-        &state.db,
-        body.suggestion_id,
-        "0.0.0.0",
-        body.vote as i16,
-    ).await?;
+    let new_score = cast_vote(&state.db, body.suggestion_id, "0.0.0.0", body.vote as i16).await?;
 
     Ok(Json(json!({
         "err": 0,
@@ -697,12 +723,9 @@ pub async fn votes_handler(
         return Ok(Json(json!({"err": -1, "msg": "url_id is required"})));
     }
 
-    let suggestions = get_community_suggestions(
-        &state.db,
-        &params.url_id,
-    ).await?;
+    let suggestions = get_community_suggestions(&state.db, &params.url_id).await?;
 
-        Ok(Json(json!({
+    Ok(Json(json!({
         "err": 0,
         "url_id": params.url_id,
         "suggestions": suggestions,

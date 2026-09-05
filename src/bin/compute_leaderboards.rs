@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
            ON CONFLICT (user_id, week_start) DO UPDATE SET
                score = EXCLUDED.score,
                rank = EXCLUDED.rank,
-               computed_at = NOW()"#
+               computed_at = NOW()"#,
     )
     .execute(&pool)
     .await?;
@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
            ON CONFLICT (user_id, month_start) DO UPDATE SET
                score = EXCLUDED.score,
                rank = EXCLUDED.rank,
-               computed_at = NOW()"#
+               computed_at = NOW()"#,
     )
     .execute(&pool)
     .await?;

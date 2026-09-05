@@ -1,9 +1,9 @@
 use axum::{
-    extract::{ConnectInfo, Path, Query, State},
     Json,
+    extract::{ConnectInfo, Path, Query, State},
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -54,7 +54,9 @@ pub async fn submit_tag(
 
     // Validate input
     if body.url_id.is_empty() || body.tag_name.is_empty() {
-        return Ok(Json(json!({"err": -1, "msg": "url_id and tag_name are required"})));
+        return Ok(Json(
+            json!({"err": -1, "msg": "url_id and tag_name are required"}),
+        ));
     }
     if !(1..=7).contains(&body.tag_type_id) {
         return Ok(Json(json!({"err": -1, "msg": "tag_type_id must be 1-7"})));
@@ -71,20 +73,17 @@ pub async fn submit_tag(
     .await?;
 
     // Verify the fic exists in the database
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM fic_info WHERE id = $1)",
-    )
-    .bind(&body.url_id)
-    .fetch_one(&state.db)
-    .await?;
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM fic_info WHERE id = $1)")
+        .bind(&body.url_id)
+        .fetch_one(&state.db)
+        .await?;
 
     if !exists {
         return Ok(Json(json!({"err": -5, "msg": "fic not found"})));
     }
 
     // Resolve the tag string to a canonical tag
-    let resolution =
-        resolve::resolve_tag(&state.db, &body.tag_name, body.tag_type_id).await?;
+    let resolution = resolve::resolve_tag(&state.db, &body.tag_name, body.tag_type_id).await?;
 
     // Attach the tag to the fic (idempotent)
     let ip_str = ip.to_string();
@@ -128,13 +127,7 @@ pub async fn vote_tag(
 
     // Rate limit check
     let mut redis = state.redis.clone();
-    check_tag_rate_limit(
-        &mut redis,
-        "vote",
-        ip,
-        state.config.tag_vote_limit_per_hour,
-    )
-    .await?;
+    check_tag_rate_limit(&mut redis, "vote", ip, state.config.tag_vote_limit_per_hour).await?;
 
     // Record the vote
     let result = voting::record_vote(
@@ -264,10 +257,7 @@ async fn check_tag_rate_limit(
     }
 
     // Increment and set TTL on first visit
-    let new_count: u32 = redis::cmd("INCR")
-        .arg(&key)
-        .query_async(redis)
-        .await?;
+    let new_count: u32 = redis::cmd("INCR").arg(&key).query_async(redis).await?;
 
     if new_count == 1 {
         let _: () = redis::cmd("EXPIRE")
@@ -318,9 +308,8 @@ pub async fn search_tags(
     let _offset_val = offset as i64;
 
     // Count total matching tags using QueryBuilder
-    let mut count_qb = sqlx::QueryBuilder::<sqlx::Postgres>::new(
-        "SELECT COUNT(*) FROM tags t WHERE 1=1"
-    );
+    let mut count_qb =
+        sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT COUNT(*) FROM tags t WHERE 1=1");
 
     if let Some(ref q) = params.q {
         if !q.is_empty() {
@@ -343,10 +332,7 @@ pub async fn search_tags(
         }
     }
 
-    let total: (i64,) = count_qb
-        .build_query_as()
-        .fetch_one(&state.db)
-        .await?;
+    let total: (i64,) = count_qb.build_query_as().fetch_one(&state.db).await?;
 
     let sort_clause_str = match params.sort.as_deref() {
         Some("usage") => "ORDER BY usage_count DESC",
@@ -359,7 +345,7 @@ pub async fn search_tags(
         r#"SELECT t.id, t.name, t.tag_type_id, t.description,
                   (SELECT COUNT(*) FROM fic_tags ft WHERE ft.tag_id = t.id) as usage_count,
                   EXISTS(SELECT 1 FROM tag_aliases ta WHERE ta.alias_name = t.name) as is_alias
-           FROM tags t WHERE 1=1"#
+           FROM tags t WHERE 1=1"#,
     );
 
     if let Some(ref q) = params.q {
@@ -400,10 +386,7 @@ pub async fn search_tags(
         is_alias: bool,
     }
 
-    let rows: Vec<TagSearchRow> = data_qb
-        .build_query_as()
-        .fetch_all(&state.db)
-        .await?;
+    let rows: Vec<TagSearchRow> = data_qb.build_query_as().fetch_all(&state.db).await?;
 
     let tags: Vec<Value> = rows
         .into_iter()
@@ -471,23 +454,20 @@ pub async fn get_tag_detail(
 
     // Get synonyms (aliases pointing to this canonical tag)
     let synonyms: Vec<String> = {
-        let rows: Vec<(String,)> = sqlx::query_as(
-            "SELECT alias_name FROM tag_aliases WHERE canonical_tag_id = $1",
-        )
-        .bind(id)
-        .fetch_all(&state.db)
-        .await?;
+        let rows: Vec<(String,)> =
+            sqlx::query_as("SELECT alias_name FROM tag_aliases WHERE canonical_tag_id = $1")
+                .bind(id)
+                .fetch_all(&state.db)
+                .await?;
         rows.into_iter().map(|r| r.0).collect()
     };
 
     // Get usage count
     let usage_count: i64 = {
-        let count: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM fic_tags ft WHERE ft.tag_id = $1",
-        )
-        .bind(id)
-        .fetch_one(&state.db)
-        .await?;
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM fic_tags ft WHERE ft.tag_id = $1")
+            .bind(id)
+            .fetch_one(&state.db)
+            .await?;
         count.0
     };
 

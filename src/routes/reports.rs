@@ -9,11 +9,11 @@
 
 use std::sync::Arc;
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use chrono::Utc;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
@@ -56,12 +56,14 @@ pub async fn create_report(
     auth: AuthUser,
     Json(body): Json<CreateReportBody>,
 ) -> Result<Json<Value>, AppError> {
-    let reporter_id =
-        auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let reporter_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     // Trust sandbox: TL0 (brand-new) may read but may not flag — flags carry
     // trust-weighted value, so a guest account must first engage.
-    trust::assert_staff_or_min_trust(&state.db, Some(reporter_id), auth.role, 1, "Filing reports").await?;
+    trust::assert_staff_or_min_trust(&state.db, Some(reporter_id), auth.role, 1, "Filing reports")
+        .await?;
     let reporter_trust = trust::fetch_trust_level(&state.db, Some(reporter_id)).await;
     let weight = flag_weight(reporter_trust);
 
@@ -78,7 +80,9 @@ pub async fn create_report(
         return Err(AppError::BadRequest("reason required".to_string()));
     }
     if reason.chars().count() > 1000 {
-        return Err(AppError::BadRequest("reason too long (max 1000 chars)".to_string()));
+        return Err(AppError::BadRequest(
+            "reason too long (max 1000 chars)".to_string(),
+        ));
     }
 
     // Lightweight existence validation so admins never see reports about
@@ -87,29 +91,38 @@ pub async fn create_report(
     // not an error.
     match body.target_type.as_str() {
         "work" => {
-            let exists: Option<(i32,)> =
-                sqlx::query_as("SELECT id FROM works WHERE id = $1").bind(body.target_id).fetch_optional(&state.db).await?;
+            let exists: Option<(i32,)> = sqlx::query_as("SELECT id FROM works WHERE id = $1")
+                .bind(body.target_id)
+                .fetch_optional(&state.db)
+                .await?;
             if exists.is_none() {
                 tracing::warn!("report for missing work {} stored", body.target_id);
             }
         }
         "comment" => {
-            let exists: Option<(i64,)> =
-                sqlx::query_as("SELECT id FROM comments WHERE id = $1").bind(body.target_id as i64).fetch_optional(&state.db).await?;
+            let exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM comments WHERE id = $1")
+                .bind(body.target_id as i64)
+                .fetch_optional(&state.db)
+                .await?;
             if exists.is_none() {
                 tracing::warn!("report for missing comment {} stored", body.target_id);
             }
         }
         "forum_post" => {
-            let exists: Option<(i64,)> =
-                sqlx::query_as("SELECT id FROM forum_posts WHERE id = $1").bind(body.target_id as i64).fetch_optional(&state.db).await?;
+            let exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM forum_posts WHERE id = $1")
+                .bind(body.target_id as i64)
+                .fetch_optional(&state.db)
+                .await?;
             if exists.is_none() {
                 tracing::warn!("report for missing forum_post {} stored", body.target_id);
             }
         }
         "forum_topic" => {
             let exists: Option<(i64,)> =
-                sqlx::query_as("SELECT id FROM forum_topics WHERE id = $1").bind(body.target_id as i64).fetch_optional(&state.db).await?;
+                sqlx::query_as("SELECT id FROM forum_topics WHERE id = $1")
+                    .bind(body.target_id as i64)
+                    .fetch_optional(&state.db)
+                    .await?;
             if exists.is_none() {
                 tracing::warn!("report for missing forum_topic {} stored", body.target_id);
             }
@@ -135,7 +148,9 @@ pub async fn create_report(
     // auto_status on all still-open reports for this target.
     run_report_triage(&state.db, &body.target_type, body.target_id).await?;
 
-    Ok(Json(json!({"err": 0, "report_id": report_id, "msg": "Report submitted", "weight": weight})))
+    Ok(Json(
+        json!({"err": 0, "report_id": report_id, "msg": "Report submitted", "weight": weight}),
+    ))
 }
 
 /// Aggregate weighted flags for a target and mark an `auto_status`:
@@ -252,11 +267,26 @@ pub async fn list_reports(
 
     let status = params.status.trim();
     if !matches!(status, "open" | "resolved" | "dismissed" | "all") {
-        return Err(AppError::BadRequest("status must be one of: open, resolved, dismissed, all".to_string()));
+        return Err(AppError::BadRequest(
+            "status must be one of: open, resolved, dismissed, all".to_string(),
+        ));
     }
 
     let rows = if status == "all" {
-        sqlx::query_as::<_, (i64, Option<i32>, Option<String>, String, i32, String, Option<Value>, String, chrono::DateTime<Utc>)>(
+        sqlx::query_as::<
+            _,
+            (
+                i64,
+                Option<i32>,
+                Option<String>,
+                String,
+                i32,
+                String,
+                Option<Value>,
+                String,
+                chrono::DateTime<Utc>,
+            ),
+        >(
             r#"SELECT r.id, r.reporter_id, u.username, r.target_type, r.target_id,
                       r.reason, r.details, r.status, r.created_at
                FROM user_reports r
@@ -267,7 +297,20 @@ pub async fn list_reports(
         .fetch_all(&state.db)
         .await?
     } else {
-        sqlx::query_as::<_, (i64, Option<i32>, Option<String>, String, i32, String, Option<Value>, String, chrono::DateTime<Utc>)>(
+        sqlx::query_as::<
+            _,
+            (
+                i64,
+                Option<i32>,
+                Option<String>,
+                String,
+                i32,
+                String,
+                Option<Value>,
+                String,
+                chrono::DateTime<Utc>,
+            ),
+        >(
             r#"SELECT r.id, r.reporter_id, u.username, r.target_type, r.target_id,
                       r.reason, r.details, r.status, r.created_at
                FROM user_reports r
@@ -283,19 +326,31 @@ pub async fn list_reports(
 
     let items: Vec<Value> = rows
         .into_iter()
-        .map(|(id, reporter_id, reporter_name, target_type, target_id, reason, details, status, created)| {
-            json!({
-                "id": id,
-                "reporter_id": reporter_id,
-                "reporter_name": reporter_name,
-                "target_type": target_type,
-                "target_id": target_id,
-                "reason": reason,
-                "details": details,
-                "status": status,
-                "created_at": created.to_rfc3339(),
-            })
-        })
+        .map(
+            |(
+                id,
+                reporter_id,
+                reporter_name,
+                target_type,
+                target_id,
+                reason,
+                details,
+                status,
+                created,
+            )| {
+                json!({
+                    "id": id,
+                    "reporter_id": reporter_id,
+                    "reporter_name": reporter_name,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                    "reason": reason,
+                    "details": details,
+                    "status": status,
+                    "created_at": created.to_rfc3339(),
+                })
+            },
+        )
         .collect();
 
     Ok(Json(json!({"err": 0, "status": status, "items": items})))
@@ -312,15 +367,22 @@ pub async fn resolve_report(
     // Admins always; Community Moderators (TL5+) may also resolve reports.
     let is_admin = user.role >= 10;
     if !is_admin {
-        trust::assert_min_trust(&state.db, user.user_id, trust::RESOLVE_MIN_TRUST, "Resolving reports")
-            .await?;
+        trust::assert_min_trust(
+            &state.db,
+            user.user_id,
+            trust::RESOLVE_MIN_TRUST,
+            "Resolving reports",
+        )
+        .await?;
     }
 
     let new_status = match body.action.as_str() {
         "resolved" => "resolved",
         "dismissed" => "dismissed",
         _ => {
-            return Err(AppError::BadRequest("action must be 'resolved' or 'dismissed'".to_string()))
+            return Err(AppError::BadRequest(
+                "action must be 'resolved' or 'dismissed'".to_string(),
+            ));
         }
     };
 
@@ -335,8 +397,12 @@ pub async fn resolve_report(
     .await?;
     if result.rows_affected() == 0 {
         // Either missing, or already resolved/dismissed.
-        return Err(AppError::NotFound("Report not found or already handled".into()));
+        return Err(AppError::NotFound(
+            "Report not found or already handled".into(),
+        ));
     }
 
-    Ok(Json(json!({"err": 0, "report_id": report_id, "status": new_status})))
+    Ok(Json(
+        json!({"err": 0, "report_id": report_id, "status": new_status}),
+    ))
 }

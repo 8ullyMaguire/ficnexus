@@ -12,12 +12,16 @@ pub struct Ao3Scraper {
 impl Ao3Scraper {
     /// The canonical AO3 site.
     pub fn ao3() -> Self {
-        Self { domain: "archiveofourown.org".into() }
+        Self {
+            domain: "archiveofourown.org".into(),
+        }
     }
 
     /// An OTW-family site with the same layout but a different domain.
     pub fn with_domain(domain: &str) -> Self {
-        Self { domain: domain.to_string() }
+        Self {
+            domain: domain.to_string(),
+        }
     }
 
     fn base_url(&self) -> String {
@@ -25,10 +29,10 @@ impl Ao3Scraper {
     }
 }
 
+use crate::{Chapter, ExtractedTag, FicMetadata, ScrapeError, SiteScraper};
 use async_trait::async_trait;
-use crate::{FicMetadata, Chapter, SiteScraper, ScrapeError, ExtractedTag};
-use scraper::{Html, Selector};
 use chrono::Utc;
+use scraper::{Html, Selector};
 
 const BASE_URL: &str = "https://archiveofourown.org";
 
@@ -42,7 +46,9 @@ impl Ao3Scraper {
     #[allow(dead_code)]
     fn extract_chapter_number(url: &str) -> Option<i32> {
         let re = regex_lite::Regex::new(r"/chapters/(\d+)").ok()?;
-        re.captures(url)?.get(1).and_then(|m| m.as_str().parse().ok())
+        re.captures(url)?
+            .get(1)
+            .and_then(|m| m.as_str().parse().ok())
     }
 
     /// Check if a URL is an AO3 series page (archiveofourown.org/series/{id})
@@ -52,7 +58,10 @@ impl Ao3Scraper {
     }
 
     /// Scrape an AO3 series page and return all work URLs.
-    pub async fn list_series_works(client: &reqwest::Client, url: &str) -> Result<Vec<String>, ScrapeError> {
+    pub async fn list_series_works(
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<Vec<String>, ScrapeError> {
         let resp = client
             .get(url)
             .header("User-Agent", "fichub.net/0.1.0")
@@ -80,7 +89,10 @@ impl Ao3Scraper {
 
         // Deduplicate while preserving order
         let mut seen = std::collections::HashSet::new();
-        Ok(work_urls.into_iter().filter(|u| seen.insert(u.clone())).collect())
+        Ok(work_urls
+            .into_iter()
+            .filter(|u| seen.insert(u.clone()))
+            .collect())
     }
 
     /// Check if a URL is an AO3 author page (archiveofourown.org/users/{name} or /users/{name}/works)
@@ -91,7 +103,10 @@ impl Ao3Scraper {
 
     /// Scrape an AO3 author page and return all work URLs.
     /// Paginates through all pages of /users/{author}/works.
-    pub async fn list_author_works(client: &reqwest::Client, url: &str) -> Result<Vec<String>, ScrapeError> {
+    pub async fn list_author_works(
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<Vec<String>, ScrapeError> {
         let re = regex_lite::Regex::new(r"archiveofourown\.org/users/([^/]+)").ok();
         let author = re
             .and_then(|r| r.captures(url))
@@ -164,9 +179,14 @@ impl SiteScraper for Ao3Scraper {
         url.contains(&self.domain)
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let work_id = Self::extract_work_id(url)
-            .ok_or_else(|| ScrapeError::ParseError("could not extract work ID from AO3 URL".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let work_id = Self::extract_work_id(url).ok_or_else(|| {
+            ScrapeError::ParseError("could not extract work ID from AO3 URL".into())
+        })?;
 
         let fic_url = format!("{}/works/{work_id}?view_full_work=true", self.base_url());
         let response = client
@@ -180,7 +200,9 @@ impl SiteScraper for Ao3Scraper {
             return Err(ScrapeError::NotFound);
         }
 
-        let html = response.text().await
+        let html = response
+            .text()
+            .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
         self.lookup_from_html(&html, url).await
     }
@@ -188,8 +210,9 @@ impl SiteScraper for Ao3Scraper {
     /// Parse metadata from a pre-fetched AO3 page (live, Wayback snapshot,
     /// cookie ingest, fixture).
     async fn lookup_from_html(&self, html: &str, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let work_id = Self::extract_work_id(url)
-            .ok_or_else(|| ScrapeError::ParseError("could not extract work ID from AO3 URL".into()))?;
+        let work_id = Self::extract_work_id(url).ok_or_else(|| {
+            ScrapeError::ParseError("could not extract work ID from AO3 URL".into())
+        })?;
         let document = Html::parse_document(html);
 
         // Parse metadata from AO3 page
@@ -205,10 +228,17 @@ impl SiteScraper for Ao3Scraper {
                     .map(|el| el.text().collect::<String>())
                     .unwrap_or_default();
                 // Extract title from "Title - Author - Fandom | Archive" format
-                let t = fallback.split(" - ").next().unwrap_or("").trim().to_string();
+                let t = fallback
+                    .split(" - ")
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
                 if t.is_empty() || t.len() < 2 {
-                    tracing::warn!("AO3 title not found via h2.title.heading, HTML snippet: {:?}",
-                        html.chars().take(2000).collect::<String>());
+                    tracing::warn!(
+                        "AO3 title not found via h2.title.heading, HTML snippet: {:?}",
+                        html.chars().take(2000).collect::<String>()
+                    );
                     "Unknown Title".to_string()
                 } else {
                     tracing::info!("AO3 title fallback from <title> tag: {}", t);
@@ -259,9 +289,7 @@ impl SiteScraper for Ao3Scraper {
         let words = document
             .select(&Selector::parse("dd.words").unwrap())
             .next()
-            .and_then(|el| {
-                el.text().collect::<String>().replace(',', "").parse().ok()
-            })
+            .and_then(|el| el.text().collect::<String>().replace(',', "").parse().ok())
             .unwrap_or(0);
 
         let status_text = document
@@ -301,8 +329,16 @@ impl SiteScraper for Ao3Scraper {
         })
     }
 
-    async fn fetch_chapters(&self, client: &reqwest::Client, meta: &FicMetadata) -> Result<Vec<Chapter>, ScrapeError> {
-        let url = format!("{}/works/{}?view_full_work=true", self.base_url(), meta.author_local_id);
+    async fn fetch_chapters(
+        &self,
+        client: &reqwest::Client,
+        meta: &FicMetadata,
+    ) -> Result<Vec<Chapter>, ScrapeError> {
+        let url = format!(
+            "{}/works/{}?view_full_work=true",
+            self.base_url(),
+            meta.author_local_id
+        );
         let response = client
             .get(&url)
             .header("User-Agent", "fichub.net/0.1.0")
@@ -310,14 +346,20 @@ impl SiteScraper for Ao3Scraper {
             .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
 
-        let html = response.text().await
+        let html = response
+            .text()
+            .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
         self.fetch_chapters_from_html(&html, meta).await
     }
 
     /// Parse chapters from a pre-fetched AO3 page (live, Wayback snapshot,
     /// cookie ingest, fixture).
-    async fn fetch_chapters_from_html(&self, html: &str, meta: &FicMetadata) -> Result<Vec<Chapter>, ScrapeError> {
+    async fn fetch_chapters_from_html(
+        &self,
+        html: &str,
+        meta: &FicMetadata,
+    ) -> Result<Vec<Chapter>, ScrapeError> {
         let document = Html::parse_document(html);
 
         let chapter_sel = Selector::parse("div.chapter").unwrap();
@@ -346,7 +388,10 @@ impl SiteScraper for Ao3Scraper {
 
         if chapters.is_empty() {
             // If no chapter divs found, try reading the full work content
-            if let Some(body) = document.select(&Selector::parse("div.userstuff").unwrap()).next() {
+            if let Some(body) = document
+                .select(&Selector::parse("div.userstuff").unwrap())
+                .next()
+            {
                 let content = body.inner_html();
                 if !content.is_empty() {
                     chapters.push(Chapter {
@@ -367,8 +412,9 @@ impl SiteScraper for Ao3Scraper {
         client: &reqwest::Client,
         url: &str,
     ) -> Result<Vec<ExtractedTag>, ScrapeError> {
-        let work_id = Self::extract_work_id(url)
-            .ok_or_else(|| ScrapeError::ParseError("could not extract work ID from AO3 URL".into()))?;
+        let work_id = Self::extract_work_id(url).ok_or_else(|| {
+            ScrapeError::ParseError("could not extract work ID from AO3 URL".into())
+        })?;
 
         let fic_url = format!("{}/works/{}?view_full_work=true", self.base_url(), work_id);
         let response = client
@@ -382,7 +428,9 @@ impl SiteScraper for Ao3Scraper {
             return Err(ScrapeError::NotFound);
         }
 
-        let html = response.text().await
+        let html = response
+            .text()
+            .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
 
         let document = Html::parse_document(&html);
@@ -499,7 +547,9 @@ mod tests {
   </h2>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("h2.title.heading").unwrap();
-        let title = doc.select(&sel).next()
+        let title = doc
+            .select(&sel)
+            .next()
             .map(|el| el.text().collect::<String>().trim().to_string());
         assert_eq!(title.as_deref(), Some("Shadows of Orario"));
     }
@@ -516,7 +566,9 @@ mod tests {
         </body></html>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("h2.title.heading").unwrap();
-        let title = doc.select(&sel).next()
+        let title = doc
+            .select(&sel)
+            .next()
             .map(|el| el.text().collect::<String>().trim().to_string());
         assert_eq!(title.as_deref(), Some("Shadows of Orario"));
     }
@@ -556,7 +608,10 @@ mod tests {
             .unwrap_or_default();
 
         assert_eq!(author, "Alice, Bob, Carol", "all creators must be kept");
-        assert_eq!(author_url, "https://archiveofourown.org/users/alice", "primary author URL kept");
+        assert_eq!(
+            author_url, "https://archiveofourown.org/users/alice",
+            "primary author URL kept"
+        );
         assert_eq!(author_elements.len(), 3, "three creators");
     }
 

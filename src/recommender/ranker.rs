@@ -82,9 +82,9 @@ pub fn curator_alpha(n_signals: i64, floor: f64, tau: f64) -> f64 {
 ///
 /// Returns the blended list (descending).
 pub fn apply_curator_prior(
-    fused: &[(String, f64)], // (work_id, user_blend_score)
+    fused: &[(String, f64)],       // (work_id, user_blend_score)
     curator_top: &[(String, f64)], // (work_id, curator_score)
-    alpha: f64, // curator weight — see curator_alpha
+    alpha: f64,                    // curator weight — see curator_alpha
 ) -> Vec<(String, f64)> {
     let curator: HashMap<&str, f64> = curator_top.iter().map(|(w, s)| (w.as_str(), *s)).collect();
     let mut out: Vec<(String, f64)> = fused
@@ -354,12 +354,11 @@ async fn fetch_bandit_arms(ctx: &StrategyContext) -> Vec<(String, f64, f64)> {
 
 /// Count the user's unified signals (for the curator-prior alpha).
 pub async fn count_user_signals(ctx: &StrategyContext, user_id: i32) -> Result<i64, RecError> {
-    let n: Option<i64> = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM rec_user_signals WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(&ctx.db)
-    .await?;
+    let n: Option<i64> =
+        sqlx::query_scalar("SELECT COUNT(*) FROM rec_user_signals WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(&ctx.db)
+            .await?;
     Ok(n.unwrap_or(0))
 }
 

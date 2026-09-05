@@ -10,8 +10,8 @@
 use async_trait::async_trait;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct QuotevScraper;
 
@@ -21,7 +21,11 @@ impl SiteScraper for QuotevScraper {
         url.contains("quotev.com/story/") || url.contains("quotev.com/quiz/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
         let doc = Html::parse_document(&html);
 
@@ -64,7 +68,10 @@ impl SiteScraper for QuotevScraper {
             authors.push("Anonymous".into());
         }
         let author = authors.join(", ");
-        let author_url = author_urls.first().cloned().unwrap_or_else(|| "https://www.quotev.com".into());
+        let author_url = author_urls
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "https://www.quotev.com".into());
         let author_local_id = author_url.rsplit('/').next().unwrap_or("").to_string();
 
         // Description
@@ -112,7 +119,12 @@ impl SiteScraper for QuotevScraper {
         if let Ok(sel) = Selector::parse("div#rselect a") {
             chapters = doc
                 .select(&sel)
-                .filter(|a| a.value().attr("href").map(|h| !h.contains("javascript")).unwrap_or(false))
+                .filter(|a| {
+                    a.value()
+                        .attr("href")
+                        .map(|h| !h.contains("javascript"))
+                        .unwrap_or(false)
+                })
                 .count() as i32;
         }
         if chapters == 0 {
@@ -120,11 +132,7 @@ impl SiteScraper for QuotevScraper {
         }
 
         // Story id from URL.
-        let story_id = url
-            .rsplit('/')
-            .next()
-            .unwrap_or("")
-            .to_string();
+        let story_id = url.rsplit('/').next().unwrap_or("").to_string();
 
         let now = chrono::Utc::now().timestamp_millis();
         Ok(FicMetadata {
@@ -240,7 +248,8 @@ mod tests {
 
     #[test]
     fn extracts_chapter_body() {
-        let html = r#"<html><body><div id="rescontent"><p>Quiz story text.</p></div></body></html>"#;
+        let html =
+            r#"<html><body><div id="rescontent"><p>Quiz story text.</p></div></body></html>"#;
         let doc = Html::parse_document(html);
         let mut s = String::new();
         if let Ok(sel) = Selector::parse("div#rescontent") {

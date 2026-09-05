@@ -7,9 +7,9 @@
 
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
 use axum::Json;
-use serde_json::{json, Value};
+use axum::extract::{Path, State};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::server::AppState;
@@ -22,7 +22,13 @@ pub fn tag_to_slug(name: &str) -> String {
     let slug = name
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .split('-')
         .filter(|s| !s.is_empty())
@@ -37,9 +43,7 @@ pub fn tag_to_slug(name: &str) -> String {
 /// `fic_tags` to count how many fics each fandom is tagged on, and sums
 /// word counts from `fic_info`. Fandoms with no tagged fics are excluded
 /// (they'd just show zero/zero which isn't useful).
-pub async fn list_fandoms(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, AppError> {
+pub async fn list_fandoms(State(state): State<Arc<AppState>>) -> Result<Json<Value>, AppError> {
     let rows = sqlx::query_as::<_, (String, i64, i64)>(
         r#"SELECT t.name,
                   COUNT(DISTINCT ft.url_id)::bigint AS fic_count,
@@ -90,11 +94,10 @@ pub async fn get_fandom(
     // Find the fandom tag. We match by slug: compare computed slug of each
     // fandom tag against the requested slug. This is O(1) because the number
     // of fandom tags is small (hundreds at most).
-    let fandoms = sqlx::query_as::<_, (i32, String)>(
-        "SELECT id, name FROM tags WHERE tag_type_id = 1",
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let fandoms =
+        sqlx::query_as::<_, (i32, String)>("SELECT id, name FROM tags WHERE tag_type_id = 1")
+            .fetch_all(&state.db)
+            .await?;
 
     let (tag_id, tag_name) = fandoms
         .into_iter()
@@ -216,6 +219,9 @@ mod tests {
 
     #[test]
     fn slug_punctuation_stripped() {
-        assert_eq!(tag_to_slug("Kuroshitsuji / Black Butler"), "kuroshitsuji-black-butler");
+        assert_eq!(
+            tag_to_slug("Kuroshitsuji / Black Butler"),
+            "kuroshitsuji-black-butler"
+        );
     }
 }

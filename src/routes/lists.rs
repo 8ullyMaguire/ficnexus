@@ -11,10 +11,10 @@
 //! * POST /api/lists/{id}/items — append {work_id, blurb?} at next position
 //! * DELETE /api/lists/{id}/items/{work_id} — remove an item (owner/curator)
 
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::db::queries;
@@ -47,16 +47,21 @@ pub struct AddItemBody {
 
 /// Require a logged-in user id (project convention: HTTP 400 {"err":401}).
 fn require_user(auth: &AuthUser) -> Result<i32, AppError> {
-    auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))
+    auth.user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))
 }
 
 fn sanitize_title(title: &str) -> Result<String, AppError> {
     let t = title.trim();
     if t.is_empty() {
-        return Err(AppError::BadRequest("List title cannot be empty".to_string()));
+        return Err(AppError::BadRequest(
+            "List title cannot be empty".to_string(),
+        ));
     }
     if t.chars().count() > 200 {
-        return Err(AppError::BadRequest("List title too long (max 200 chars)".to_string()));
+        return Err(AppError::BadRequest(
+            "List title too long (max 200 chars)".to_string(),
+        ));
     }
     Ok(t.to_string())
 }
@@ -71,10 +76,19 @@ pub async fn create_list_handler(
     let title = sanitize_title(&body.title)?;
     let description = body.description.unwrap_or_default();
     if description.chars().count() > 2000 {
-        return Err(AppError::BadRequest("Description too long (max 2000 chars)".to_string()));
+        return Err(AppError::BadRequest(
+            "Description too long (max 2000 chars)".to_string(),
+        ));
     }
 
-    let list = queries::create_reading_list(&state.db, user_id, &title, &description, body.is_public.unwrap_or(false)).await?;
+    let list = queries::create_reading_list(
+        &state.db,
+        user_id,
+        &title,
+        &description,
+        body.is_public.unwrap_or(false),
+    )
+    .await?;
 
     Ok(Json(json!({
         "err": 0,
@@ -103,12 +117,11 @@ pub async fn list_lists_handler(
     let items: Vec<Value> = {
         let mut out = Vec::with_capacity(lists.len());
         for l in lists {
-            let count: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM reading_list_items WHERE list_id = $1",
-            )
-            .bind(l.id)
-            .fetch_one(&state.db)
-            .await?;
+            let count: (i64,) =
+                sqlx::query_as("SELECT COUNT(*) FROM reading_list_items WHERE list_id = $1")
+                    .bind(l.id)
+                    .fetch_one(&state.db)
+                    .await?;
             out.push(json!({
                 "id": l.id,
                 "user_id": l.user_id,
@@ -137,12 +150,10 @@ pub async fn get_list_handler(
     // Owner view when authenticated and the list belongs to them, else the
     // public view (is_public = TRUE, not deleted).
     let list = match owner_id {
-        Some(uid) => {
-            match queries::get_reading_list(&state.db, list_id, uid, false).await? {
-                Some(l) => Some(l),
-                None => queries::get_reading_list(&state.db, list_id, uid, true).await?,
-            }
-        }
+        Some(uid) => match queries::get_reading_list(&state.db, list_id, uid, false).await? {
+            Some(l) => Some(l),
+            None => queries::get_reading_list(&state.db, list_id, uid, true).await?,
+        },
         None => queries::get_reading_list(&state.db, list_id, 0, true).await?,
     };
 
@@ -205,7 +216,9 @@ pub async fn update_list_handler(
     let description = match &body.description {
         Some(d) => {
             if d.chars().count() > 2000 {
-                return Err(AppError::BadRequest("Description too long (max 2000 chars)".to_string()));
+                return Err(AppError::BadRequest(
+                    "Description too long (max 2000 chars)".to_string(),
+                ));
             }
             d.clone()
         }
@@ -213,7 +226,9 @@ pub async fn update_list_handler(
     };
     let is_public = body.is_public.unwrap_or(current.is_public);
 
-    let updated = queries::update_reading_list(&state.db, list_id, user_id, &title, &description, is_public).await?;
+    let updated =
+        queries::update_reading_list(&state.db, list_id, user_id, &title, &description, is_public)
+            .await?;
     if !updated {
         return Err(AppError::NotFound("Reading list not found".into()));
     }
@@ -257,17 +272,24 @@ pub async fn add_item_handler(
     // The work must exist.
     let work = queries::get_work(&state.db, body.work_id).await?;
     if work.is_none() {
-        return Err(AppError::NotFound(format!("Work {} not found", body.work_id)));
+        return Err(AppError::NotFound(format!(
+            "Work {} not found",
+            body.work_id
+        )));
     }
 
     let blurb = body.blurb.unwrap_or_default();
     if blurb.chars().count() > 500 {
-        return Err(AppError::BadRequest("Blurb too long (max 500 chars)".to_string()));
+        return Err(AppError::BadRequest(
+            "Blurb too long (max 500 chars)".to_string(),
+        ));
     }
 
     let added = queries::add_reading_list_item(&state.db, list_id, body.work_id, &blurb).await?;
     if !added {
-        return Err(AppError::BadRequest("Work is already in this list".to_string()));
+        return Err(AppError::BadRequest(
+            "Work is already in this list".to_string(),
+        ));
     }
 
     let position: (i32,) = sqlx::query_as(
@@ -278,7 +300,9 @@ pub async fn add_item_handler(
     .fetch_one(&state.db)
     .await?;
 
-    Ok(Json(json!({ "err": 0, "msg": "Work added to list", "position": position.0 })))
+    Ok(Json(
+        json!({ "err": 0, "msg": "Work added to list", "position": position.0 }),
+    ))
 }
 
 /// DELETE /api/lists/{id}/items/{work_id} — remove a work (owner/curator)

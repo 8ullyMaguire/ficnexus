@@ -12,10 +12,10 @@
 
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
@@ -86,7 +86,21 @@ pub async fn list_notices(
     if auth.role < 10 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
-    let rows: Vec<Value> = sqlx::query_as::<_, (i64, String, String, String, String, String, String, Option<String>, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)>(
+    let rows: Vec<Value> = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            Option<String>,
+            chrono::DateTime<chrono::Utc>,
+            Option<chrono::DateTime<chrono::Utc>>,
+        ),
+    >(
         r#"SELECT id, work_url_id, work_title, claimant_name, claimant_email,
                    reason, status, admin_notes, created_at, resolved_at
            FROM copyright_notices
@@ -96,20 +110,33 @@ pub async fn list_notices(
     .fetch_all(&state.db)
     .await?
     .into_iter()
-    .map(|(id, work_url_id, work_title, claimant_name, claimant_email, reason, status, admin_notes, created_at, resolved_at)| {
-        json!({
-            "id": id,
-            "work_url_id": work_url_id,
-            "work_title": work_title,
-            "claimant_name": claimant_name,
-            "claimant_email": claimant_email,
-            "reason": reason,
-            "status": status,
-            "admin_notes": admin_notes,
-            "created_at": created_at.to_rfc3339(),
-            "resolved_at": resolved_at.map(|d| d.to_rfc3339()),
-        })
-    })
+    .map(
+        |(
+            id,
+            work_url_id,
+            work_title,
+            claimant_name,
+            claimant_email,
+            reason,
+            status,
+            admin_notes,
+            created_at,
+            resolved_at,
+        )| {
+            json!({
+                "id": id,
+                "work_url_id": work_url_id,
+                "work_title": work_title,
+                "claimant_name": claimant_name,
+                "claimant_email": claimant_email,
+                "reason": reason,
+                "status": status,
+                "admin_notes": admin_notes,
+                "created_at": created_at.to_rfc3339(),
+                "resolved_at": resolved_at.map(|d| d.to_rfc3339()),
+            })
+        },
+    )
     .collect();
 
     Ok(Json(json!({ "err": 0, "notices": rows })))
@@ -131,7 +158,9 @@ pub async fn action_notice(
     .fetch_optional(&state.db)
     .await?;
     let Some(work_url_id) = work_url_id else {
-        return Err(AppError::NotFound("Notice not found or already resolved".into()));
+        return Err(AppError::NotFound(
+            "Notice not found or already resolved".into(),
+        ));
     };
 
     // Mark the notice actioned.
@@ -164,7 +193,9 @@ pub async fn action_notice(
     )
     .await;
 
-    Ok(Json(json!({ "err": 0, "msg": "Work blacklisted for copyright", "work_url_id": work_url_id })))
+    Ok(Json(
+        json!({ "err": 0, "msg": "Work blacklisted for copyright", "work_url_id": work_url_id }),
+    ))
 }
 
 /// POST /api/admin/copyright/notices/{id}/reject — reject the notice.
@@ -183,7 +214,9 @@ pub async fn reject_notice(
     .execute(&state.db)
     .await?;
     if n.rows_affected() == 0 {
-        return Err(AppError::NotFound("Notice not found or already resolved".into()));
+        return Err(AppError::NotFound(
+            "Notice not found or already resolved".into(),
+        ));
     }
     Ok(Json(json!({ "err": 0, "msg": "Notice rejected" })))
 }

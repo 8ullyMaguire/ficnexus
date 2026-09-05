@@ -2,11 +2,8 @@
 
 use std::sync::Arc;
 
-use axum::{
-    extract::State,
-    Json,
-};
-use serde_json::{json, Value};
+use axum::{Json, extract::State};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
@@ -66,7 +63,7 @@ pub async fn get_nav(
 
 /// Return the widget registry: every available widget, its metadata, and
 /// the minimum rank required to use it.
-pub async fn get_widgets(
-) -> Result<Json<Vec<crate::services::customization::WidgetInfo>>, AppError> {
+pub async fn get_widgets() -> Result<Json<Vec<crate::services::customization::WidgetInfo>>, AppError>
+{
     Ok(Json(CustomizationService::available_widgets()))
 }

@@ -8,8 +8,8 @@
 //! - GET  /api/curator/proposals         queue (curators only)
 //! - POST /api/translate/flag            flag machine translation -> proposal
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -48,8 +48,11 @@ pub async fn create(
         return Err(AppError::Unauthorized("login required".into()));
     };
     // honeypot: silent fake success
-    if honeypot::inspect_submission(body.website.as_deref(), body.form_opened_at.as_deref(), now_ms())
-        == honeypot::TrapVerdict::RejectSilently
+    if honeypot::inspect_submission(
+        body.website.as_deref(),
+        body.form_opened_at.as_deref(),
+        now_ms(),
+    ) == honeypot::TrapVerdict::RejectSilently
     {
         return Ok(Json(json!({ "err": 0, "id": -1 })));
     }
@@ -62,9 +65,11 @@ pub async fn create(
     // translate payloads must carry field+locale+text
     if body.kind == "translate" {
         let p = &body.payload;
-        let ok = ["field", "locale", "text"]
-            .iter()
-            .all(|k| p.get(*k).and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty()));
+        let ok = ["field", "locale", "text"].iter().all(|k| {
+            p.get(*k)
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.is_empty())
+        });
         if !ok {
             return Err(AppError::BadRequest(
                 "translate payload requires non-empty field, locale, text".into(),
@@ -101,7 +106,18 @@ pub async fn get_one(
     State(state): State<std::sync::Arc<AppState>>,
     Path(id): Path<i64>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let row: Option<(String, String, String, serde_json::Value, Option<i32>, Option<String>, String, Option<String>, serde_json::Value, String)> = sqlx::query_as(
+    let row: Option<(
+        String,
+        String,
+        String,
+        serde_json::Value,
+        Option<i32>,
+        Option<String>,
+        String,
+        Option<String>,
+        serde_json::Value,
+        String,
+    )> = sqlx::query_as(
         r#"SELECT p.kind, p.target_type, p.target_id, p.payload, p.proposer_id,
                   u.username, p.status, p.note, p.created_at::text AS created_at, p.source
            FROM proposals p LEFT JOIN users u ON u.id = p.proposer_id
@@ -168,7 +184,9 @@ pub async fn vote(
     Path(id): Path<i64>,
     Json(body): Json<VoteBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let curator_id = user.user_id.ok_or_else(|| AppError::Unauthorized("login".into()))?;
+    let curator_id = user
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("login".into()))?;
     let name = user.username.clone().unwrap_or_else(|| "?".into());
     let out = proposals::record_vote(
         &state.db,
@@ -197,7 +215,9 @@ pub async fn decide(
     Path(id): Path<i64>,
     Json(body): Json<DecideBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let curator_id = user.user_id.ok_or_else(|| AppError::Unauthorized("login".into()))?;
+    let curator_id = user
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("login".into()))?;
     let name = user.username.clone().unwrap_or_else(|| "?".into());
     let out = proposals::decide(
         &state.db,
@@ -240,7 +260,19 @@ pub async fn queue(
     }
     let status = q.status.unwrap_or_else(|| "pending".into());
     let page = q.page.clamp(0, 1000);
-    let rows: Vec<(i64, String, String, String, serde_json::Value, Option<String>, Option<i32>, i64, i64, String, String)> = sqlx::query_as(
+    let rows: Vec<(
+        i64,
+        String,
+        String,
+        String,
+        serde_json::Value,
+        Option<String>,
+        Option<i32>,
+        i64,
+        i64,
+        String,
+        String,
+    )> = sqlx::query_as(
         r#"SELECT p.id, p.kind, p.target_type, p.target_id, p.payload, u.username,
                   p.proposer_id,
                   COUNT(v.*) FILTER (WHERE v.decision = 'approve')::bigint AS approves,
@@ -265,14 +297,16 @@ pub async fn queue(
     .map_err(|e| AppError::Internal(e.to_string()))?;
     let items: Vec<serde_json::Value> = rows
         .into_iter()
-        .map(|(id, kind, ttype, tid, payload, proposer, _pid, approves, dismisses, st, created)| {
-            json!({
-                "id": id, "kind": kind, "target_type": ttype, "target_id": tid,
-                "payload": payload, "proposer": proposer, "approves": approves,
-                "dismisses": dismisses, "quorum": proposals::quorum_for(&state.config, &kind),
-                "status": st, "created_at": created,
-            })
-        })
+        .map(
+            |(id, kind, ttype, tid, payload, proposer, _pid, approves, dismisses, st, created)| {
+                json!({
+                    "id": id, "kind": kind, "target_type": ttype, "target_id": tid,
+                    "payload": payload, "proposer": proposer, "approves": approves,
+                    "dismisses": dismisses, "quorum": proposals::quorum_for(&state.config, &kind),
+                    "status": st, "created_at": created,
+                })
+            },
+        )
         .collect();
     Ok(Json(json!({ "err": 0, "items": items, "page": page })))
 }
@@ -365,4 +399,3 @@ pub async fn flag_translation(
     }
     Ok(Json(json!({ "err": 0 })))
 }
-

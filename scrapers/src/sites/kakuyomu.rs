@@ -16,8 +16,8 @@ use chrono::TimeZone;
 use scraper::{Html, Selector};
 use serde_json::Value;
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct KakuyomuScraper;
 
@@ -38,8 +38,13 @@ impl SiteScraper for KakuyomuScraper {
         url.contains("kakuyomu.jp/works/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("kakuyomu: bad url".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("kakuyomu: bad url".into()))?;
         let html = http::fetch(client, url).await?;
 
         if html.contains("お探しのページは見つかりませんでした") {
@@ -49,11 +54,15 @@ impl SiteScraper for KakuyomuScraper {
         // Extract the __NEXT_DATA__ JSON.
         let doc = Html::parse_document(&html);
         let payload = doc
-            .select(&Selector::parse("#__NEXT_DATA__").map_err(|e| ScrapeError::ParseError(e.to_string()))?)
+            .select(
+                &Selector::parse("#__NEXT_DATA__")
+                    .map_err(|e| ScrapeError::ParseError(e.to_string()))?,
+            )
             .next()
             .map(|el| el.inner_html())
             .unwrap_or_default();
-        let v: Value = serde_json::from_str(&payload).map_err(|e| ScrapeError::ParseError(format!("kakuyomu: json {e}")))?;
+        let v: Value = serde_json::from_str(&payload)
+            .map_err(|e| ScrapeError::ParseError(format!("kakuyomu: json {e}")))?;
 
         let state = v
             .pointer("/props/pageProps/__APOLLO_STATE__")
@@ -62,7 +71,12 @@ impl SiteScraper for KakuyomuScraper {
             .get(&format!("Work:{story_id}"))
             .ok_or_else(|| ScrapeError::ParseError("kakuyomu: no work node".into()))?;
 
-        let s = |k: &str| work.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        let s = |k: &str| {
+            work.get(k)
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string()
+        };
         let title = s("title");
         if title.is_empty() {
             return Err(ScrapeError::ParseError("kakuyomu: no title".into()));
@@ -72,9 +86,17 @@ impl SiteScraper for KakuyomuScraper {
         let mut author = String::new();
         let mut author_url = String::new();
         let mut author_local_id = String::new();
-        if let Some(author_ref) = work.get("author").and_then(|a| a.get("__ref")).and_then(Value::as_str) {
+        if let Some(author_ref) = work
+            .get("author")
+            .and_then(|a| a.get("__ref"))
+            .and_then(Value::as_str)
+        {
             if let Some(user) = state.get(author_ref) {
-                author = user.get("activityName").and_then(Value::as_str).unwrap_or("").to_string();
+                author = user
+                    .get("activityName")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
                 author_local_id = author_ref.split(':').nth(1).unwrap_or("").to_string();
                 if let Some(name) = user.get("name").and_then(Value::as_str) {
                     author_url = format!("https://kakuyomu.jp/users/{name}");
@@ -94,10 +116,18 @@ impl SiteScraper for KakuyomuScraper {
         let updated = parse_dt(&s("editedAt"));
 
         // Words = totalCharacterCount.
-        let words = work.get("totalCharacterCount").and_then(Value::as_i64).unwrap_or(0);
+        let words = work
+            .get("totalCharacterCount")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
 
         // Status.
-        let status = if s("serialStatus") == "COMPLETED" { "complete" } else { "ongoing" }.to_string();
+        let status = if s("serialStatus") == "COMPLETED" {
+            "complete"
+        } else {
+            "ongoing"
+        }
+        .to_string();
 
         // Description.
         let desc = s("introduction");
@@ -142,7 +172,8 @@ impl SiteScraper for KakuyomuScraper {
         client: &reqwest::Client,
         meta: &FicMetadata,
     ) -> Result<Vec<Chapter>, ScrapeError> {
-        let story_id = Self::story_id(&meta.source).ok_or_else(|| ScrapeError::ParseError("kakuyomu: bad url".into()))?;
+        let story_id = Self::story_id(&meta.source)
+            .ok_or_else(|| ScrapeError::ParseError("kakuyomu: bad url".into()))?;
         let html = http::fetch(client, &meta.source).await?;
 
         // Parse TOC into owned (title, url) data.
@@ -153,9 +184,15 @@ impl SiteScraper for KakuyomuScraper {
                 .next()
                 .map(|el| el.inner_html())
                 .unwrap_or_default();
-            let Ok(v) = serde_json::from_str::<Value>(&payload) else { return Ok(vec![]) };
-            let Some(state) = v.pointer("/props/pageProps/__APOLLO_STATE__") else { return Ok(vec![]) };
-            let Some(work) = state.get(&format!("Work:{story_id}")) else { return Ok(vec![]) };
+            let Ok(v) = serde_json::from_str::<Value>(&payload) else {
+                return Ok(vec![]);
+            };
+            let Some(state) = v.pointer("/props/pageProps/__APOLLO_STATE__") else {
+                return Ok(vec![]);
+            };
+            let Some(work) = state.get(&format!("Work:{story_id}")) else {
+                return Ok(vec![]);
+            };
 
             // Walk tableOfContentsV2 with chapter-title nesting (level 1/2).
             let mut titles: Vec<String> = Vec::new();
@@ -169,11 +206,18 @@ impl SiteScraper for KakuyomuScraper {
                         Some(r) => r.to_string(),
                         None => continue,
                     };
-                    let Some(node) = state.get(&node_ref_str) else { continue };
+                    let Some(node) = state.get(&node_ref_str) else {
+                        continue;
+                    };
 
-                    if let Some(ch_ref) = node.get("chapter").and_then(|c| c.get("__ref")).and_then(Value::as_str) {
+                    if let Some(ch_ref) = node
+                        .get("chapter")
+                        .and_then(|c| c.get("__ref"))
+                        .and_then(Value::as_str)
+                    {
                         if let Some(chapter) = state.get(ch_ref) {
-                            let level = chapter.get("level").and_then(Value::as_i64).unwrap_or(1) as i32;
+                            let level =
+                                chapter.get("level").and_then(Value::as_i64).unwrap_or(1) as i32;
                             while level <= nesting {
                                 titles.pop();
                                 nesting -= 1;
@@ -192,14 +236,24 @@ impl SiteScraper for KakuyomuScraper {
 
                     if let Some(eps) = node.get("episodeUnions").and_then(Value::as_array) {
                         for ep_ref in eps {
-                            let Some(ep_ref_str) = ep_ref.get("__ref").and_then(Value::as_str) else { continue };
+                            let Some(ep_ref_str) = ep_ref.get("__ref").and_then(Value::as_str)
+                            else {
+                                continue;
+                            };
                             if ep_ref_str.starts_with("EmptyEpisode") {
                                 continue;
                             }
-                            let Some(ep) = state.get(ep_ref_str) else { continue };
+                            let Some(ep) = state.get(ep_ref_str) else {
+                                continue;
+                            };
                             let ep_id = ep.get("id").and_then(Value::as_str).unwrap_or("");
-                            let ep_title = ep.get("title").and_then(Value::as_str).unwrap_or("").to_string();
-                            let ep_url = format!("https://kakuyomu.jp/works/{story_id}/episodes/{ep_id}");
+                            let ep_title = ep
+                                .get("title")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_string();
+                            let ep_url =
+                                format!("https://kakuyomu.jp/works/{story_id}/episodes/{ep_id}");
 
                             // Prepend section titles (firstepisode mode).
                             let final_title = if !titles.is_empty() && new_section {
@@ -250,12 +304,20 @@ impl SiteScraper for KakuyomuScraper {
 
 /// Count episodes in the TOC (for the chapter count).
 fn count_toc_episodes(state: &Value, story_id: &str) -> i32 {
-    let Some(work) = state.get(&format!("Work:{story_id}")) else { return 0 };
-    let Some(toc_nodes) = work.get("tableOfContentsV2").and_then(Value::as_array) else { return 0 };
+    let Some(work) = state.get(&format!("Work:{story_id}")) else {
+        return 0;
+    };
+    let Some(toc_nodes) = work.get("tableOfContentsV2").and_then(Value::as_array) else {
+        return 0;
+    };
     let mut n = 0i32;
     for node_ref in toc_nodes {
-        let Some(node_ref_str) = node_ref.get("__ref").and_then(Value::as_str) else { continue };
-        let Some(node) = state.get(node_ref_str) else { continue };
+        let Some(node_ref_str) = node_ref.get("__ref").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(node) = state.get(node_ref_str) else {
+            continue;
+        };
         if let Some(eps) = node.get("episodeUnions").and_then(Value::as_array) {
             for ep_ref in eps {
                 if let Some(r) = ep_ref.get("__ref").and_then(Value::as_str) {
@@ -300,7 +362,10 @@ mod tests {
             KakuyomuScraper::story_id("https://kakuyomu.jp/works/12345678901234567890"),
             Some("12345678901234567890".to_string())
         );
-        assert_eq!(KakuyomuScraper::story_id("https://kakuyomu.jp/works/abc"), None);
+        assert_eq!(
+            KakuyomuScraper::story_id("https://kakuyomu.jp/works/abc"),
+            None
+        );
     }
 
     #[test]
@@ -310,8 +375,16 @@ mod tests {
         let state = v.pointer("/props/pageProps/__APOLLO_STATE__").unwrap();
         let work = state.get("Work:42").unwrap();
         assert_eq!(work.get("title").and_then(Value::as_str).unwrap(), "T");
-        assert_eq!(work.get("totalCharacterCount").and_then(Value::as_i64).unwrap(), 100);
-        assert_eq!(work.get("serialStatus").and_then(Value::as_str).unwrap(), "COMPLETED");
+        assert_eq!(
+            work.get("totalCharacterCount")
+                .and_then(Value::as_i64)
+                .unwrap(),
+            100
+        );
+        assert_eq!(
+            work.get("serialStatus").and_then(Value::as_str).unwrap(),
+            "COMPLETED"
+        );
     }
 
     #[test]

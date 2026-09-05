@@ -74,7 +74,10 @@ impl PgStore {
         } else {
             None
         };
-        Page { items: rows, next_cursor }
+        Page {
+            items: rows,
+            next_cursor,
+        }
     }
 }
 
@@ -100,7 +103,11 @@ impl<A> IdRef for Post<A> {
 
 impl PgStore {
     #[allow(dead_code)]
-    async fn is_banned_impl(&self, user_id: i64, category_id: Option<i64>) -> Result<bool, StoreError> {
+    async fn is_banned_impl(
+        &self,
+        user_id: i64,
+        category_id: Option<i64>,
+    ) -> Result<bool, StoreError> {
         let row: Option<(i64,)> = sqlx::query_as(
             "SELECT 1 FROM forum_bans
              WHERE user_id = $1
@@ -151,24 +158,21 @@ where
     }
 
     async fn get_category(&self, id: i64) -> Result<Category<A>, StoreError> {
-        let row = sqlx::query_as::<_, Category<A>>(
-            "SELECT * FROM forum_categories WHERE id = $1",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or(StoreError::NotFound)?;
+        let row = sqlx::query_as::<_, Category<A>>("SELECT * FROM forum_categories WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or(StoreError::NotFound)?;
         Ok(row)
     }
 
     async fn get_category_by_slug(&self, slug: &str) -> Result<Category<A>, StoreError> {
-        let row = sqlx::query_as::<_, Category<A>>(
-            "SELECT * FROM forum_categories WHERE slug = $1",
-        )
-        .bind(slug)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or(StoreError::NotFound)?;
+        let row =
+            sqlx::query_as::<_, Category<A>>("SELECT * FROM forum_categories WHERE slug = $1")
+                .bind(slug)
+                .fetch_optional(&self.pool)
+                .await?
+                .ok_or(StoreError::NotFound)?;
         Ok(row)
     }
 
@@ -358,11 +362,7 @@ where
         Ok(())
     }
 
-    async fn set_topic_status(
-        &self,
-        id: i64,
-        status: Status,
-    ) -> Result<Topic<A>, StoreError> {
+    async fn set_topic_status(&self, id: i64, status: Status) -> Result<Topic<A>, StoreError> {
         let row = sqlx::query_as::<_, Topic<A>>(
             "UPDATE forum_topics SET status = $2, updated_at = NOW() WHERE id = $1 RETURNING *",
         )
@@ -375,11 +375,12 @@ where
     }
 
     async fn set_topic_hidden(&self, id: i64, hidden: bool) -> Result<(), StoreError> {
-        let res = sqlx::query("UPDATE forum_topics SET is_hidden = $2, updated_at = NOW() WHERE id = $1")
-            .bind(id)
-            .bind(hidden)
-            .execute(&self.pool)
-            .await?;
+        let res =
+            sqlx::query("UPDATE forum_topics SET is_hidden = $2, updated_at = NOW() WHERE id = $1")
+                .bind(id)
+                .bind(hidden)
+                .execute(&self.pool)
+                .await?;
         if res.rows_affected() == 0 {
             return Err(StoreError::NotFound);
         }
@@ -416,9 +417,8 @@ where
         .fetch_optional(&mut *tx)
         .await?;
         let status = status.ok_or(StoreError::NotFound)?;
-        let status = Status::from_db(&status).ok_or_else(|| {
-            StoreError::Other(format!("unknown topic status in db: {status}"))
-        })?;
+        let status = Status::from_db(&status)
+            .ok_or_else(|| StoreError::Other(format!("unknown topic status in db: {status}")))?;
         if !status.is_postable() {
             return Err(StoreError::Other(format!(
                 "topic is {} — no new posts allowed",
@@ -462,7 +462,11 @@ where
         Ok(row)
     }
 
-    async fn list_posts(&self, topic_id: i64, cursor: &Cursor) -> Result<Page<Post<A>>, StoreError> {
+    async fn list_posts(
+        &self,
+        topic_id: i64,
+        cursor: &Cursor,
+    ) -> Result<Page<Post<A>>, StoreError> {
         let limit = cursor.limit as i64 + 1;
         let rows = sqlx::query_as::<_, Post<A>>(
             "SELECT * FROM forum_posts
@@ -518,7 +522,12 @@ where
         Ok(())
     }
 
-    async fn upsert_vote(&self, post_id: i64, user_id: A, value: i8) -> Result<VoteCounts, StoreError> {
+    async fn upsert_vote(
+        &self,
+        post_id: i64,
+        user_id: A,
+        value: i8,
+    ) -> Result<VoteCounts, StoreError> {
         if !Vote::<A>::is_valid_value(value) {
             return Err(StoreError::Other(format!(
                 "invalid vote value {value}: must be -1 or 1"
@@ -567,7 +576,10 @@ where
         .bind(post_id)
         .fetch_one(&self.pool)
         .await?;
-        Ok(VoteCounts { up: row.0, down: -row.1 })
+        Ok(VoteCounts {
+            up: row.0,
+            down: -row.1,
+        })
     }
 
     async fn follow(&self, user_id: A, topic_id: i64) -> Result<(), StoreError> {
@@ -593,25 +605,30 @@ where
     }
 
     async fn is_following(&self, user_id: A, topic_id: i64) -> Result<bool, StoreError> {
-        let exists: Option<(i64,)> = sqlx::query_as(
-            "SELECT 1 FROM forum_follows WHERE user_id = $1 AND topic_id = $2",
-        )
-        .bind(user_id)
-        .bind(topic_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let exists: Option<(i64,)> =
+            sqlx::query_as("SELECT 1 FROM forum_follows WHERE user_id = $1 AND topic_id = $2")
+                .bind(user_id)
+                .bind(topic_id)
+                .fetch_optional(&self.pool)
+                .await?;
         Ok(exists.is_some())
     }
 
     async fn followers(&self, topic_id: i64) -> Result<Vec<A>, StoreError> {
-        let rows: Vec<(A,)> = sqlx::query_as("SELECT user_id FROM forum_follows WHERE topic_id = $1")
-            .bind(topic_id)
-            .fetch_all(&self.pool)
-            .await?;
+        let rows: Vec<(A,)> =
+            sqlx::query_as("SELECT user_id FROM forum_follows WHERE topic_id = $1")
+                .bind(topic_id)
+                .fetch_all(&self.pool)
+                .await?;
         Ok(rows.into_iter().map(|r| r.0).collect())
     }
 
-    async fn mark_read(&self, user_id: A, topic_id: i64, last_read_post_id: i64) -> Result<(), StoreError> {
+    async fn mark_read(
+        &self,
+        user_id: A,
+        topic_id: i64,
+        last_read_post_id: i64,
+    ) -> Result<(), StoreError> {
         sqlx::query(
             "INSERT INTO forum_read_state (user_id, topic_id, last_read_post_id)
              VALUES ($1, $2, $3)
@@ -626,7 +643,11 @@ where
         Ok(())
     }
 
-    async fn get_read_state(&self, user_id: A, topic_id: i64) -> Result<Option<ReadState<A>>, StoreError> {
+    async fn get_read_state(
+        &self,
+        user_id: A,
+        topic_id: i64,
+    ) -> Result<Option<ReadState<A>>, StoreError> {
         let row = sqlx::query_as::<_, ReadState<A>>(
             "SELECT * FROM forum_read_state WHERE user_id = $1 AND topic_id = $2",
         )
@@ -687,11 +708,9 @@ where
     }
 
     async fn list_bans(&self) -> Result<Vec<Ban<A>>, StoreError> {
-        let rows = sqlx::query_as::<_, Ban<A>>(
-            "SELECT * FROM forum_bans ORDER BY created_at DESC",
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = sqlx::query_as::<_, Ban<A>>("SELECT * FROM forum_bans ORDER BY created_at DESC")
+            .fetch_all(&self.pool)
+            .await?;
         Ok(rows)
     }
 
@@ -713,7 +732,9 @@ where
         let _ = sqlx::Encode::<sqlx::Postgres>::encode(&user_id, &mut buf)
             .map_err(|_| StoreError::InvalidInput("actor id".into()))?;
         let uid = i64::from_ne_bytes(
-            buf.as_slice()[..8].try_into().map_err(|_| StoreError::InvalidInput("actor id".into()))?,
+            buf.as_slice()[..8]
+                .try_into()
+                .map_err(|_| StoreError::InvalidInput("actor id".into()))?,
         );
         self.is_banned_impl(uid, category_id).await
     }

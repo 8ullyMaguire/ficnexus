@@ -106,23 +106,20 @@ pub async fn resolve_tags_batch(
 
 /// Get all synonym names for a canonical tag (from tag_aliases)
 async fn get_synonyms(pool: &PgPool, tag_id: i32) -> Result<Vec<String>, sqlx::Error> {
-    let rows: Vec<(String,)> = sqlx::query_as(
-        "SELECT alias_name FROM tag_aliases WHERE canonical_tag_id = $1",
-    )
-    .bind(tag_id)
-    .fetch_all(pool)
-    .await?;
+    let rows: Vec<(String,)> =
+        sqlx::query_as("SELECT alias_name FROM tag_aliases WHERE canonical_tag_id = $1")
+            .bind(tag_id)
+            .fetch_all(pool)
+            .await?;
     Ok(rows.into_iter().map(|r| r.0).collect())
 }
 
 /// Get public usage count for a tag (number of fics tagged with it)
 async fn get_usage_count(pool: &PgPool, tag_id: i32) -> Result<i64, sqlx::Error> {
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM fic_tags ft WHERE ft.tag_id = $1",
-    )
-    .bind(tag_id)
-    .fetch_one(pool)
-    .await?;
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM fic_tags ft WHERE ft.tag_id = $1")
+        .bind(tag_id)
+        .fetch_one(pool)
+        .await?;
     Ok(count.0)
 }
 
@@ -181,10 +178,7 @@ pub async fn get_matching_tag_ids(
 /// Resolve a tag name to matching IDs across all tag types (type_id 0 / any).
 /// Used for excluded terms from `-term` / `NOT term` so exclusions work on
 /// tags of any type (fandom, character, freeform, warning, etc.).
-async fn get_matching_tag_ids_any_type(
-    pool: &PgPool,
-    name: &str,
-) -> Result<Vec<i32>, sqlx::Error> {
+async fn get_matching_tag_ids_any_type(pool: &PgPool, name: &str) -> Result<Vec<i32>, sqlx::Error> {
     let ids: Vec<i32> = sqlx::query_scalar(
         r#"WITH canonical AS (
             SELECT id FROM tags WHERE LOWER(name) = LOWER($1)
@@ -234,12 +228,10 @@ async fn resolve_alias(pool: &PgPool, alias: &str) -> Result<Option<i32>, sqlx::
 }
 
 async fn get_tag_by_id(pool: &PgPool, id: i32) -> Result<Option<TagRow>, sqlx::Error> {
-    sqlx::query_as::<_, TagRow>(
-        "SELECT id, name, tag_type_id, description FROM tags WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
+    sqlx::query_as::<_, TagRow>("SELECT id, name, tag_type_id, description FROM tags WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
 }
 
 /// Map tag type_id to a human-readable name

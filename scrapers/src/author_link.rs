@@ -67,7 +67,9 @@ pub fn extract_author_url_from_html(page_text: &str, author_name: &str) -> Optio
                 let nearby_end = (end + 300).min(page_text.len());
                 let nearby = &lower[nearby_start..nearby_end];
                 let name_parts: Vec<&str> = name.split(',').map(|p| p.trim()).collect();
-                let name_matches = name_parts.iter().any(|p| p.len() >= 2 && nearby.contains(p));
+                let name_matches = name_parts
+                    .iter()
+                    .any(|p| p.len() >= 2 && nearby.contains(p));
                 if name_matches {
                     return Some(url.to_string());
                 }
@@ -103,9 +105,16 @@ PAGE TEXT (first 6000 chars):
 
     match llm.generate_json(&prompt).await {
         Ok(raw) => {
-            let cleaned = raw.trim().trim_start_matches("```json").trim_end_matches("```").trim();
+            let cleaned = raw
+                .trim()
+                .trim_start_matches("```json")
+                .trim_end_matches("```")
+                .trim();
             match serde_json::from_str::<serde_json::Value>(cleaned) {
-                Ok(v) => v.get("author_url").and_then(|u| u.as_str()).map(|s| s.to_string()),
+                Ok(v) => v
+                    .get("author_url")
+                    .and_then(|u| u.as_str())
+                    .map(|s| s.to_string()),
                 Err(_) => None,
             }
         }
@@ -164,12 +173,16 @@ mod tests {
     fn extracts_ffn_author_url() {
         let html = r#"<a href="https://www.fanfiction.net/u/1234567/AuthorName">AuthorName</a>"#;
         let url = extract_author_url_from_html(html, "AuthorName");
-        assert_eq!(url.as_deref(), Some("https://www.fanfiction.net/u/1234567/AuthorName"));
+        assert_eq!(
+            url.as_deref(),
+            Some("https://www.fanfiction.net/u/1234567/AuthorName")
+        );
     }
 
     #[test]
     fn ignores_unrelated_links() {
-        let html = r#"<a href="/users/OtherAuthor">OtherAuthor</a> <a href="/works/999">the fic</a>"#;
+        let html =
+            r#"<a href="/users/OtherAuthor">OtherAuthor</a> <a href="/works/999">the fic</a>"#;
         let url = extract_author_url_from_html(html, "MyAuthor");
         assert_eq!(url, None, "author name not near the link → no match");
     }
@@ -189,7 +202,13 @@ mod tests {
     #[tokio::test]
     async fn ensure_author_url_skips_llm_when_already_have_url() {
         let llm = FakeLlm { response: "{}" };
-        let url = ensure_author_url(Some(&llm), "https://ao3.org/users/alice", "Alice", "<html/>").await;
+        let url = ensure_author_url(
+            Some(&llm),
+            "https://ao3.org/users/alice",
+            "Alice",
+            "<html/>",
+        )
+        .await;
         assert_eq!(url.as_deref(), Some("https://ao3.org/users/alice"));
     }
 }

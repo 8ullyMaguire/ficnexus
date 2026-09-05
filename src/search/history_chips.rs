@@ -7,9 +7,9 @@
 //! tap. Anonymous callers get an empty list (no historical identity to key
 //! off of).
 
-use axum::extract::State;
 use axum::Json;
-use serde_json::{json, Value};
+use axum::extract::State;
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;
@@ -30,9 +30,7 @@ pub async fn search_history_chips_handler(
     let chips = match crate::db::queries::recent_search_chips(&state.db, auth.user_id).await {
         Ok(rows) => rows
             .into_iter()
-            .map(|(query, count)| {
-                json!({ "query": query, "count": count })
-            })
+            .map(|(query, count)| json!({ "query": query, "count": count }))
             .collect::<Vec<Value>>(),
         Err(e) => {
             tracing::warn!(error = %e, "failed to load search history chips");

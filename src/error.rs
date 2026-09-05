@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde_json::json;
 
 /// Application-wide error type
@@ -48,7 +48,9 @@ impl std::fmt::Display for AppError {
             AppError::ExportError(msg) => write!(f, "ExportError: {}", msg),
             AppError::Database(msg) => write!(f, "Database: {}", msg),
             AppError::CacheError(msg) => write!(f, "CacheError: {}", msg),
-            AppError::RateLimited(retry_after) => write!(f, "RateLimited: retry after {}s", retry_after),
+            AppError::RateLimited(retry_after) => {
+                write!(f, "RateLimited: retry after {}s", retry_after)
+            }
             AppError::RateLimitedJson(_) => write!(f, "RateLimitedJson"),
             AppError::PayloadTooLarge(msg) => write!(f, "PayloadTooLarge: {}", msg),
         }
@@ -58,49 +60,51 @@ impl std::fmt::Display for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, body) = match self {
-            AppError::BadRequest(msg) => {
-                (StatusCode::BAD_REQUEST, json!({"err": -1, "msg": msg}))
-            }
+            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, json!({"err": -1, "msg": msg})),
             AppError::Unauthorized(msg) => {
                 (StatusCode::UNAUTHORIZED, json!({"err": 401, "msg": msg}))
             }
-            AppError::Forbidden(msg) => {
-                (StatusCode::FORBIDDEN, json!({"err": -403, "msg": msg}))
-            }
-            AppError::Conflict(msg) => {
-                (StatusCode::CONFLICT, json!({"err": -409, "msg": msg}))
-            }
-            AppError::NotFound(msg) => {
-                (StatusCode::NOT_FOUND, json!({"err": -5, "msg": msg}))
-            }
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, json!({"err": -403, "msg": msg})),
+            AppError::Conflict(msg) => (StatusCode::CONFLICT, json!({"err": -409, "msg": msg})),
+            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, json!({"err": -5, "msg": msg})),
             AppError::Internal(msg) => {
                 tracing::error!("Internal error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, json!({"err": -1, "msg": "internal server error"}))
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    json!({"err": -1, "msg": "internal server error"}),
+                )
             }
-            AppError::ScrapeError(msg) => {
-                (StatusCode::BAD_GATEWAY, json!({"err": -6, "msg": msg}))
-            }
+            AppError::ScrapeError(msg) => (StatusCode::BAD_GATEWAY, json!({"err": -6, "msg": msg})),
             AppError::ExportError(msg) => {
                 tracing::error!("Export error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, json!({"err": -5, "msg": "export failed"}))
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    json!({"err": -5, "msg": "export failed"}),
+                )
             }
             AppError::Database(msg) => {
                 tracing::error!("Database error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, json!({"err": -1, "msg": "database error"}))
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    json!({"err": -1, "msg": "database error"}),
+                )
             }
             AppError::CacheError(msg) => {
                 tracing::error!("Cache error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, json!({"err": -1, "msg": "cache error"}))
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    json!({"err": -1, "msg": "cache error"}),
+                )
             }
-            AppError::RateLimited(retry_after) => {
-                (StatusCode::TOO_MANY_REQUESTS, json!({"err": -429, "msg": "rate limited", "retry_after": retry_after}))
-            }
-            AppError::RateLimitedJson(payload) => {
-                (StatusCode::TOO_MANY_REQUESTS, payload)
-            }
-            AppError::PayloadTooLarge(msg) => {
-                (StatusCode::PAYLOAD_TOO_LARGE, json!({"err": -413, "msg": msg}))
-            }
+            AppError::RateLimited(retry_after) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                json!({"err": -429, "msg": "rate limited", "retry_after": retry_after}),
+            ),
+            AppError::RateLimitedJson(payload) => (StatusCode::TOO_MANY_REQUESTS, payload),
+            AppError::PayloadTooLarge(msg) => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                json!({"err": -413, "msg": msg}),
+            ),
         };
 
         (status, Json(body)).into_response()
@@ -232,10 +236,7 @@ mod tests {
 
     #[test]
     fn test_from_redis_error() {
-        let err = redis::RedisError::from((
-            redis::ErrorKind::Io,
-            "connection refused",
-        ));
+        let err = redis::RedisError::from((redis::ErrorKind::Io, "connection refused"));
         let app: AppError = err.into();
         match app {
             AppError::CacheError(msg) => assert!(msg.contains("connection refused")),

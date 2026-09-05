@@ -43,7 +43,11 @@ pub struct OllamaClient {
 
 impl OllamaClient {
     pub fn new(base_url: String, model: String, http: reqwest::Client) -> Self {
-        Self { base_url, model, http }
+        Self {
+            base_url,
+            model,
+            http,
+        }
     }
 
     /// Embed a piece of text via Ollama's `/api/embeddings`.
@@ -140,7 +144,11 @@ impl OllamaClient {
     /// strong nudge, not a guarantee. `chat_model` is passed in the body
     /// (the client's `model` field is the embedding model). Errors surface
     /// as `OllamaError` like [`Self::generate`].
-    pub async fn generate_json(&self, prompt: &str, chat_model: &str) -> Result<String, OllamaError> {
+    pub async fn generate_json(
+        &self,
+        prompt: &str,
+        chat_model: &str,
+    ) -> Result<String, OllamaError> {
         let url = format!("{}/api/generate", self.base_url.trim_end_matches('/'));
         let resp = self
             .http
@@ -228,7 +236,10 @@ mod tests {
             "nomic-embed-text".into(),
             reqwest::Client::new(),
         );
-        let err = client.generate("hi", "llama3.1:8b").await.expect_err("should fail");
+        let err = client
+            .generate("hi", "llama3.1:8b")
+            .await
+            .expect_err("should fail");
         assert!(err.to_string().starts_with("ollama:"));
     }
 
@@ -254,7 +265,10 @@ mod tests {
             "nomic-embed-text".into(),
             reqwest::Client::new(),
         );
-        let err = client.generate("hi", "llama3.1:8b").await.expect_err("should fail");
+        let err = client
+            .generate("hi", "llama3.1:8b")
+            .await
+            .expect_err("should fail");
         assert!(err.to_string().starts_with("ollama:"), "err: {err}");
         assert!(err.to_string().contains("500"), "err: {err}");
     }
@@ -287,7 +301,10 @@ mod tests {
             "nomic-embed-text".into(),
             reqwest::Client::new(),
         );
-        let out = client.generate("classify", "llama3.1:8b").await.expect("should succeed");
+        let out = client
+            .generate("classify", "llama3.1:8b")
+            .await
+            .expect("should succeed");
         assert_eq!(out, "toxic | slur | 0.9");
     }
 

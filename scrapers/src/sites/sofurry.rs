@@ -11,8 +11,8 @@
 use async_trait::async_trait;
 use regex_lite::Regex;
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 use super::{http, login, turbo_stream};
+use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 
 pub struct SoFurryScraper;
 
@@ -55,8 +55,13 @@ impl SiteScraper for SoFurryScraper {
         Ok(())
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("sofurry: bad url".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("sofurry: bad url".into()))?;
         let data_url = format!("{url}.data");
         let data = http::fetch(client, &data_url).await?;
         let decoded = turbo_stream::decode(&data)
@@ -67,7 +72,11 @@ impl SiteScraper for SoFurryScraper {
             .pointer("/routes/submission.$id/data/submission")
             .ok_or_else(|| ScrapeError::ParseError("sofurry: no submission".into()))?;
 
-        let title = sub.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let title = sub
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         if title.is_empty() {
             return Err(ScrapeError::ParseError("sofurry: no title".into()));
         }
@@ -155,7 +164,11 @@ impl SiteScraper for SoFurryScraper {
         let sub = decoded
             .pointer("/routes/submission.$id/data/submission")
             .ok_or_else(|| ScrapeError::ParseError("sofurry: no submission".into()))?;
-        let story_title = sub.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let story_title = sub
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
 
         let mut chapters = Vec::new();
         if let Some(arr) = sub.get("content").and_then(|v| v.as_array()) {
@@ -221,7 +234,10 @@ mod tests {
 
     #[test]
     fn parses_story_id() {
-        assert_eq!(SoFurryScraper::story_id("https://sofurry.com/s/abc123"), Some("abc123".to_string()));
+        assert_eq!(
+            SoFurryScraper::story_id("https://sofurry.com/s/abc123"),
+            Some("abc123".to_string())
+        );
         assert_eq!(SoFurryScraper::story_id("https://x.com/foo"), None);
     }
 

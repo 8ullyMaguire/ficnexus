@@ -40,11 +40,11 @@
 
 use std::sync::Arc;
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
@@ -60,7 +60,8 @@ const SITE_VERSION_DEFAULT: &str = env!("CARGO_PKG_VERSION");
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 fn require_user(auth: &AuthUser) -> Result<i32, AppError> {
-    auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))
+    auth.user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))
 }
 
 /// Require curator (role ≥ 5); 403 otherwise (also requires login → 401).
@@ -97,12 +98,9 @@ async fn site_setting(db: &sqlx::PgPool, key: &str, default: &str) -> String {
 // ── GET /api/site ──────────────────────────────────────────────────────────
 
 /// Public site info (no auth required).
-pub async fn site_info(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, AppError> {
+pub async fn site_info(State(state): State<Arc<AppState>>) -> Result<Json<Value>, AppError> {
     let name = site_setting(&state.db, "site.name", SITE_NAME_DEFAULT).await;
-    let description =
-        site_setting(&state.db, "site.description", SITE_DESCRIPTION_DEFAULT).await;
+    let description = site_setting(&state.db, "site.description", SITE_DESCRIPTION_DEFAULT).await;
     let version = site_setting(&state.db, "site.version", SITE_VERSION_DEFAULT).await;
     let mode = registration_mode().to_string();
     Ok(Json(json!({
@@ -146,8 +144,9 @@ pub async fn create_invite(
     let expires_at = match body.expires_at.as_deref() {
         None | Some("") => None,
         Some(raw) => {
-            let parsed = DateTime::parse_from_rfc3339(raw)
-                .map_err(|_| AppError::BadRequest("expires_at must be an RFC3339 timestamp".to_string()))?;
+            let parsed = DateTime::parse_from_rfc3339(raw).map_err(|_| {
+                AppError::BadRequest("expires_at must be an RFC3339 timestamp".to_string())
+            })?;
             Some(parsed.with_timezone(&Utc))
         }
     };
@@ -171,10 +170,7 @@ pub async fn create_invite(
     .fetch_one(&state.db)
     .await?;
 
-    let mut extra = vec![
-        ("invite_id", json!(invite_id)),
-        ("code", json!(code)),
-    ];
+    let mut extra = vec![("invite_id", json!(invite_id)), ("code", json!(code))];
     if let Some(note) = body.note.as_deref().filter(|n| !n.trim().is_empty()) {
         extra.push(("note", json!(note.trim())));
     }
@@ -205,7 +201,19 @@ pub async fn list_invites(
 ) -> Result<Json<Value>, AppError> {
     require_mod(&auth)?;
 
-    let rows = sqlx::query_as::<_, (i64, String, i32, DateTime<Utc>, Option<DateTime<Utc>>, Option<i32>, Option<String>, Option<DateTime<Utc>>)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            i32,
+            DateTime<Utc>,
+            Option<DateTime<Utc>>,
+            Option<i32>,
+            Option<String>,
+            Option<DateTime<Utc>>,
+        ),
+    >(
         r#"SELECT i.id, i.code, i.created_by, i.created_at, i.expires_at,
                   i.used_by, u.username, i.used_at
            FROM user_invites i
@@ -218,18 +226,20 @@ pub async fn list_invites(
 
     let items: Vec<Value> = rows
         .into_iter()
-        .map(|(id, code, created_by, created_at, expires_at, used_by, used_username, used_at)| {
-            json!({
-                "id": id,
-                "code": code,
-                "created_by": created_by,
-                "created_at": created_at.to_rfc3339(),
-                "expires_at": expires_at.map(|d| d.to_rfc3339()),
-                "used_by": used_by,
-                "used_username": used_username,
-                "used_at": used_at.map(|d| d.to_rfc3339()),
-            })
-        })
+        .map(
+            |(id, code, created_by, created_at, expires_at, used_by, used_username, used_at)| {
+                json!({
+                    "id": id,
+                    "code": code,
+                    "created_by": created_by,
+                    "created_at": created_at.to_rfc3339(),
+                    "expires_at": expires_at.map(|d| d.to_rfc3339()),
+                    "used_by": used_by,
+                    "used_username": used_username,
+                    "used_at": used_at.map(|d| d.to_rfc3339()),
+                })
+            },
+        )
         .collect();
 
     Ok(Json(json!({ "err": 0, "items": items })))
@@ -254,9 +264,7 @@ pub async fn validate_invite_code(db: &sqlx::PgPool, code: &str) -> Result<(), A
     .map_err(|e| AppError::Database(e.to_string()))?;
 
     match row {
-        None => Err(AppError::Forbidden(
-            "Invalid invite code".to_string(),
-        )),
+        None => Err(AppError::Forbidden("Invalid invite code".to_string())),
         Some((used_by, expires_at)) => {
             if used_by.is_some() {
                 return Err(AppError::Forbidden("Invite code already used".to_string()));
@@ -309,7 +317,9 @@ pub async fn apply_registration(
         return Err(AppError::BadRequest("reason required".to_string()));
     }
     if reason.chars().count() > 2000 {
-        return Err(AppError::BadRequest("reason too long (max 2000 chars)".to_string()));
+        return Err(AppError::BadRequest(
+            "reason too long (max 2000 chars)".to_string(),
+        ));
     }
 
     let existing: Option<(i64,)> = sqlx::query_as(
@@ -367,7 +377,20 @@ pub async fn list_registration_applications(
     }
 
     let rows = if status == "all" {
-        sqlx::query_as::<_, (i64, i32, Option<String>, String, String, Option<i32>, Option<String>, Option<DateTime<Utc>>, DateTime<Utc>)>(
+        sqlx::query_as::<
+            _,
+            (
+                i64,
+                i32,
+                Option<String>,
+                String,
+                String,
+                Option<i32>,
+                Option<String>,
+                Option<DateTime<Utc>>,
+                DateTime<Utc>,
+            ),
+        >(
             r#"SELECT a.id, a.user_id, u.username, a.reason, a.status,
                       a.reviewed_by, rv.username, a.reviewed_at, a.created_at
                FROM registration_applications a
@@ -379,7 +402,20 @@ pub async fn list_registration_applications(
         .fetch_all(&state.db)
         .await?
     } else {
-        sqlx::query_as::<_, (i64, i32, Option<String>, String, String, Option<i32>, Option<String>, Option<DateTime<Utc>>, DateTime<Utc>)>(
+        sqlx::query_as::<
+            _,
+            (
+                i64,
+                i32,
+                Option<String>,
+                String,
+                String,
+                Option<i32>,
+                Option<String>,
+                Option<DateTime<Utc>>,
+                DateTime<Utc>,
+            ),
+        >(
             r#"SELECT a.id, a.user_id, u.username, a.reason, a.status,
                       a.reviewed_by, rv.username, a.reviewed_at, a.created_at
                FROM registration_applications a
@@ -396,19 +432,31 @@ pub async fn list_registration_applications(
 
     let items: Vec<Value> = rows
         .into_iter()
-        .map(|(id, user_id, username, reason, status, reviewed_by, reviewer_name, reviewed_at, created_at)| {
-            json!({
-                "id": id,
-                "user_id": user_id,
-                "username": username,
-                "reason": reason,
-                "status": status,
-                "reviewed_by": reviewed_by,
-                "reviewer_name": reviewer_name,
-                "reviewed_at": reviewed_at.map(|d| d.to_rfc3339()),
-                "created_at": created_at.to_rfc3339(),
-            })
-        })
+        .map(
+            |(
+                id,
+                user_id,
+                username,
+                reason,
+                status,
+                reviewed_by,
+                reviewer_name,
+                reviewed_at,
+                created_at,
+            )| {
+                json!({
+                    "id": id,
+                    "user_id": user_id,
+                    "username": username,
+                    "reason": reason,
+                    "status": status,
+                    "reviewed_by": reviewed_by,
+                    "reviewer_name": reviewer_name,
+                    "reviewed_at": reviewed_at.map(|d| d.to_rfc3339()),
+                    "created_at": created_at.to_rfc3339(),
+                })
+            },
+        )
         .collect();
 
     Ok(Json(json!({ "err": 0, "status": status, "items": items })))
@@ -444,18 +492,17 @@ pub async fn review_registration_application(
     let mut tx = state.db.begin().await?;
 
     // Fetch the application (only pending ones may be reviewed).
-    let (user_id, current_status): (i32, String) = sqlx::query_as(
-        "SELECT user_id, status FROM registration_applications WHERE id = $1",
-    )
-    .bind(app_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Application not found".to_string()))?;
+    let (user_id, current_status): (i32, String) =
+        sqlx::query_as("SELECT user_id, status FROM registration_applications WHERE id = $1")
+            .bind(app_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Application not found".to_string()))?;
 
     if current_status != "pending" {
-        return Err(AppError::Conflict(
-            format!("Application already {current_status}"),
-        ));
+        return Err(AppError::Conflict(format!(
+            "Application already {current_status}"
+        )));
     }
 
     let updated = sqlx::query(
@@ -469,7 +516,9 @@ pub async fn review_registration_application(
     .execute(&mut *tx)
     .await?;
     if updated.rows_affected() == 0 {
-        return Err(AppError::Conflict("Application already reviewed".to_string()));
+        return Err(AppError::Conflict(
+            "Application already reviewed".to_string(),
+        ));
     }
 
     // Approval activates the applicant's account (role 0 → 1 = trusted).
@@ -525,7 +574,9 @@ pub async fn block_user(
     let user_id = require_user(&auth)?;
 
     if body.user_id == user_id {
-        return Err(AppError::BadRequest("You cannot block yourself".to_string()));
+        return Err(AppError::BadRequest(
+            "You cannot block yourself".to_string(),
+        ));
     }
     // The target must exist.
     let exists: Option<(i32,)> = sqlx::query_as("SELECT id FROM users WHERE id = $1")
@@ -545,7 +596,9 @@ pub async fn block_user(
     .execute(&state.db)
     .await?;
 
-    Ok(Json(json!({ "err": 0, "user_id": body.user_id, "blocked": true })))
+    Ok(Json(
+        json!({ "err": 0, "user_id": body.user_id, "blocked": true }),
+    ))
 }
 
 /// DELETE /api/blocks/{user_id} — unblock. Idempotent (missing row → ok).
@@ -562,7 +615,9 @@ pub async fn unblock_user(
         .execute(&state.db)
         .await?;
 
-    Ok(Json(json!({ "err": 0, "user_id": user_id, "blocked": false })))
+    Ok(Json(
+        json!({ "err": 0, "user_id": user_id, "blocked": false }),
+    ))
 }
 
 /// GET /api/blocks — list the caller's blocked users (ids + usernames).

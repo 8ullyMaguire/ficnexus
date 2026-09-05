@@ -1,19 +1,23 @@
-use axum::{extract::State, Json};
-use serde_json::{json, Value};
+use axum::{Json, extract::State};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
-use crate::error::AppError;
-use crate::server::AppState;
 use crate::db::queries;
+use crate::error::AppError;
 use crate::routes::auth::AuthUser;
+use crate::server::AppState;
 
 /// Personal reading statistics; always scoped to the authenticated user.
 pub async fn personal_reading_handler(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
-    Ok(Json(queries::get_personal_reading_analytics(&state.db, user_id).await?))
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
+    Ok(Json(
+        queries::get_personal_reading_analytics(&state.db, user_id).await?,
+    ))
 }
 
 /// Public author analytics derived from reading history and reading_stats.
@@ -30,11 +34,11 @@ pub async fn analytics_handler(
 ) -> Result<Json<Value>, AppError> {
     // Get daily stats for last 30 days
     let daily_stats = queries::get_daily_stats(&state.db, 30).await?;
-    
+
     // Get total unique visitors
     let total_visitors_7d = queries::get_total_unique_visitors(&state.db, 7).await?;
     let total_visitors_30d = queries::get_total_unique_visitors(&state.db, 30).await?;
-    
+
     // Get return visitor rate
     let (total_visitors, return_visitors) = queries::get_return_visitor_rate(&state.db, 30).await?;
     let return_rate = if total_visitors > 0 {
@@ -42,14 +46,14 @@ pub async fn analytics_handler(
     } else {
         0.0
     };
-    
+
     // Get popular fics
     let popular_fics_7d = queries::get_popular_fics(&state.db, 7, 10).await?;
     let popular_fics_30d = queries::get_popular_fics(&state.db, 30, 10).await?;
-    
+
     // Get format breakdown
     let format_breakdown = queries::get_format_breakdown(&state.db, 30).await?;
-    
+
     Ok(Json(json!({
         "unique_visitors": {
             "last_7_days": total_visitors_7d,
@@ -97,8 +101,9 @@ pub async fn user_stats_handler(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(client_id): axum::extract::Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    let (total_requests, unique_fics, downloads) = queries::get_user_stats(&state.db, &client_id).await?;
-    
+    let (total_requests, unique_fics, downloads) =
+        queries::get_user_stats(&state.db, &client_id).await?;
+
     Ok(Json(json!({
         "client_id": client_id,
         "total_requests": total_requests,
@@ -170,7 +175,14 @@ pub async fn track_usage(
         let event_type = if is_action(&path) { "action" } else { "view" };
         // Fire-and-forget: record after the response, never block the caller.
         tokio::spawn(async move {
-            crate::db::queries::insert_usage_event(&db, &cid, &path, event_type, user_agent.as_deref()).await;
+            crate::db::queries::insert_usage_event(
+                &db,
+                &cid,
+                &path,
+                event_type,
+                user_agent.as_deref(),
+            )
+            .await;
         });
     }
 
@@ -189,8 +201,16 @@ pub async fn endpoint_usage_handler(
     if auth.role < 10 {
         return Err(AppError::Forbidden("Admin access required".to_string()));
     }
-    let days: i32 = params.get("days").and_then(|v| v.parse().ok()).unwrap_or(7).clamp(1, 90);
-    let limit: i64 = params.get("limit").and_then(|v| v.parse().ok()).unwrap_or(20).clamp(1, 100);
+    let days: i32 = params
+        .get("days")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(7)
+        .clamp(1, 90);
+    let limit: i64 = params
+        .get("limit")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20)
+        .clamp(1, 100);
     let rows = queries::get_endpoint_usage(&state.db, days, limit).await?;
     let groups = queries::get_endpoint_group_usage(&state.db, days).await?;
     Ok(Json(json!({

@@ -4,24 +4,28 @@
 //! (MaxDiff → Elo). Follows the repo's DB-gated conventions (global Mutex,
 //! #[ignore], full AppState construction).
 
-use std::sync::{Mutex, OnceLock};
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::{get, post},
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
+use std::sync::{Mutex, OnceLock};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
-    DB_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+    DB_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
 }
 
 async fn pool() -> sqlx::PgPool {
-    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
+    let url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
     sqlx::PgPool::connect(&url).await.expect("connect pool")
 }
 
@@ -32,8 +36,14 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
     let redis_client = redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL");
-    let redis = redis_client.get_multiplexed_async_connection().await.expect("redis conn");
-    let http_client = reqwest::Client::builder().user_agent("fichub-test/0.1.0").build().expect("reqwest");
+    let redis = redis_client
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis conn");
+    let http_client = reqwest::Client::builder()
+        .user_agent("fichub-test/0.1.0")
+        .build()
+        .expect("reqwest");
     let scraper_registry = Arc::new(fichub::scrape::registry::ScraperRegistry::new());
 
     let ollama_client = fichub::services::ollama::OllamaClient::new(
@@ -46,20 +56,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         rate_limiter: Box::new(
             fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-                redis_client.get_multiplexed_async_connection().await.expect("redis"),
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
                 false,
             )
             .await
             .expect("rate limiter"),
         ),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -78,14 +97,38 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/roadmap/suggest", post(fichub::routes::roadmap::suggest_handler))
-        .route("/api/roadmap/arena", get(fichub::routes::roadmap::arena_handler))
-        .route("/api/roadmap/vote", post(fichub::routes::roadmap::vote_handler))
-        .route("/api/roadmap/consensus", get(fichub::routes::roadmap::consensus_handler))
-        .route("/api/roadmap/features", get(fichub::routes::roadmap::features_list_handler))
-        .route("/api/roadmap/features/{id}", axum::routing::patch(fichub::routes::roadmap::feature_move_handler))
-        .route("/api/roadmap/changelog", get(fichub::routes::roadmap::changelog_list_handler))
-        .route("/api/roadmap/changelog", post(fichub::routes::roadmap::changelog_create_handler))
+        .route(
+            "/api/roadmap/suggest",
+            post(fichub::routes::roadmap::suggest_handler),
+        )
+        .route(
+            "/api/roadmap/arena",
+            get(fichub::routes::roadmap::arena_handler),
+        )
+        .route(
+            "/api/roadmap/vote",
+            post(fichub::routes::roadmap::vote_handler),
+        )
+        .route(
+            "/api/roadmap/consensus",
+            get(fichub::routes::roadmap::consensus_handler),
+        )
+        .route(
+            "/api/roadmap/features",
+            get(fichub::routes::roadmap::features_list_handler),
+        )
+        .route(
+            "/api/roadmap/features/{id}",
+            axum::routing::patch(fichub::routes::roadmap::feature_move_handler),
+        )
+        .route(
+            "/api/roadmap/changelog",
+            get(fichub::routes::roadmap::changelog_list_handler),
+        )
+        .route(
+            "/api/roadmap/changelog",
+            post(fichub::routes::roadmap::changelog_create_handler),
+        )
         .with_state(state)
 }
 
@@ -117,7 +160,13 @@ async fn seed_cluster(db: &sqlx::PgPool, text: &str) -> i32 {
     // Embedding is fake (zeros) — clustering tests rely on threshold logic via
     // raw insertion, and vote/arena tests don't need real vectors.
     let dims = vec![0.0f32; 768];
-    let emb = format!("[{}]", dims.iter().map(|f| format!("{f:.6}")).collect::<Vec<_>>().join(","));
+    let emb = format!(
+        "[{}]",
+        dims.iter()
+            .map(|f| format!("{f:.6}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
     sqlx::query("INSERT INTO feature_clusters (representative_text, embedding, status) VALUES ($1, $2::vector, 'idea') RETURNING id")
         .bind(text)
         .bind(&emb)
@@ -129,16 +178,29 @@ async fn seed_cluster(db: &sqlx::PgPool, text: &str) -> i32 {
 
 async fn cleanup(db: &sqlx::PgPool, users: &[&str], clusters: &[i32]) {
     for u in users {
-        let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(db).await;
+        let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+            .bind(u)
+            .execute(db)
+            .await;
     }
     for c in clusters {
-        let _ = sqlx::query("DELETE FROM feature_suggestions WHERE cluster_id = $1").bind(c).execute(db).await;
+        let _ = sqlx::query("DELETE FROM feature_suggestions WHERE cluster_id = $1")
+            .bind(c)
+            .execute(db)
+            .await;
         let _ = sqlx::query("DELETE FROM arena_votes WHERE best_cluster_id = $1 OR worst_cluster_id = $1 OR $1 = ANY(cluster_ids)").bind(c).execute(db).await;
-        let _ = sqlx::query("DELETE FROM feature_clusters WHERE id = $1").bind(c).execute(db).await;
+        let _ = sqlx::query("DELETE FROM feature_clusters WHERE id = $1")
+            .bind(c)
+            .execute(db)
+            .await;
     }
-    let _ = sqlx::query("DELETE FROM feature_suggestions WHERE raw_text LIKE 'rmd_%'").execute(db).await;
+    let _ = sqlx::query("DELETE FROM feature_suggestions WHERE raw_text LIKE 'rmd_%'")
+        .execute(db)
+        .await;
     // Clean up any changelog entries created by tests
-    let _ = sqlx::query("DELETE FROM roadmap_changelog WHERE title LIKE 'rmd_%'").execute(db).await;
+    let _ = sqlx::query("DELETE FROM roadmap_changelog WHERE title LIKE 'rmd_%'")
+        .execute(db)
+        .await;
 }
 
 /// Suggest with Ollama down (port 1) → raw text is stored unclustered (cluster_id NULL).
@@ -151,21 +213,33 @@ async fn suggest_with_ollama_down_stores_unclustered() {
 
     let uid = seed_user(&db, "rmd_suggest_user").await;
     let res = app
-        .oneshot(Request::builder()
-            .method("POST")
-            .uri("/api/roadmap/suggest")
-            .header("authorization", auth_header(uid, "rmd_suggest_user"))
-            .header("x-client-id", "rmd_client_1")
-            .header("content-type", "application/json")
-            .body(Body::from(json!({ "text": "rmd_test_suggestion dark mode please" }).to_string()))
-            .unwrap())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/roadmap/suggest")
+                .header("authorization", auth_header(uid, "rmd_suggest_user"))
+                .header("x-client-id", "rmd_client_1")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "text": "rmd_test_suggestion dark mode please" }).to_string(),
+                ))
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let body: Value = serde_json::from_slice(&axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body["err"], 0);
-    assert_eq!(body["clustered"], false, "ollama down → unclustered: {body}");
+    assert_eq!(
+        body["clustered"], false,
+        "ollama down → unclustered: {body}"
+    );
 
     let row: Option<(String, Option<i32>)> = sqlx::query_as(
         "SELECT raw_text, cluster_id FROM feature_suggestions WHERE raw_text = 'rmd_test_suggestion dark mode please'",
@@ -196,19 +270,29 @@ async fn arena_returns_four_clusters() {
     let c5 = seed_cluster(&db, "rmd_arena_five").await;
 
     let res = app
-        .oneshot(Request::builder()
-            .uri("/api/roadmap/arena")
-            .header("authorization", auth_header(uid, "rmd_arena_user"))
-            .body(Body::empty())
-            .unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/roadmap/arena")
+                .header("authorization", auth_header(uid, "rmd_arena_user"))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let body: Value = serde_json::from_slice(&axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     let clusters = body["clusters"].as_array().unwrap();
     assert_eq!(clusters.len(), 4, "arena serves exactly 4: {body}");
-    let mut ids: Vec<i32> = clusters.iter().map(|c| c["id"].as_i64().unwrap() as i32).collect();
+    let mut ids: Vec<i32> = clusters
+        .iter()
+        .map(|c| c["id"].as_i64().unwrap() as i32)
+        .collect();
     ids.sort_unstable();
     ids.dedup();
     assert_eq!(ids.len(), 4, "all distinct");
@@ -230,47 +314,77 @@ async fn vote_runs_maxdiff_elo() {
     let c3 = seed_cluster(&db, "rmd_vote_three").await;
     let c4 = seed_cluster(&db, "rmd_vote_four").await;
 
-    let res = app.clone()
-        .oneshot(Request::builder()
-            .method("POST")
-            .uri("/api/roadmap/vote")
-            .header("authorization", auth_header(uid, "rmd_vote_user"))
-            .header("content-type", "application/json")
-            .body(Body::from(json!({
-                "cluster_ids": [c1, c2, c3, c4],
-                "best_cluster_id": c1,
-                "worst_cluster_id": c4,
-            }).to_string()))
-            .unwrap())
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/roadmap/vote")
+                .header("authorization", auth_header(uid, "rmd_vote_user"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "cluster_ids": [c1, c2, c3, c4],
+                        "best_cluster_id": c1,
+                        "worst_cluster_id": c4,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK, "first vote should be 200");
 
-    let body: Value = serde_json::from_slice(&axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body["err"], 0);
     let applied = body["applied"].as_array().unwrap();
-    let r1 = applied.iter().find(|a| a["cluster_id"] == c1).unwrap()["new_elo"].as_f64().unwrap();
-    let r4 = applied.iter().find(|a| a["cluster_id"] == c4).unwrap()["new_elo"].as_f64().unwrap();
+    let r1 = applied.iter().find(|a| a["cluster_id"] == c1).unwrap()["new_elo"]
+        .as_f64()
+        .unwrap();
+    let r4 = applied.iter().find(|a| a["cluster_id"] == c4).unwrap()["new_elo"]
+        .as_f64()
+        .unwrap();
     assert!(r1 > 1500.0, "best gains: {r1}");
     assert!(r4 < 1500.0, "worst loses: {r4}");
 
     // Double vote on the same set is rejected with 400 BadRequest.
-    let res2 = app.clone()
-        .oneshot(Request::builder()
-            .method("POST")
-            .uri("/api/roadmap/vote")
-            .header("authorization", auth_header(uid, "rmd_vote_user"))
-            .header("content-type", "application/json")
-            .body(Body::from(json!({
-                "cluster_ids": [c1, c2, c3, c4],
-                "best_cluster_id": c1,
-                "worst_cluster_id": c4,
-            }).to_string()))
-            .unwrap())
+    let res2 = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/roadmap/vote")
+                .header("authorization", auth_header(uid, "rmd_vote_user"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "cluster_ids": [c1, c2, c3, c4],
+                        "best_cluster_id": c1,
+                        "worst_cluster_id": c4,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
         .await
         .unwrap();
-    assert_eq!(res2.status(), StatusCode::BAD_REQUEST, "double vote rejected with 400");
-    let body2: Value = serde_json::from_slice(&axum::body::to_bytes(res2.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    assert_eq!(
+        res2.status(),
+        StatusCode::BAD_REQUEST,
+        "double vote rejected with 400"
+    );
+    let body2: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res2.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_ne!(body2["err"], 0, "double vote rejected: {body2}");
 
     cleanup(&db, &["rmd_vote_user"], &[c1, c2, c3, c4]).await;
@@ -295,21 +409,31 @@ async fn trust_gate_blocks_anonymous_vote_returns_403() {
     let c4 = seed_cluster(&db, "rmd_anon_four").await;
 
     // No Authorization header → anonymous (level 0) → trust gate returns 403.
-    let res = app.clone()
-        .oneshot(Request::builder()
-            .method("POST")
-            .uri("/api/roadmap/vote")
-            .header("x-client-id", "e2e-anon-test-client")
-            .header("content-type", "application/json")
-            .body(Body::from(json!({
-                "cluster_ids": [c1, c2, c3, c4],
-                "best_cluster_id": c1,
-                "worst_cluster_id": c4,
-            }).to_string()))
-            .unwrap())
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/roadmap/vote")
+                .header("x-client-id", "e2e-anon-test-client")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "cluster_ids": [c1, c2, c3, c4],
+                        "best_cluster_id": c1,
+                        "worst_cluster_id": c4,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
         .await
         .unwrap();
-    assert_eq!(res.status(), StatusCode::FORBIDDEN, "anonymous vote blocked by trust gate");
+    assert_eq!(
+        res.status(),
+        StatusCode::FORBIDDEN,
+        "anonymous vote blocked by trust gate"
+    );
 
     cleanup(&db, &[], &[c1, c2, c3, c4]).await;
 }
@@ -331,52 +455,76 @@ async fn authenticated_vote_fk_safe_and_double_vote_blocked() {
     let uid = seed_user(&db, "rmd_auth_user").await;
 
     // First vote: should succeed (level 2 = authenticated).
-    let res = app.clone()
-        .oneshot(Request::builder()
-            .method("POST")
-            .uri("/api/roadmap/vote")
-            .header("authorization", auth_header(uid, "rmd_auth_user"))
-            .header("content-type", "application/json")
-            .body(Body::from(json!({
-                "cluster_ids": [c1, c2, c3, c4],
-                "best_cluster_id": c1,
-                "worst_cluster_id": c4,
-            }).to_string()))
-            .unwrap())
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/roadmap/vote")
+                .header("authorization", auth_header(uid, "rmd_auth_user"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "cluster_ids": [c1, c2, c3, c4],
+                        "best_cluster_id": c1,
+                        "worst_cluster_id": c4,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK, "first vote should be 200");
 
-    let body: Value = serde_json::from_slice(&axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body["err"], 0, "vote err: {body}");
 
     // The vote row exists with user_id = Some(uid) (FK-safe).
-    let (row_user,): (Option<i32>,) = sqlx::query_as(
-        "SELECT user_id FROM arena_votes WHERE cluster_ids = $1 AND user_id = $2"
-    )
-    .bind(vec![c1, c2, c3, c4])
-    .bind(uid)
-    .fetch_one(&db)
-    .await
-    .expect("vote row should exist");
-    assert_eq!(row_user, Some(uid), "authenticated vote must store user_id (FK-safe)");
+    let (row_user,): (Option<i32>,) =
+        sqlx::query_as("SELECT user_id FROM arena_votes WHERE cluster_ids = $1 AND user_id = $2")
+            .bind(vec![c1, c2, c3, c4])
+            .bind(uid)
+            .fetch_one(&db)
+            .await
+            .expect("vote row should exist");
+    assert_eq!(
+        row_user,
+        Some(uid),
+        "authenticated vote must store user_id (FK-safe)"
+    );
 
     // Same user double-votes same set → 400.
-    let res2 = app.clone()
-        .oneshot(Request::builder()
-            .method("POST")
-            .uri("/api/roadmap/vote")
-            .header("authorization", auth_header(uid, "rmd_auth_user"))
-            .header("content-type", "application/json")
-            .body(Body::from(json!({
-                "cluster_ids": [c1, c2, c3, c4],
-                "best_cluster_id": c1,
-                "worst_cluster_id": c4,
-            }).to_string()))
-            .unwrap())
+    let res2 = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/roadmap/vote")
+                .header("authorization", auth_header(uid, "rmd_auth_user"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "cluster_ids": [c1, c2, c3, c4],
+                        "best_cluster_id": c1,
+                        "worst_cluster_id": c4,
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
         .await
         .unwrap();
-    assert_eq!(res2.status(), StatusCode::BAD_REQUEST, "same user double vote rejected");
+    assert_eq!(
+        res2.status(),
+        StatusCode::BAD_REQUEST,
+        "same user double vote rejected"
+    );
 
     cleanup(&db, &["rmd_auth_user"], &[c1, c2, c3, c4]).await;
 }
@@ -396,18 +544,31 @@ async fn consensus_public_readable() {
 
     // No auth headers at all — public read.
     let res = app
-        .oneshot(Request::builder()
-            .uri("/api/roadmap/consensus")
-            .body(Body::empty())
-            .unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/roadmap/consensus")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK, "public consensus must be 200");
 
-    let body: Value = serde_json::from_slice(&axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body["err"], 0);
-    assert!(body["leaderboard"].is_array(), "leaderboard present: {body}");
-    assert!(body["controversy"].is_array(), "controversy present: {body}");
+    assert!(
+        body["leaderboard"].is_array(),
+        "leaderboard present: {body}"
+    );
+    assert!(
+        body["controversy"].is_array(),
+        "controversy present: {body}"
+    );
 
     cleanup(&db, &[], &[c1, c2]).await;
 }
@@ -424,7 +585,13 @@ async fn consensus_returns_leaderboard() {
     let app = app().await;
 
     let dims = vec![0.0f32; 768];
-    let emb = format!("[{}]", dims.iter().map(|f| format!("{f:.6}")).collect::<Vec<_>>().join(","));
+    let emb = format!(
+        "[{}]",
+        dims.iter()
+            .map(|f| format!("{f:.6}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
     // High-Elo cluster with 2 suggestions; low-Elo cluster with none.
     let c_hi: i32 = sqlx::query(
         "INSERT INTO feature_clusters (representative_text, embedding, elo_rating, matches_played, times_picked_best, times_picked_worst, status) VALUES ('rmd_pubcons_top_feature', $1::vector, 1700, 10, 6, 1, 'idea') RETURNING id",
@@ -446,27 +613,43 @@ async fn consensus_returns_leaderboard() {
         .expect("seed suggestion 2");
 
     let res = app
-        .oneshot(Request::builder()
-            .uri("/api/roadmap/consensus")
-            .body(Body::empty())
-            .unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/roadmap/consensus")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body: Value = serde_json::from_slice(&axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
 
     let lb = body["leaderboard"].as_array().expect("leaderboard array");
-    assert_eq!(lb[0]["text"], "rmd_pubcons_top_feature", "highest Elo first: {body}");
+    assert_eq!(
+        lb[0]["text"], "rmd_pubcons_top_feature",
+        "highest Elo first: {body}"
+    );
     assert_eq!(lb[0]["elo_rating"], 1700.0);
     assert_eq!(lb[0]["matches_played"], 10);
     assert_eq!(lb[0]["times_picked_best"], 6);
     assert_eq!(lb[0]["times_picked_worst"], 1);
     assert_eq!(lb[0]["suggestions"], 2);
     assert_eq!(lb[0]["status"], "idea");
-    assert!(lb.iter().any(|r| r["text"] == "rmd_pubcons_bottom_feature"), "both clusters listed: {body}");
+    assert!(
+        lb.iter().any(|r| r["text"] == "rmd_pubcons_bottom_feature"),
+        "both clusters listed: {body}"
+    );
 
     let ct = body["controversy"].as_array().expect("controversy array");
-    let hi = ct.iter().find(|r| r["text"] == "rmd_pubcons_top_feature").expect("top in controversy");
+    let hi = ct
+        .iter()
+        .find(|r| r["text"] == "rmd_pubcons_top_feature")
+        .expect("top in controversy");
     assert_eq!(hi["controversy"], 7, "best+worst picks: {body}");
     assert_eq!(hi["elo_rating"], 1700.0);
 
@@ -483,7 +666,13 @@ async fn features_list_public_and_sorted_by_elo() {
     let app = app().await;
 
     let dims = vec![0.0f32; 768];
-    let emb = format!("[{}]", dims.iter().map(|f| format!("{f:.6}")).collect::<Vec<_>>().join(","));
+    let emb = format!(
+        "[{}]",
+        dims.iter()
+            .map(|f| format!("{f:.6}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
 
     // Seed two clusters with different Elo + known categories/statuses.
     let c_hi: i32 = sqlx::query(
@@ -497,15 +686,22 @@ async fn features_list_public_and_sorted_by_elo() {
 
     // No auth header — public.
     let res = app
-        .oneshot(Request::builder()
-            .uri("/api/roadmap/features")
-            .body(Body::empty())
-            .unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/roadmap/features")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let body: Value = serde_json::from_slice(&axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body["err"], 0);
     let features = body["features"].as_array().expect("features array");
     assert!(features.len() >= 2, "at least 2 clusters returned");
@@ -525,21 +721,34 @@ async fn features_list_filter_by_status() {
     let app = app().await;
 
     let dims = vec![0.0f32; 768];
-    let emb = format!("[{}]", dims.iter().map(|f| format!("{f:.6}")).collect::<Vec<_>>().join(","));
+    let emb = format!(
+        "[{}]",
+        dims.iter()
+            .map(|f| format!("{f:.6}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
     let c1: i32 = sqlx::query(
         "INSERT INTO feature_clusters (representative_text, embedding, elo_rating, status, category) VALUES ('rmd_status_filter', $1::vector, 1600, 'up_next', 'recs') RETURNING id",
     )
     .bind(&emb).fetch_one(&db).await.expect("seed").get(0);
 
     let res = app
-        .oneshot(Request::builder()
-            .uri("/api/roadmap/features?status=up_next")
-            .body(Body::empty())
-            .unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/roadmap/features?status=up_next")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body: Value = serde_json::from_slice(&axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body["err"], 0);
     let features = body["features"].as_array().expect("features array");
     assert_eq!(features.len(), 1, "only up_next filtered cluster");
@@ -558,7 +767,13 @@ async fn feature_move_requires_curator() {
     let app = app().await;
 
     let dims = vec![0.0f32; 768];
-    let emb = format!("[{}]", dims.iter().map(|f| format!("{f:.6}")).collect::<Vec<_>>().join(","));
+    let emb = format!(
+        "[{}]",
+        dims.iter()
+            .map(|f| format!("{f:.6}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
     let c1: i32 = sqlx::query(
         "INSERT INTO feature_clusters (representative_text, embedding, elo_rating, status) VALUES ('rmd_move_test', $1::vector, 1500, 'idea') RETURNING id",
     )
@@ -566,15 +781,21 @@ async fn feature_move_requires_curator() {
 
     // No auth header → anonymous → 403 Forbidden.
     let res = app
-        .oneshot(Request::builder()
-            .method("PATCH")
-            .uri(format!("/api/roadmap/features/{c1}"))
-            .header("content-type", "application/json")
-            .body(Body::from(json!({ "status": "up_next" }).to_string()))
-            .unwrap())
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/roadmap/features/{c1}"))
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "status": "up_next" }).to_string()))
+                .unwrap(),
+        )
         .await
         .unwrap();
-    assert_eq!(res.status(), StatusCode::FORBIDDEN, "anonymous should be 403");
+    assert_eq!(
+        res.status(),
+        StatusCode::FORBIDDEN,
+        "anonymous should be 403"
+    );
 
     cleanup(&db, &[], &[c1]).await;
 }
@@ -589,71 +810,126 @@ async fn changelog_public_read_and_curator_write() {
     let app = app().await;
 
     let dims = vec![0.0f32; 768];
-    let emb = format!("[{}]", dims.iter().map(|f| format!("{f:.6}")).collect::<Vec<_>>().join(","));
+    let emb = format!(
+        "[{}]",
+        dims.iter()
+            .map(|f| format!("{f:.6}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
     let c1: i32 = sqlx::query(
         "INSERT INTO feature_clusters (representative_text, embedding, elo_rating, status) VALUES ('rmd_chlog_feat', $1::vector, 1500, 'shipped') RETURNING id",
     )
     .bind(&emb).fetch_one(&db).await.expect("seed").get(0);
 
     // --- Public read (no auth) ---
-    let res = app.clone()
-        .oneshot(Request::builder()
-            .uri("/api/roadmap/changelog")
-            .body(Body::empty())
-            .unwrap())
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/roadmap/changelog")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
-    assert_eq!(res.status(), StatusCode::OK, "public changelog GET must be 200");
-    let body: Value = serde_json::from_slice(&axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::OK,
+        "public changelog GET must be 200"
+    );
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body["err"], 0);
-    assert!(body["changelog"].is_array(), "changelog array present: {body}");
+    assert!(
+        body["changelog"].is_array(),
+        "changelog array present: {body}"
+    );
 
     // --- Curator write (level >= 50) → 200 ---
     let curator_user = fichub::routes::auth::User {
-        id: 0, username: "rmd_chlog_user".into(), role: 5, reputation: 0,
-        email: None, level: 50, exp: 0,
+        id: 0,
+        username: "rmd_chlog_user".into(),
+        role: 5,
+        reputation: 0,
+        email: None,
+        level: 50,
+        exp: 0,
     };
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let token = fichub::routes::auth::create_token(&curator_user, &secret).expect("token");
     let uid = seed_user(&db, "rmd_chlog_user").await;
     // Update the seeded user to have level 50 / role 5 (curator).
-    let _ = sqlx::query("UPDATE users SET role = 5 WHERE id = $1").bind(uid).execute(&db).await;
+    let _ = sqlx::query("UPDATE users SET role = 5 WHERE id = $1")
+        .bind(uid)
+        .execute(&db)
+        .await;
 
-    let res2 = app.clone()
-        .oneshot(Request::builder()
-            .method("POST")
-            .uri("/api/roadmap/changelog")
-            .header("authorization", format!("Bearer {token}"))
-            .header("content-type", "application/json")
-            .body(Body::from(json!({
-                "feature_id": c1,
-                "title": "rmd_chlog_entry",
-                "body": "Feature launched",
-                "kind": "new"
-            }).to_string()))
-            .unwrap())
+    let res2 = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/roadmap/changelog")
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "feature_id": c1,
+                        "title": "rmd_chlog_entry",
+                        "body": "Feature launched",
+                        "kind": "new"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
         .await
         .unwrap();
-    assert_eq!(res2.status(), StatusCode::OK, "curator POST changelog should be 200: {:?}", res2.body());
-    let body2: Value = serde_json::from_slice(&axum::body::to_bytes(res2.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    assert_eq!(
+        res2.status(),
+        StatusCode::OK,
+        "curator POST changelog should be 200: {:?}",
+        res2.body()
+    );
+    let body2: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res2.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body2["err"], 0);
     assert!(body2["id"].as_i64().is_some(), "entry id returned");
 
     // --- Anonymous write → 403 ---
-    let res3 = app.clone()
-        .oneshot(Request::builder()
-            .method("POST")
-            .uri("/api/roadmap/changelog")
-            .header("content-type", "application/json")
-            .body(Body::from(json!({
-                "title": "rmd_chlog_anon",
-                "body": "should fail",
-                "kind": "new"
-            }).to_string()))
-            .unwrap())
+    let res3 = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/roadmap/changelog")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "title": "rmd_chlog_anon",
+                        "body": "should fail",
+                        "kind": "new"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
         .await
         .unwrap();
-    assert_eq!(res3.status(), StatusCode::FORBIDDEN, "anonymous POST must be 403");
+    assert_eq!(
+        res3.status(),
+        StatusCode::FORBIDDEN,
+        "anonymous POST must be 403"
+    );
 
     cleanup(&db, &["rmd_chlog_user"], &[c1]).await;
 }
@@ -667,7 +943,13 @@ async fn feature_move_updates_status_and_category() {
     let app = app().await;
 
     let dims = vec![0.0f32; 768];
-    let emb = format!("[{}]", dims.iter().map(|f| format!("{f:.6}")).collect::<Vec<_>>().join(","));
+    let emb = format!(
+        "[{}]",
+        dims.iter()
+            .map(|f| format!("{f:.6}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
     let c1: i32 = sqlx::query(
         "INSERT INTO feature_clusters (representative_text, embedding, elo_rating, status, category) VALUES ('rmd_promote', $1::vector, 1500, 'idea', 'general') RETURNING id",
     )
@@ -675,38 +957,55 @@ async fn feature_move_updates_status_and_category() {
 
     // Curator user with level 50
     let curator_user = fichub::routes::auth::User {
-        id: 0, username: "rmd_promote_user".into(), role: 5, reputation: 0,
-        email: None, level: 50, exp: 0,
+        id: 0,
+        username: "rmd_promote_user".into(),
+        role: 5,
+        reputation: 0,
+        email: None,
+        level: 50,
+        exp: 0,
     };
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let token = fichub::routes::auth::create_token(&curator_user, &secret).expect("token");
     let uid = seed_user(&db, "rmd_promote_user").await;
-    let _ = sqlx::query("UPDATE users SET role = 5 WHERE id = $1").bind(uid).execute(&db).await;
+    let _ = sqlx::query("UPDATE users SET role = 5 WHERE id = $1")
+        .bind(uid)
+        .execute(&db)
+        .await;
 
-    let res = app.clone()
-        .oneshot(Request::builder()
-            .method("PATCH")
-            .uri(format!("/api/roadmap/features/{c1}"))
-            .header("authorization", format!("Bearer {token}"))
-            .header("content-type", "application/json")
-            .body(Body::from(json!({ "status": "up_next", "category": "recs" }).to_string()))
-            .unwrap())
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/roadmap/features/{c1}"))
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "status": "up_next", "category": "recs" }).to_string(),
+                ))
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body: Value = serde_json::from_slice(&axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body["err"], 0);
     assert_eq!(body["status"], "up_next");
     assert_eq!(body["category"], "recs");
 
     // Verify in DB
-    let row: (String, String) = sqlx::query_as(
-        "SELECT status, category FROM feature_clusters WHERE id = $1",
-    )
-    .bind(c1)
-    .fetch_one(&db)
-    .await
-    .expect("query");
+    let row: (String, String) =
+        sqlx::query_as("SELECT status, category FROM feature_clusters WHERE id = $1")
+            .bind(c1)
+            .fetch_one(&db)
+            .await
+            .expect("query");
     assert_eq!(row.0, "up_next");
     assert_eq!(row.1, "recs");
 
@@ -722,20 +1021,34 @@ async fn changelog_filter_by_kind() {
     let app = app().await;
 
     let dims = vec![0.0f32; 768];
-    let emb = format!("[{}]", dims.iter().map(|f| format!("{f:.6}")).collect::<Vec<_>>().join(","));
+    let emb = format!(
+        "[{}]",
+        dims.iter()
+            .map(|f| format!("{f:.6}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
     let c1: i32 = sqlx::query(
         "INSERT INTO feature_clusters (representative_text, embedding, elo_rating, status) VALUES ('rmd_chlog_filter_feat', $1::vector, 1500, 'shipped') RETURNING id",
     )
     .bind(&emb).fetch_one(&db).await.expect("seed").get(0);
 
     let curator_user = fichub::routes::auth::User {
-        id: 0, username: "rmd_chlog_filter_user".into(), role: 5, reputation: 0,
-        email: None, level: 50, exp: 0,
+        id: 0,
+        username: "rmd_chlog_filter_user".into(),
+        role: 5,
+        reputation: 0,
+        email: None,
+        level: 50,
+        exp: 0,
     };
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let token = fichub::routes::auth::create_token(&curator_user, &secret).expect("token");
     let uid = seed_user(&db, "rmd_chlog_filter_user").await;
-    let _ = sqlx::query("UPDATE users SET role = 5 WHERE id = $1").bind(uid).execute(&db).await;
+    let _ = sqlx::query("UPDATE users SET role = 5 WHERE id = $1")
+        .bind(uid)
+        .execute(&db)
+        .await;
 
     // Create two entries: one 'new', one 'fixed'.
     let entry_new: i64 = sqlx::query_scalar(
@@ -752,23 +1065,36 @@ async fn changelog_filter_by_kind() {
 
     // Filter to 'new' only.
     let res = app
-        .oneshot(Request::builder()
-            .uri("/api/roadmap/changelog?kind=new")
-            .body(Body::empty())
-            .unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/roadmap/changelog?kind=new")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body: Value = serde_json::from_slice(&axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body["err"], 0);
     let entries = body["changelog"].as_array().expect("changelog array");
-    assert!(entries.iter().all(|e| e["kind"] == "new"), "all entries should be 'new'");
+    assert!(
+        entries.iter().all(|e| e["kind"] == "new"),
+        "all entries should be 'new'"
+    );
     assert!(entries.iter().any(|e| e["title"] == "rmd_new_entry"));
     assert!(!entries.iter().any(|e| e["title"] == "rmd_fixed_entry"));
 
     // Cleanup
     for id in [entry_new, entry_fixed] {
-        let _ = sqlx::query("DELETE FROM roadmap_changelog WHERE id = $1").bind(id).execute(&db).await;
+        let _ = sqlx::query("DELETE FROM roadmap_changelog WHERE id = $1")
+            .bind(id)
+            .execute(&db)
+            .await;
     }
     cleanup(&db, &["rmd_chlog_filter_user"], &[c1]).await;
 }

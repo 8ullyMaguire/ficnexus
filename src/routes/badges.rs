@@ -1,6 +1,6 @@
-use axum::extract::{Path, State};
 use axum::Json;
-use serde_json::{json, Value};
+use axum::extract::{Path, State};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::db::queries;
@@ -13,16 +13,19 @@ pub async fn list_badge_definitions_handler(
 ) -> Result<Json<Value>, AppError> {
     let badges = queries::get_badge_definitions(&state.db).await?;
 
-    let items: Vec<Value> = badges.into_iter().map(|b| {
-        json!({
-            "badge_type": b.badge_type,
-            "name": b.name,
-            "description": b.description,
-            "icon": b.icon,
-            "category": b.category,
-            "threshold": b.threshold,
+    let items: Vec<Value> = badges
+        .into_iter()
+        .map(|b| {
+            json!({
+                "badge_type": b.badge_type,
+                "name": b.name,
+                "description": b.description,
+                "icon": b.icon,
+                "category": b.category,
+                "threshold": b.threshold,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({ "err": 0, "badges": items })))
 }
@@ -34,13 +37,16 @@ pub async fn get_user_badges_handler(
 ) -> Result<Json<Value>, AppError> {
     let badges = queries::get_user_badges(&state.db, user_id).await?;
 
-    let items: Vec<Value> = badges.into_iter().map(|b| {
-        json!({
-            "id": b.id,
-            "badge_type": b.badge_type,
-            "earned_at": b.earned_at.to_rfc3339(),
+    let items: Vec<Value> = badges
+        .into_iter()
+        .map(|b| {
+            json!({
+                "id": b.id,
+                "badge_type": b.badge_type,
+                "earned_at": b.earned_at.to_rfc3339(),
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({ "err": 0, "badges": items })))
 }
@@ -51,14 +57,17 @@ pub async fn leaderboard_weekly_handler(
 ) -> Result<Json<Value>, AppError> {
     let entries = queries::get_weekly_leaderboard(&state.db, 50).await?;
 
-    let items: Vec<Value> = entries.into_iter().map(|(id, username, score, rank)| {
-        json!({
-            "user_id": id,
-            "username": username,
-            "score": score,
-            "rank": rank,
+    let items: Vec<Value> = entries
+        .into_iter()
+        .map(|(id, username, score, rank)| {
+            json!({
+                "user_id": id,
+                "username": username,
+                "score": score,
+                "rank": rank,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({ "err": 0, "leaderboard": items })))
 }
@@ -69,14 +78,17 @@ pub async fn leaderboard_monthly_handler(
 ) -> Result<Json<Value>, AppError> {
     let entries = queries::get_monthly_leaderboard(&state.db, 50).await?;
 
-    let items: Vec<Value> = entries.into_iter().map(|(id, username, score, rank)| {
-        json!({
-            "user_id": id,
-            "username": username,
-            "score": score,
-            "rank": rank,
+    let items: Vec<Value> = entries
+        .into_iter()
+        .map(|(id, username, score, rank)| {
+            json!({
+                "user_id": id,
+                "username": username,
+                "score": score,
+                "rank": rank,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({ "err": 0, "leaderboard": items })))
 }

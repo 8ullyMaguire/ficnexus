@@ -12,10 +12,10 @@
 //! the discovery payload — the frontend can only fetch it after showing
 //! the summary first.
 
-use axum::extract::{Query, State};
 use axum::Json;
+use axum::extract::{Query, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;
@@ -81,7 +81,11 @@ pub async fn blind_date_handler(
         LIMIT 1
         "#,
     )
-    .bind(if exclude.is_empty() { None } else { Some(&exclude) })
+    .bind(if exclude.is_empty() {
+        None
+    } else {
+        Some(&exclude)
+    })
     .fetch_optional(&state.db)
     .await?;
 
@@ -322,7 +326,8 @@ mod tests {
     #[test]
     fn hmac_matches_known_vector() {
         // RFC 4231 test case 1: key = 0x0b × 20, data = "Hi There".
-        let key = "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b";
+        let key =
+            "\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b";
         let sig = hmac_sha256_hex(key, "Hi There");
         assert_eq!(
             sig,

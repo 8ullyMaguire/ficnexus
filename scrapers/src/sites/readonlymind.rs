@@ -18,8 +18,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 
 pub struct ReadonlyMindScraper {
     adult_ok: AtomicBool,
@@ -37,7 +37,10 @@ impl ReadonlyMindScraper {
     fn story_parts(url: &str) -> Option<(String, String)> {
         let m = Regex::new(r"readonlymind\.com/@([a-zA-Z0-9_]+)/([a-zA-Z0-9_]+)").ok()?;
         let c = m.captures(url)?;
-        Some((c.get(1)?.as_str().to_string(), c.get(2)?.as_str().to_string()))
+        Some((
+            c.get(1)?.as_str().to_string(),
+            c.get(2)?.as_str().to_string(),
+        ))
     }
 }
 
@@ -60,11 +63,17 @@ impl SiteScraper for ReadonlyMindScraper {
             self.adult_ok.store(true, Ordering::Relaxed);
             Ok(())
         } else {
-            Err(ScrapeError::AuthRequired("readonlymind: is_adult not set".into()))
+            Err(ScrapeError::AuthRequired(
+                "readonlymind: is_adult not set".into(),
+            ))
         }
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         if !self.adult_ok.load(Ordering::Relaxed) {
             return Err(ScrapeError::AuthRequired("readonlymind: adult gate".into()));
         }
@@ -122,7 +131,9 @@ impl SiteScraper for ReadonlyMindScraper {
         let mut chapters = 0i32;
         {
             let doc = Html::parse_document(&html);
-            if let Ok(sel) = Selector::parse("section#chapter-list section.story-card-large div.story-card-title a[href]") {
+            if let Ok(sel) = Selector::parse(
+                "section#chapter-list section.story-card-large div.story-card-title a[href]",
+            ) {
                 chapters = doc.select(&sel).count() as i32;
             }
         }
@@ -161,8 +172,10 @@ impl SiteScraper for ReadonlyMindScraper {
 
         let links: Vec<(String, String)> = {
             let doc = Html::parse_document(&html);
-            let sel = Selector::parse("section#chapter-list section.story-card-large div.story-card-title a[href]")
-                .map_err(|e| ScrapeError::ParseError(e.to_string()))?;
+            let sel = Selector::parse(
+                "section#chapter-list section.story-card-large div.story-card-title a[href]",
+            )
+            .map_err(|e| ScrapeError::ParseError(e.to_string()))?;
             doc.select(&sel)
                 .filter_map(|a| {
                     let title = a.text().collect::<String>().trim().to_string();
@@ -234,7 +247,9 @@ mod tests {
 
     #[test]
     fn parses_story_parts() {
-        let (auth, id) = ReadonlyMindScraper::story_parts("https://readonlymind.com/@AnAuthor/A_Story_Name/").unwrap();
+        let (auth, id) =
+            ReadonlyMindScraper::story_parts("https://readonlymind.com/@AnAuthor/A_Story_Name/")
+                .unwrap();
         assert_eq!(auth, "AnAuthor");
         assert_eq!(id, "A_Story_Name");
         assert!(ReadonlyMindScraper::story_parts("https://x.com/foo").is_none());
@@ -255,7 +270,11 @@ mod tests {
         let html = r#"<html><body><section id="chapter-content"><p>Story text.</p></section></body></html>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("section#chapter-content").unwrap();
-        let s = doc.select(&sel).next().map(|el| el.inner_html()).unwrap_or_default();
+        let s = doc
+            .select(&sel)
+            .next()
+            .map(|el| el.inner_html())
+            .unwrap_or_default();
         assert!(s.contains("Story text."));
     }
 }

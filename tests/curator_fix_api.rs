@@ -10,10 +10,10 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::{get, post},
-    Router,
 };
 use serde_json::Value;
 use sqlx::Row;
@@ -21,7 +21,10 @@ use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
-    DB_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+    DB_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
 }
 
 async fn pool() -> sqlx::PgPool {
@@ -41,8 +44,8 @@ async fn build_app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -83,7 +86,9 @@ async fn build_app() -> Router {
         ),
         recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
         strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
         collection_worker: fichub::recommender::worker::CollectionWorker::new(
@@ -101,12 +106,30 @@ async fn build_app() -> Router {
     });
 
     Router::new()
-        .route("/api/curator/content/{url_id}/propose", post(fichub::routes::curator_content::propose_fix))
-        .route("/api/curator/content/proposals", get(fichub::routes::curator_content::list_proposals))
-        .route("/api/curator/content/proposals/{id}/vote", post(fichub::routes::curator_content::vote_fix))
-        .route("/api/curator/metadata/propose", post(fichub::routes::curator_content::propose_metadata_fix))
-        .route("/api/curator/metadata/proposals", get(fichub::routes::curator_content::list_metadata_proposals))
-        .route("/api/curator/metadata/proposals/{id}/vote", post(fichub::routes::curator_content::vote_metadata_fix))
+        .route(
+            "/api/curator/content/{url_id}/propose",
+            post(fichub::routes::curator_content::propose_fix),
+        )
+        .route(
+            "/api/curator/content/proposals",
+            get(fichub::routes::curator_content::list_proposals),
+        )
+        .route(
+            "/api/curator/content/proposals/{id}/vote",
+            post(fichub::routes::curator_content::vote_fix),
+        )
+        .route(
+            "/api/curator/metadata/propose",
+            post(fichub::routes::curator_content::propose_metadata_fix),
+        )
+        .route(
+            "/api/curator/metadata/proposals",
+            get(fichub::routes::curator_content::list_metadata_proposals),
+        )
+        .route(
+            "/api/curator/metadata/proposals/{id}/vote",
+            post(fichub::routes::curator_content::vote_metadata_fix),
+        )
         .with_state(state)
 }
 
@@ -167,12 +190,16 @@ async fn fix_applies_after_quorum_of_other_curators() {
                 .uri("/api/curator/content/curatorfix_aaa1/propose")
                 .header("content-type", "application/json")
                 .header("authorization", auth_header(u1, 10, "curatorfix_admin1"))
-                .body(Body::from(r#"{"body_html":"<p>correct body</p>","reason":"wrong scrape"}"#))
+                .body(Body::from(
+                    r#"{"body_html":"<p>correct body</p>","reason":"wrong scrape"}"#,
+                ))
                 .unwrap(),
         )
         .await
         .unwrap();
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&body).unwrap();
     let proposal_id = v["proposal_id"].as_i64().expect("proposal_id");
     assert_eq!(v["status"], "pending");
@@ -191,8 +218,14 @@ async fn fix_applies_after_quorum_of_other_curators() {
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "self-vote should 400");
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::BAD_REQUEST,
+        "self-vote should 400"
+    );
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&body).unwrap();
     assert!(
         v["msg"].as_str().unwrap_or("").contains("own proposal"),
@@ -213,7 +246,9 @@ async fn fix_applies_after_quorum_of_other_curators() {
         )
         .await
         .unwrap();
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["status"], "pending", "one vote not quorum");
 
@@ -231,7 +266,9 @@ async fn fix_applies_after_quorum_of_other_curators() {
         )
         .await
         .unwrap();
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["status"], "applied", "quorum + net >= 1 → applied");
     assert_eq!(v["applied"], true);
@@ -267,12 +304,16 @@ async fn downvotes_reject_and_list_shows_status() {
                 .uri("/api/curator/content/curatorfix_bbb1/propose")
                 .header("content-type", "application/json")
                 .header("authorization", auth_header(u1, 10, "curatorfix_r1"))
-                .body(Body::from(r#"{"body_html":"<p>bad body</p>","reason":"test"}"#))
+                .body(Body::from(
+                    r#"{"body_html":"<p>bad body</p>","reason":"test"}"#,
+                ))
                 .unwrap(),
         )
         .await
         .unwrap();
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&body).unwrap();
     let proposal_id = v["proposal_id"].as_i64().unwrap();
 
@@ -292,7 +333,9 @@ async fn downvotes_reject_and_list_shows_status() {
             )
             .await
             .unwrap();
-        let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+        let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
         let v: Value = serde_json::from_slice(&body).unwrap();
         let status = v["status"].as_str().unwrap_or("pending").to_string();
         if status == "rejected" {
@@ -314,7 +357,9 @@ async fn downvotes_reject_and_list_shows_status() {
         )
         .await
         .unwrap();
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&body).unwrap();
     let proposals = v["proposals"].as_array().unwrap();
     assert!(
@@ -334,7 +379,9 @@ async fn metadata_proposal_applies_after_quorum() {
 
     // Cleanup metadata proposals referencing a fixture work.
     let _ = sqlx::query("DELETE FROM curator_metadata_votes WHERE proposal_id IN (SELECT id FROM curator_metadata_proposals WHERE reason LIKE 'meta_test%')").execute(&db).await;
-    let _ = sqlx::query("DELETE FROM curator_metadata_proposals WHERE reason LIKE 'meta_test%'").execute(&db).await;
+    let _ = sqlx::query("DELETE FROM curator_metadata_proposals WHERE reason LIKE 'meta_test%'")
+        .execute(&db)
+        .await;
 
     let u1 = seed_user(&db, "meta_test_admin1", 10).await;
     let u2 = seed_user(&db, "meta_test_admin2", 10).await;
@@ -365,7 +412,9 @@ async fn metadata_proposal_applies_after_quorum() {
         )
         .await
         .unwrap();
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&body).unwrap();
     let proposal_id = v["proposal_id"].as_i64().expect("proposal_id");
 
@@ -375,7 +424,9 @@ async fn metadata_proposal_applies_after_quorum() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/api/curator/metadata/proposals/{proposal_id}/vote"))
+                .uri(format!(
+                    "/api/curator/metadata/proposals/{proposal_id}/vote"
+                ))
                 .header("content-type", "application/json")
                 .header("authorization", auth_header(u2, 10, "meta_test_admin2"))
                 .body(Body::from(r#"{"vote":1}"#))
@@ -383,7 +434,9 @@ async fn metadata_proposal_applies_after_quorum() {
         )
         .await
         .unwrap();
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["status"], "pending", "one vote is not quorum yet: {v}");
 
@@ -393,7 +446,9 @@ async fn metadata_proposal_applies_after_quorum() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri(format!("/api/curator/metadata/proposals/{proposal_id}/vote"))
+                .uri(format!(
+                    "/api/curator/metadata/proposals/{proposal_id}/vote"
+                ))
                 .header("content-type", "application/json")
                 .header("authorization", auth_header(u3, 10, "meta_test_admin3"))
                 .body(Body::from(r#"{"vote":1}"#))
@@ -401,7 +456,9 @@ async fn metadata_proposal_applies_after_quorum() {
         )
         .await
         .unwrap();
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["status"], "applied", "quorum should apply: {v}");
     assert_eq!(v["applied"], true);
@@ -413,10 +470,22 @@ async fn metadata_proposal_applies_after_quorum() {
         .await
         .expect("fetch work")
         .get(0);
-    assert_eq!(title, "New Correct Title", "work canonical title updated after approval");
+    assert_eq!(
+        title, "New Correct Title",
+        "work canonical title updated after approval"
+    );
 
     // Cleanup.
-    let _ = sqlx::query("DELETE FROM curator_metadata_votes WHERE proposal_id = $1").bind(proposal_id).execute(&db).await;
-    let _ = sqlx::query("DELETE FROM curator_metadata_proposals WHERE id = $1").bind(proposal_id).execute(&db).await;
-    let _ = sqlx::query("DELETE FROM works WHERE id = $1").bind(work_id).execute(&db).await;
+    let _ = sqlx::query("DELETE FROM curator_metadata_votes WHERE proposal_id = $1")
+        .bind(proposal_id)
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM curator_metadata_proposals WHERE id = $1")
+        .bind(proposal_id)
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM works WHERE id = $1")
+        .bind(work_id)
+        .execute(&db)
+        .await;
 }

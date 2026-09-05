@@ -7,11 +7,11 @@
 //! work-deletions endpoints below.
 
 use axum::{
-    extract::{Path, State},
     Json,
+    extract::{Path, State},
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 use std::sync::Arc;
 
@@ -44,12 +44,11 @@ pub async fn post_delete_request(
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
-    let row = sqlx::query(
-        "SELECT id, uploader_id FROM works WHERE url_id = $1 AND is_visible = TRUE",
-    )
-    .bind(&url_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let row =
+        sqlx::query("SELECT id, uploader_id FROM works WHERE url_id = $1 AND is_visible = TRUE")
+            .bind(&url_id)
+            .fetch_optional(&state.db)
+            .await?;
     let Some(row) = row else {
         return Err(AppError::NotFound("Work not found".to_string().into()));
     };
@@ -180,13 +179,17 @@ pub async fn resolve_delete_request(
         .await
         .map_err(|e| AppError::BadRequest(format!("failed to load deletion request: {e}")))?;
     let Some(row) = row else {
-        return Err(AppError::NotFound(format!("deletion request {id} not found")));
+        return Err(AppError::NotFound(format!(
+            "deletion request {id} not found"
+        )));
     };
     let url_id: String = row.get("url_id");
     let status: String = row.get("status");
 
     if status != "pending" {
-        return Err(AppError::BadRequest(format!("deletion request already {status}")));
+        return Err(AppError::BadRequest(format!(
+            "deletion request already {status}"
+        )));
     }
 
     match body.action.as_str() {

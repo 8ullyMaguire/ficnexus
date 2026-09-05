@@ -16,10 +16,10 @@
 
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
@@ -54,9 +54,13 @@ pub async fn auto_tag_fic(
         }
         Err(auto_tagger::AutoTaggerError::Embed(err)) => {
             tracing::warn!("auto-tag: embedding failed for {url_id}: {err}");
-            return Err(AppError::Internal("embedding failed (is Ollama up?)".into()));
+            return Err(AppError::Internal(
+                "embedding failed (is Ollama up?)".into(),
+            ));
         }
-        Err(auto_tagger::AutoTaggerError::Db(err)) => return Err(AppError::Database(err.to_string())),
+        Err(auto_tagger::AutoTaggerError::Db(err)) => {
+            return Err(AppError::Database(err.to_string()));
+        }
     };
 
     Ok(Json(json!({
@@ -86,10 +90,16 @@ pub async fn auto_tag_backfill(
         Ok(n) => n,
         Err(auto_tagger::AutoTaggerError::Embed(err)) => {
             tracing::warn!("auto-tag backfill: embedding failed: {err}");
-            return Err(AppError::Internal("embedding failed (is Ollama up?)".into()));
+            return Err(AppError::Internal(
+                "embedding failed (is Ollama up?)".into(),
+            ));
         }
-        Err(auto_tagger::AutoTaggerError::Db(err)) => return Err(AppError::Database(err.to_string())),
-        Err(auto_tagger::AutoTaggerError::NoContent(_)) => unreachable!("backfill has no NoContent path"),
+        Err(auto_tagger::AutoTaggerError::Db(err)) => {
+            return Err(AppError::Database(err.to_string()));
+        }
+        Err(auto_tagger::AutoTaggerError::NoContent(_)) => {
+            unreachable!("backfill has no NoContent path")
+        }
     };
 
     Ok(Json(json!({
@@ -108,7 +118,18 @@ pub async fn auto_tag_queue(
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
-    let rows = sqlx::query_as::<_, (String, String, i32, String, i16, i16, Option<chrono::DateTime<chrono::Utc>>)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            i32,
+            String,
+            i16,
+            i16,
+            Option<chrono::DateTime<chrono::Utc>>,
+        ),
+    >(
         r#"
         SELECT ft.url_id, fi.title, ft.tag_id, t.name, ft.score, t.tag_type_id, ft.created_at
         FROM fic_tags ft
@@ -176,7 +197,9 @@ pub async fn auto_tag_approve(
         ));
     }
 
-    Ok(Json(json!({ "err": 0, "msg": "suggestion approved", "url_id": url_id, "tag_id": tag_id })))
+    Ok(Json(
+        json!({ "err": 0, "msg": "suggestion approved", "url_id": url_id, "tag_id": tag_id }),
+    ))
 }
 
 /// POST /api/admin/auto-tag/dismiss/{url_id}/{tag_id} — delete a machine
@@ -208,5 +231,7 @@ pub async fn auto_tag_dismiss(
         ));
     }
 
-    Ok(Json(json!({ "err": 0, "msg": "suggestion dismissed", "url_id": url_id, "tag_id": tag_id })))
+    Ok(Json(
+        json!({ "err": 0, "msg": "suggestion dismissed", "url_id": url_id, "tag_id": tag_id }),
+    ))
 }

@@ -15,8 +15,8 @@ use async_trait::async_trait;
 use chrono::TimeZone;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct FireflyFansScraper;
 
@@ -26,7 +26,11 @@ impl SiteScraper for FireflyFansScraper {
         url.contains("fireflyfans.net")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
 
         if html.contains("Something bad happened, but hell if I know what it is") {
@@ -135,7 +139,10 @@ impl SiteScraper for FireflyFansScraper {
             author_url,
             author_local_id,
             content_hash: None,
-            extra_meta: Some(format!("category={};series={};genre={};", category, series, genre)),
+            extra_meta: Some(format!(
+                "category={};series={};genre={};",
+                category, series, genre
+            )),
             raw_extended_meta: None,
         })
     }

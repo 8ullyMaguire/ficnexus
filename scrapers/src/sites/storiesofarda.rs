@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct StoriesOfArdaScraper;
 
@@ -29,8 +29,13 @@ impl SiteScraper for StoriesOfArdaScraper {
         url.contains("storiesofarda.com/")
             && (url.contains("chapterlistview.asp?SID=") || url.contains("chapterAllview.asp?SID="))
     }
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("storiesofarda: bad url".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("storiesofarda: bad url".into()))?;
         let html = http::fetch(client, url).await?;
         let (title, author, author_url, author_local_id, desc) = {
             let doc = Html::parse_document(&html);
@@ -52,7 +57,12 @@ impl SiteScraper for StoriesOfArdaScraper {
                         }
                     }
                     // Title = th text without the em (author link already extracted).
-                    title = th.text().collect::<String>().replace(&author, "").trim().to_string();
+                    title = th
+                        .text()
+                        .collect::<String>()
+                        .replace(&author, "")
+                        .trim()
+                        .to_string();
                 }
             }
             if let Ok(td_sel) = Selector::parse("td[colspan='3']") {
@@ -77,7 +87,12 @@ impl SiteScraper for StoriesOfArdaScraper {
             if let Ok(a_sel) = Selector::parse("a[href]") {
                 chapters = doc
                     .select(&a_sel)
-                    .filter(|a| a.value().attr("href").map(|h| chap_re.is_match(h)).unwrap_or(false))
+                    .filter(|a| {
+                        a.value()
+                            .attr("href")
+                            .map(|h| chap_re.is_match(h))
+                            .unwrap_or(false)
+                    })
                     .count() as i32;
             }
         }
@@ -95,7 +110,12 @@ impl SiteScraper for StoriesOfArdaScraper {
                 if let Ok(td_sel) = Selector::parse("td[colspan='3']") {
                     for td in adoc.select(&td_sel) {
                         let has_link = td
-                            .select(&Selector::parse(&format!("a[href*='chapterlistview.asp?SID={story_id}']")).unwrap())
+                            .select(
+                                &Selector::parse(&format!(
+                                    "a[href*='chapterlistview.asp?SID={story_id}']"
+                                ))
+                                .unwrap(),
+                            )
                             .next()
                             .is_some();
                         if has_link {
@@ -107,7 +127,15 @@ impl SiteScraper for StoriesOfArdaScraper {
                         }
                         let text = td.text().collect::<String>();
                         if text.contains("Rating:") {
-                            rating = text.split("Rating:").nth(1).unwrap_or("").split(":").nth(1).unwrap_or("").trim().to_string();
+                            rating = text
+                                .split("Rating:")
+                                .nth(1)
+                                .unwrap_or("")
+                                .split(":")
+                                .nth(1)
+                                .unwrap_or("")
+                                .trim()
+                                .to_string();
                         }
                         if text.contains("Status:") {
                             if text.contains("Completed") {
@@ -149,14 +177,16 @@ impl SiteScraper for StoriesOfArdaScraper {
         client: &reqwest::Client,
         meta: &FicMetadata,
     ) -> Result<Vec<Chapter>, ScrapeError> {
-        let story_id = Self::story_id(&meta.source).ok_or_else(|| ScrapeError::ParseError("storiesofarda: bad url".into()))?;
+        let story_id = Self::story_id(&meta.source)
+            .ok_or_else(|| ScrapeError::ParseError("storiesofarda: bad url".into()))?;
         let html = http::fetch(client, &meta.source).await?;
 
         let links: Vec<String> = {
             let doc = Html::parse_document(&html);
-            let sel = Selector::parse("a[href]")
-                .map_err(|e| ScrapeError::ParseError(e.to_string()))?;
-            let chap_re = Regex::new(&format!(r"chapterview\.asp\?sid={story_id}&cid=\d+$")).unwrap();
+            let sel =
+                Selector::parse("a[href]").map_err(|e| ScrapeError::ParseError(e.to_string()))?;
+            let chap_re =
+                Regex::new(&format!(r"chapterview\.asp\?sid={story_id}&cid=\d+$")).unwrap();
             doc.select(&sel)
                 .filter_map(|a| {
                     let href = a.value().attr("href")?;
@@ -222,7 +252,12 @@ mod tests {
 
     #[test]
     fn parses_story_id() {
-        assert_eq!(StoriesOfArdaScraper::story_id("http://www.storiesofarda.com/chapterlistview.asp?SID=1234"), Some("1234".to_string()));
+        assert_eq!(
+            StoriesOfArdaScraper::story_id(
+                "http://www.storiesofarda.com/chapterlistview.asp?SID=1234"
+            ),
+            Some("1234".to_string())
+        );
         assert_eq!(StoriesOfArdaScraper::story_id("https://x.com/foo"), None);
     }
 
@@ -231,13 +266,18 @@ mod tests {
         let html = r#"<html><body><table width="90%" align="center"><tr><td>Story text.</td></tr></table></body></html>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("table[width='90%'] td").unwrap();
-        let s = doc.select(&sel).next().map(|el| el.inner_html()).unwrap_or_default();
+        let s = doc
+            .select(&sel)
+            .next()
+            .map(|el| el.inner_html())
+            .unwrap_or_default();
         assert!(s.contains("Story text."));
     }
 
     #[test]
     fn detects_adult_gate() {
-        let html = "Please indicate that you are an adult by selecting the appropriate choice below";
+        let html =
+            "Please indicate that you are an adult by selecting the appropriate choice below";
         assert!(html.contains("Please indicate that you are an adult"));
     }
 }

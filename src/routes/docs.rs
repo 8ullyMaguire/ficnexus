@@ -10,10 +10,10 @@
 //! Same pattern as roadmap consensus (embed + pgvector <=>), so no new
 //! infrastructure.
 
-use axum::extract::{Query, State};
 use axum::Json;
+use axum::extract::{Query, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;
@@ -50,29 +50,33 @@ pub async fn ask_docs(
         .map_err(|e| tracing::warn!("ask-docs embed failed: {e}"))
         .ok();
 
-    let rows: Vec<(String, String, Option<String>, String, String, String, f64)> = if let Some(emb) = embedding {
-        let emb_sql = format!(
-            "[{}]",
-            emb.iter().map(|f| format!("{f:.6}")).collect::<Vec<_>>().join(",")
-        );
-        sqlx::query_as(
-            r#"SELECT slug, page, anchor, title, feature,
+    let rows: Vec<(String, String, Option<String>, String, String, String, f64)> =
+        if let Some(emb) = embedding {
+            let emb_sql = format!(
+                "[{}]",
+                emb.iter()
+                    .map(|f| format!("{f:.6}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            sqlx::query_as(
+                r#"SELECT slug, page, anchor, title, feature,
                       LEFT(body, 400) AS snippet,
                       (embedding <=> $1::vector) AS dist
                FROM doc_sections
                WHERE embedding IS NOT NULL
                ORDER BY embedding <=> $1::vector
                LIMIT $2"#,
-        )
-        .bind(emb_sql)
-        .bind(n as i64)
-        .fetch_all(&state.db)
-        .await?
-    } else {
-        // Fallback: keyword scan on title/body/keywords.
-        let pat = format!("%{}%", q.to_lowercase());
-        sqlx::query_as(
-            r#"SELECT slug, page, anchor, title, feature,
+            )
+            .bind(emb_sql)
+            .bind(n as i64)
+            .fetch_all(&state.db)
+            .await?
+        } else {
+            // Fallback: keyword scan on title/body/keywords.
+            let pat = format!("%{}%", q.to_lowercase());
+            sqlx::query_as(
+                r#"SELECT slug, page, anchor, title, feature,
                       LEFT(body, 400) AS snippet,
                       0.0 AS dist
                FROM doc_sections
@@ -81,12 +85,12 @@ pub async fn ask_docs(
                )
                ORDER BY id
                LIMIT $2"#,
-        )
-        .bind(pat)
-        .bind(n as i64)
-        .fetch_all(&state.db)
-        .await?
-    };
+            )
+            .bind(pat)
+            .bind(n as i64)
+            .fetch_all(&state.db)
+            .await?
+        };
 
     let hits: Vec<Value> = rows
         .into_iter()
@@ -136,7 +140,11 @@ pub async fn ingest_docs(
         let feature = sec["feature"].as_str().unwrap_or("home");
         let keywords: Vec<String> = sec["keywords"]
             .as_array()
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         if slug.is_empty() || page.is_empty() {
             total -= 1;
@@ -154,7 +162,10 @@ pub async fn ingest_docs(
         let res = if let Some(emb) = embedding {
             let emb_sql = format!(
                 "[{}]",
-                emb.iter().map(|f| format!("{f:.6}")).collect::<Vec<_>>().join(",")
+                emb.iter()
+                    .map(|f| format!("{f:.6}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
             );
             sqlx::query(
                 r#"INSERT INTO doc_sections (slug, page, anchor, title, body, keywords, feature, embedding)

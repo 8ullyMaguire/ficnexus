@@ -13,8 +13,8 @@ use chrono::TimeZone;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct ChiReadsScraper;
 
@@ -24,7 +24,11 @@ impl SiteScraper for ChiReadsScraper {
         url.contains("chireads.com/category/translatedtales/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
         let doc = Html::parse_document(&html);
 
@@ -89,11 +93,16 @@ impl SiteScraper for ChiReadsScraper {
         if let Ok(nc_sel) = Selector::parse(".newestchapitre > div > a") {
             if let Some(a) = doc.select(&nc_sel).next() {
                 if let Some(h) = a.value().attr("href") {
-                    if let Some(m) = Regex::new(r"/(\d{4})/(\d{2})/(\d{2})/").unwrap().captures(h) {
+                    if let Some(m) = Regex::new(r"/(\d{4})/(\d{2})/(\d{2})/")
+                        .unwrap()
+                        .captures(h)
+                    {
                         let y: i32 = m.get(1).unwrap().as_str().parse().unwrap_or(0);
                         let mo: u32 = m.get(2).unwrap().as_str().parse().unwrap_or(0);
                         let d: u32 = m.get(3).unwrap().as_str().parse().unwrap_or(0);
-                        if let Some(dt) = chrono::NaiveDate::from_ymd_opt(y, mo, d).and_then(|x| x.and_hms_opt(0, 0, 0)) {
+                        if let Some(dt) = chrono::NaiveDate::from_ymd_opt(y, mo, d)
+                            .and_then(|x| x.and_hms_opt(0, 0, 0))
+                        {
                             updated = chrono::Utc.from_utc_datetime(&dt).timestamp_millis();
                         }
                     }
@@ -221,7 +230,13 @@ mod tests {
     #[test]
     fn strips_author_prefix() {
         let raw = "Auteur : Someone".to_string();
-        let author = raw.replace("Auteur : ", "").split("Babelcheck").next().unwrap_or("").trim().to_string();
+        let author = raw
+            .replace("Auteur : ", "")
+            .split("Babelcheck")
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
         assert_eq!(author, "Someone");
     }
 

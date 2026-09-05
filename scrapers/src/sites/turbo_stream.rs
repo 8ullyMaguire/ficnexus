@@ -24,7 +24,11 @@ pub fn decode(payload: &str) -> Result<Value, String> {
             -1 | -5 | -7 => return Ok(Value::Null),
             -2 => return Ok(Value::Null), // NaN → null
             -3 => return Ok(Value::Null), // -inf → null
-            -4 => return Ok(Value::Number(serde_json::Number::from_f64(-0.0).unwrap_or(0.into()))),
+            -4 => {
+                return Ok(Value::Number(
+                    serde_json::Number::from_f64(-0.0).unwrap_or(0.into()),
+                ));
+            }
             -6 => return Ok(Value::Null), // +inf → null
             _ => {}
         }
@@ -64,9 +68,9 @@ pub fn decode(payload: &str) -> Result<Value, String> {
                 } else {
                     let mut out = Vec::with_capacity(items.len());
                     for item in items {
-                        let slot = item
-                            .as_i64()
-                            .ok_or_else(|| format!("turbo-stream: array item not a slot: {item}"))?;
+                        let slot = item.as_i64().ok_or_else(|| {
+                            format!("turbo-stream: array item not a slot: {item}")
+                        })?;
                         out.push(resolve(table, done, slot)?);
                     }
                     Ok(Value::Array(out))
@@ -103,13 +107,11 @@ pub fn decode(payload: &str) -> Result<Value, String> {
         args: &[Value],
     ) -> Result<Value, String> {
         let slot_of = |v: &Value| {
-            v.as_i64().ok_or_else(|| format!("turbo-stream: bad {tag} arg {v}"))
+            v.as_i64()
+                .ok_or_else(|| format!("turbo-stream: bad {tag} arg {v}"))
         };
         match tag {
-            "D" | "U" | "Y" => Ok(args
-                .first()
-                .cloned()
-                .unwrap_or(Value::Null)),
+            "D" | "U" | "Y" => Ok(args.first().cloned().unwrap_or(Value::Null)),
             "B" => Ok(args
                 .first()
                 .and_then(|a| a.as_i64())

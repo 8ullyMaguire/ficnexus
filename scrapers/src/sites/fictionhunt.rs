@@ -19,8 +19,8 @@ use chrono::TimeZone;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 use super::{http, login};
+use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 
 pub struct FictionHuntScraper;
 
@@ -64,8 +64,13 @@ impl SiteScraper for FictionHuntScraper {
         Ok(())
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("fictionhunt: bad url".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("fictionhunt: bad url".into()))?;
         let html = http::fetch(client, url).await?;
         let doc = Html::parse_document(&html);
 
@@ -172,13 +177,25 @@ impl SiteScraper for FictionHuntScraper {
         // Fandoms
         if let Ok(f_sel) = Selector::parse("div.Story__type a[href*='fandoms=']") {
             for a in doc.select(&f_sel) {
-                fandoms.push(a.text().collect::<String>().replace(" Fanfiction", "").trim().to_string());
+                fandoms.push(
+                    a.text()
+                        .collect::<String>()
+                        .replace(" Fanfiction", "")
+                        .trim()
+                        .to_string(),
+                );
             }
         }
         // Ships
         if let Ok(s_sel) = Selector::parse("a[href*='pairings=']") {
             for a in doc.select(&s_sel) {
-                ships.push(a.text().collect::<String>().replace('+', "/").trim().to_string());
+                ships.push(
+                    a.text()
+                        .collect::<String>()
+                        .replace('+', "/")
+                        .trim()
+                        .to_string(),
+                );
             }
         }
 
@@ -310,10 +327,15 @@ mod tests {
     #[test]
     fn parses_story_id() {
         assert_eq!(
-            FictionHuntScraper::story_id("https://fictionhunt.com/stories/7edm248/the-last-of-his-kind/chapters/1"),
+            FictionHuntScraper::story_id(
+                "https://fictionhunt.com/stories/7edm248/the-last-of-his-kind/chapters/1"
+            ),
             Some("7edm248".to_string())
         );
-        assert_eq!(FictionHuntScraper::story_id("https://fictionhunt.com/read/12411643/1"), Some("12411643".to_string()));
+        assert_eq!(
+            FictionHuntScraper::story_id("https://fictionhunt.com/read/12411643/1"),
+            Some("12411643".to_string())
+        );
         assert_eq!(FictionHuntScraper::story_id("https://x.com/foo"), None);
     }
 
@@ -326,10 +348,15 @@ mod tests {
 
     #[test]
     fn extracts_chapter_body() {
-        let html = r#"<html><body><div class="StoryChapter__text"><p>Story text.</p></div></body></html>"#;
+        let html =
+            r#"<html><body><div class="StoryChapter__text"><p>Story text.</p></div></body></html>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("div.StoryChapter__text").unwrap();
-        let s = doc.select(&sel).next().map(|el| el.inner_html()).unwrap_or_default();
+        let s = doc
+            .select(&sel)
+            .next()
+            .map(|el| el.inner_html())
+            .unwrap_or_default();
         assert!(s.contains("Story text."));
     }
 }

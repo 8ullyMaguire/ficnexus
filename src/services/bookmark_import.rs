@@ -64,11 +64,7 @@ impl BookmarkImportWorker {
     /// Push a job onto a specific queue key. Exposed so tests can verify the
     /// enqueue primitive without racing the live production worker on the
     /// shared queue.
-    pub async fn enqueue_to(
-        &self,
-        key: &str,
-        job: &ImportJob,
-    ) -> Result<(), redis::RedisError> {
+    pub async fn enqueue_to(&self, key: &str, job: &ImportJob) -> Result<(), redis::RedisError> {
         let json = serde_json::to_string(job).expect("ImportJob serialisation should not fail");
         let mut conn = self.redis.lock().await;
         redis::cmd("LPUSH")
@@ -104,7 +100,10 @@ impl BookmarkImportWorker {
                         Ok(res) => {
                             info!(
                                 "Bookmark import for user {} done: {} imported, {} duplicates, {} errors",
-                                job.user_id, res.imported, res.duplicates, res.errors.len()
+                                job.user_id,
+                                res.imported,
+                                res.duplicates,
+                                res.errors.len()
                             );
                             notify_import_done(&self.db, &job, &res).await;
                         }

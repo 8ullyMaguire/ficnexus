@@ -44,13 +44,12 @@ pub async fn record_vote(
     .await?;
 
     // Read back the updated score
-    let row: (i16,) = sqlx::query_as(
-        "SELECT score FROM fic_tags WHERE url_id = $1 AND tag_id = $2",
-    )
-    .bind(url_id)
-    .bind(tag_id)
-    .fetch_one(pool)
-    .await?;
+    let row: (i16,) =
+        sqlx::query_as("SELECT score FROM fic_tags WHERE url_id = $1 AND tag_id = $2")
+            .bind(url_id)
+            .bind(tag_id)
+            .fetch_one(pool)
+            .await?;
 
     let new_score = row.0;
     let hidden = is_hidden(new_score, hidden_threshold);
@@ -100,8 +99,8 @@ mod tests {
         assert_eq!(result.len(), 4);
         assert!(!result[0].1); // score=5 > -3 => visible
         assert!(!result[1].1); // score=0 > -3 => visible
-        assert!(result[2].1);  // score=-3 == -3 => hidden
-        assert!(result[3].1);  // score=-10 < -3 => hidden
+        assert!(result[2].1); // score=-3 == -3 => hidden
+        assert!(result[3].1); // score=-10 < -3 => hidden
     }
 
     #[test]

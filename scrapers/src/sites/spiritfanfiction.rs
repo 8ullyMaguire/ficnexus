@@ -15,8 +15,8 @@
 use async_trait::async_trait;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct SpiritFanfictionScraper;
 
@@ -26,7 +26,11 @@ impl SiteScraper for SpiritFanfictionScraper {
         url.contains("spiritfanfiction.com/historia/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
         let doc = Html::parse_document(&html);
 
@@ -84,7 +88,12 @@ impl SiteScraper for SpiritFanfictionScraper {
             for el in doc.select(&info_sel) {
                 let text = el.text().collect::<String>();
                 if text.contains("Concluído") {
-                    status = if text.contains("Sim") { "complete" } else { "ongoing" }.to_string();
+                    status = if text.contains("Sim") {
+                        "complete"
+                    } else {
+                        "ongoing"
+                    }
+                    .to_string();
                 }
                 if text.contains("Palavras") {
                     words = text
@@ -203,7 +212,10 @@ async fn fetch_chapter_text(client: &reqwest::Client, url: &str) -> String {
     // Author notes (Notas do Autor / Notas Finais) in texto-capitulo-notas.
     if let Ok(note_sel) = Selector::parse("div.texto.texto-capitulo-notas") {
         for el in doc.select(&note_sel) {
-            out.push_str(&format!("<div class=\"fff_chapter_notes\">{}</div>", el.inner_html()));
+            out.push_str(&format!(
+                "<div class=\"fff_chapter_notes\">{}</div>",
+                el.inner_html()
+            ));
         }
     }
     if let Ok(sel) = Selector::parse("div.texto-capitulo") {

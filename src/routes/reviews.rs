@@ -19,10 +19,10 @@
 //! returns `constructive` to the client) but the public list only ever shows
 //! non-deleted rows, and the heuristic flags are applied on insert.
 
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;
@@ -48,23 +48,33 @@ pub async fn upsert_review_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ReviewBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     if !(1..=5).contains(&body.rating) {
-        return Err(AppError::BadRequest("Review rating must be 1..=5 stars".to_string()));
+        return Err(AppError::BadRequest(
+            "Review rating must be 1..=5 stars".to_string(),
+        ));
     }
 
     let title = body.title.as_deref().unwrap_or("").trim().to_string();
     if title.len() > 200 {
-        return Err(AppError::BadRequest("Review title too long (max 200 chars)".to_string()));
+        return Err(AppError::BadRequest(
+            "Review title too long (max 200 chars)".to_string(),
+        ));
     }
 
     let text = body.body.as_deref().unwrap_or("").trim().to_string();
     if text.is_empty() {
-        return Err(AppError::BadRequest("Review body cannot be empty".to_string()));
+        return Err(AppError::BadRequest(
+            "Review body cannot be empty".to_string(),
+        ));
     }
     if text.len() > 8000 {
-        return Err(AppError::BadRequest("Review too long (max 8000 chars)".to_string()));
+        return Err(AppError::BadRequest(
+            "Review too long (max 8000 chars)".to_string(),
+        ));
     }
 
     // Resolve url_id like the other work-scoped social endpoints.
@@ -122,9 +132,17 @@ pub async fn list_reviews_handler(
     State(state): State<Arc<AppState>>,
     Path(work_id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    let rows: Vec<(i64, String, String, i16, Option<String>, String, String, bool)> =
-        sqlx::query_as(
-            r#"SELECT r.id, u.username, r.body, r.rating, r.title,
+    let rows: Vec<(
+        i64,
+        String,
+        String,
+        i16,
+        Option<String>,
+        String,
+        String,
+        bool,
+    )> = sqlx::query_as(
+        r#"SELECT r.id, u.username, r.body, r.rating, r.title,
                       r.created_at::text, COALESCE(r.updated_at::text, r.created_at::text),
                       r.constructive
                FROM reviews r
@@ -133,26 +151,28 @@ pub async fn list_reviews_handler(
                  AND r.deleted_at IS NULL
                  AND r.constructive = TRUE
                ORDER BY r.created_at DESC"#,
-        )
-        .bind(work_id)
-        .fetch_all(&state.db)
-        .await?;
+    )
+    .bind(work_id)
+    .fetch_all(&state.db)
+    .await?;
 
     let reviews: Vec<Value> = rows
         .into_iter()
-        .map(|(id, username, body, rating, title, created_at, updated_at, constructive)| {
-            json!({
-                "id": id,
-                "work_id": work_id,
-                "username": username,
-                "rating": rating,
-                "title": title,
-                "body": body,
-                "constructive": constructive,
-                "created_at": created_at,
-                "updated_at": updated_at,
-            })
-        })
+        .map(
+            |(id, username, body, rating, title, created_at, updated_at, constructive)| {
+                json!({
+                    "id": id,
+                    "work_id": work_id,
+                    "username": username,
+                    "rating": rating,
+                    "title": title,
+                    "body": body,
+                    "constructive": constructive,
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                })
+            },
+        )
         .collect();
 
     let (total,): (i64,) = sqlx::query_as(
@@ -177,7 +197,9 @@ pub async fn delete_review_handler(
     State(state): State<Arc<AppState>>,
     Path(review_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let row: Option<(Option<i32>, i16)> = sqlx::query_as(
         "SELECT r.user_id, u.role FROM reviews r
@@ -195,12 +217,11 @@ pub async fn delete_review_handler(
         _ => return Err(AppError::Forbidden("Not authorized".to_string())),
     }
 
-    let updated = sqlx::query(
-        "UPDATE reviews SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(review_id)
-    .execute(&state.db)
-    .await?;
+    let updated =
+        sqlx::query("UPDATE reviews SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
+            .bind(review_id)
+            .execute(&state.db)
+            .await?;
 
     if updated.rows_affected() == 0 {
         return Err(AppError::NotFound("Review not found".into()));
@@ -215,12 +236,16 @@ mod tests {
 
     #[test]
     fn constructive_heuristic_positive() {
-        assert!(constructive_score("Loved the pacing, great character work!"));
+        assert!(constructive_score(
+            "Loved the pacing, great character work!"
+        ));
     }
 
     #[test]
     fn constructive_heuristic_negative() {
-        assert!(!constructive_score("This fic is terrible, the worst thing I ever read"));
+        assert!(!constructive_score(
+            "This fic is terrible, the worst thing I ever read"
+        ));
         assert!(is_negative_comment("garbage"));
     }
 

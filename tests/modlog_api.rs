@@ -9,10 +9,10 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
 use serde_json::Value;
 use sqlx::Row;
@@ -20,7 +20,10 @@ use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
-    DB_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+    DB_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
 }
 
 async fn pool() -> sqlx::PgPool {
@@ -36,20 +39,32 @@ async fn build_app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
     let redis_client = redis::Client::open(config.redis_url.clone()).expect("redis url");
-    let redis = redis_client.get_multiplexed_async_connection().await.expect("redis conn");
-    let http_client = reqwest::Client::builder().user_agent("fichub-test/0.1.0").build().unwrap();
+    let redis = redis_client
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis conn");
+    let http_client = reqwest::Client::builder()
+        .user_agent("fichub-test/0.1.0")
+        .build()
+        .unwrap();
     let scraper_registry = Arc::new(fichub::scrape::registry::ScraperRegistry::new());
     let state = Arc::new(AppState {
         config,
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         rate_limiter: Box::new(
             fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-                redis_client.get_multiplexed_async_connection().await.expect("redis"),
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
                 false,
             )
             .await
@@ -57,7 +72,9 @@ async fn build_app() -> Router {
         ),
         recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
         strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
         collection_worker: fichub::recommender::worker::CollectionWorker::new(
@@ -93,7 +110,10 @@ fn auth_header(user_id: i32, role: i16, username: &str) -> String {
         level: 0,
         exp: 0,
     };
-    format!("Bearer {}", fichub::routes::auth::create_token(&user, &secret).expect("token"))
+    format!(
+        "Bearer {}",
+        fichub::routes::auth::create_token(&user, &secret).expect("token")
+    )
 }
 
 async fn seed_user(pool: &sqlx::PgPool, username: &str, role: i16) -> i32 {
@@ -120,8 +140,26 @@ async fn any_logged_in_user_can_read_modlog() {
     cleanup(&db).await;
 
     // Record two entries as a mod + admin.
-    fichub::modlog::record_json(&db, None, Some("modtest_curator".into()), "ban_user", "user", "1", vec![]).await;
-    fichub::modlog::record_json(&db, None, Some("modtest_admin".into()), "merge_tags", "tag", "2", vec![("target_tag_id", Value::from(3))]).await;
+    fichub::modlog::record_json(
+        &db,
+        None,
+        Some("modtest_curator".into()),
+        "ban_user",
+        "user",
+        "1",
+        vec![],
+    )
+    .await;
+    fichub::modlog::record_json(
+        &db,
+        None,
+        Some("modtest_admin".into()),
+        "merge_tags",
+        "tag",
+        "2",
+        vec![("target_tag_id", Value::from(3))],
+    )
+    .await;
 
     let app = build_app().await;
     // A plain regular user (role 0) can read it.
@@ -138,12 +176,24 @@ async fn any_logged_in_user_can_read_modlog() {
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK, "regular user can read modlog");
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "regular user can read modlog"
+    );
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&body).unwrap();
     let entries = v["entries"].as_array().unwrap();
-    assert!(entries.iter().any(|e| e["action"] == "ban_user"), "ban_user entry visible");
-    assert!(entries.iter().any(|e| e["action"] == "merge_tags"), "merge_tags entry visible");
+    assert!(
+        entries.iter().any(|e| e["action"] == "ban_user"),
+        "ban_user entry visible"
+    );
+    assert!(
+        entries.iter().any(|e| e["action"] == "merge_tags"),
+        "merge_tags entry visible"
+    );
 
     cleanup(&db).await;
 }
@@ -166,7 +216,11 @@ async fn anonymous_cannot_read_modlog() {
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED, "anonymous rejected (400-as-401)");
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "anonymous rejected (400-as-401)"
+    );
 
     cleanup(&db).await;
 }
@@ -182,8 +236,26 @@ async fn action_filter_works() {
     // needs a clean slate, so clear the whole table.
     let _ = sqlx::query("DELETE FROM modlog").execute(&db).await;
 
-    fichub::modlog::record_json(&db, None, Some("modlogtest_admin".into()), "ban_user", "user", "1", vec![]).await;
-    fichub::modlog::record_json(&db, None, Some("modlogtest_admin".into()), "delete_tag", "tag", "5", vec![]).await;
+    fichub::modlog::record_json(
+        &db,
+        None,
+        Some("modlogtest_admin".into()),
+        "ban_user",
+        "user",
+        "1",
+        vec![],
+    )
+    .await;
+    fichub::modlog::record_json(
+        &db,
+        None,
+        Some("modlogtest_admin".into()),
+        "delete_tag",
+        "tag",
+        "5",
+        vec![],
+    )
+    .await;
 
     let app = build_app().await;
     let user = seed_user(&db, "modlogtest_user", 0).await;
@@ -200,7 +272,9 @@ async fn action_filter_works() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&body).unwrap();
     let entries = v["entries"].as_array().unwrap();
     assert_eq!(entries.len(), 1, "only ban_user entries: {v}");

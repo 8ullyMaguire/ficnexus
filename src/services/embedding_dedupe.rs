@@ -54,13 +54,15 @@ pub async fn candidate_pairs(
 
     Ok(rows
         .into_iter()
-        .map(|(src_id, src_title, tgt_id, tgt_title, sim)| EmbeddingCandidate {
-            source_work_id: src_id,
-            target_work_id: tgt_id,
-            source_title: src_title,
-            target_title: tgt_title,
-            similarity: sim,
-        })
+        .map(
+            |(src_id, src_title, tgt_id, tgt_title, sim)| EmbeddingCandidate {
+                source_work_id: src_id,
+                target_work_id: tgt_id,
+                source_title: src_title,
+                target_title: tgt_title,
+                similarity: sim,
+            },
+        )
         .collect())
 }
 
@@ -93,7 +95,9 @@ pub async fn run_dedupe(
                 auto_merged += 1;
                 tracing::info!(
                     "Auto-merged work {} into {} (similarity={:.3})",
-                    c.source_work_id, c.target_work_id, c.similarity
+                    c.source_work_id,
+                    c.target_work_id,
+                    c.similarity
                 );
             }
         } else {

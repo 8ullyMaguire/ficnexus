@@ -14,9 +14,9 @@ use std::sync::{Mutex, OnceLock};
 // ─── Re-exports from the library ────────────────────────────────────────────
 
 use fichub::{
-    build_info_string, build_meta_json, generate_slug,
+    build_info_string, build_meta_json,
     db::{models::*, queries},
-    export,
+    export, generate_slug,
     scrape::FicMetadata,
 };
 
@@ -31,7 +31,7 @@ fn mock_ficmeta() -> FicMetadata {
         chapters: 42,
         words: 123_456,
         desc: "A thrilling tale of test-driven development in Middle-earth.".into(),
-        published: 1_700_000_000_000,      // 2023-11-14-ish
+        published: 1_700_000_000_000, // 2023-11-14-ish
         updated: 1_700_100_000_000,
         status: "ongoing".into(),
         source: "https://example.test/story/a1b2c3d4e5f6".into(),
@@ -53,8 +53,8 @@ mod db_tests {
     use super::*;
     use chrono::Utc;
     use sqlx::AssertSqlSafe;
-    use sqlx::postgres::PgPoolOptions;
     use sqlx::PgPool;
+    use sqlx::postgres::PgPoolOptions;
 
     /// Global mutex that serialises ALL database tests so they never step on
     /// each other (each test creates / drops its own schema, but concurrent
@@ -74,8 +74,8 @@ mod db_tests {
     impl TestDb {
         /// Connect to `DATABASE_URL`, create a unique schema, run migrations.
         async fn new() -> Self {
-            let database_url = std::env::var("DATABASE_URL")
-                .expect("DATABASE_URL must be set for db tests");
+            let database_url =
+                std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for db tests");
 
             let pool = PgPoolOptions::new()
                 .max_connections(1)
@@ -117,10 +117,7 @@ mod db_tests {
             let migrator = sqlx::migrate::Migrator::new(migrations_path)
                 .await
                 .expect("failed to load migrations");
-            migrator
-                .run(&pool)
-                .await
-                .expect("failed to run migrations");
+            migrator.run(&pool).await.expect("failed to run migrations");
 
             TestDb { pool, schema }
         }
@@ -252,11 +249,10 @@ mod db_tests {
         // Insert fic_info because request_log / fic_blacklist have FK references.
         insert_fic_info(&td).await;
 
-        let source_id = queries::insert_request_source(
-            &td.pool, false, "/api/v0/epub", "web request",
-        )
-        .await
-        .expect("insert_request_source failed");
+        let source_id =
+            queries::insert_request_source(&td.pool, false, "/api/v0/epub", "web request")
+                .await
+                .expect("insert_request_source failed");
 
         assert!(source_id > 0);
 
@@ -265,10 +261,10 @@ mod db_tests {
             source_id,
             "epub",
             "https://example.test/story/abc",
-            150,                          // info_request_ms
+            150, // info_request_ms
             Some("a1b2c3d4e5f6"),
             Some(r#"{"title":"Test"}"#),
-            Some(500),                    // export_ms
+            Some(500), // export_ms
             Some("abc123.epub"),
             Some("abc123"),
             Some("https://example.test/story/abc"),
@@ -291,17 +287,20 @@ mod db_tests {
         insert_fic_info(&td).await;
 
         queries::insert_export_log(
-            &td.pool, "a1b2c3d4e5f6", 1, "epub", "inputhash001", "exporthash001",
+            &td.pool,
+            "a1b2c3d4e5f6",
+            1,
+            "epub",
+            "inputhash001",
+            "exporthash001",
         )
         .await
         .expect("insert_export_log failed");
 
-        let found = queries::find_export_log(
-            &td.pool, "a1b2c3d4e5f6", 1, "epub", "inputhash001",
-        )
-        .await
-        .expect("find_export_log failed")
-        .expect("expected Some export_log");
+        let found = queries::find_export_log(&td.pool, "a1b2c3d4e5f6", 1, "epub", "inputhash001")
+            .await
+            .expect("find_export_log failed")
+            .expect("expected Some export_log");
 
         assert_eq!(found.url_id, "a1b2c3d4e5f6");
         assert_eq!(found.version, 1);
@@ -404,15 +403,15 @@ mod db_tests {
 
 mod api_tests {
     use axum::{
+        Router,
         body::Body,
         extract::Query,
         http::{Request, StatusCode},
         response::Json,
         routing::get,
-        Router,
     };
     use serde::Deserialize;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use tower::ServiceExt; // oneshot
 
     // ── Mock handlers that mirror the real routes but return predictable JSON ─
@@ -430,9 +429,7 @@ mod api_tests {
         q: Option<String>,
     }
 
-    async fn mock_epub_handler(
-        Query(params): Query<MockExportQuery>,
-    ) -> Json<Value> {
+    async fn mock_epub_handler(Query(params): Query<MockExportQuery>) -> Json<Value> {
         let query = params.q.as_deref().unwrap_or("");
         if query.is_empty() {
             return Json(json!({"err": -1, "msg": "no query", "q": ""}));
@@ -446,9 +443,7 @@ mod api_tests {
         q: Option<String>,
     }
 
-    async fn mock_meta_handler(
-        Query(params): Query<MockMetaQuery>,
-    ) -> Json<Value> {
+    async fn mock_meta_handler(Query(params): Query<MockMetaQuery>) -> Json<Value> {
         let query = params.q.as_deref().unwrap_or("");
         if query.is_empty() {
             return Json(json!({"err": -1, "msg": "no query", "q": ""}));
@@ -479,12 +474,7 @@ mod api_tests {
         let app = test_router();
 
         let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/api/")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/api/").body(Body::empty()).unwrap())
             .await
             .unwrap();
 
@@ -701,10 +691,12 @@ mod export_tests {
         assert_eq!(json["author_id"], 1001);
         assert_eq!(json["author_url"], "https://example.test/u/tolkien_fan");
         assert_eq!(json["author_local_id"], "tolkien_fan");
-        assert!(json["description"]
-            .as_str()
-            .unwrap()
-            .contains("Middle-earth"));
+        assert!(
+            json["description"]
+                .as_str()
+                .unwrap()
+                .contains("Middle-earth")
+        );
     }
 
     #[test]
@@ -727,10 +719,7 @@ mod export_tests {
         let meta = mock_ficmeta();
         let json: Value = build_meta_json(&meta, None);
 
-        assert_eq!(
-            json["extra_meta"],
-            r#"{"fandom":"Middle-earth"}"#
-        );
+        assert_eq!(json["extra_meta"], r#"{"fandom":"Middle-earth"}"#);
     }
 
     // ── etype_versions map ───────────────────────────────────────────────
@@ -765,13 +754,13 @@ mod export_tests {
 
 mod tag_api_tests {
     use axum::{
+        Router,
         body::Body,
         http::{Request, StatusCode},
         response::Json,
         routing::{get, post},
-        Router,
     };
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use tower::ServiceExt; // oneshot
 
     // ── Mock handlers ─────────────────────────────────────────────────────

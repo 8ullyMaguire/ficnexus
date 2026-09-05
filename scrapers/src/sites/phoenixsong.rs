@@ -12,8 +12,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct PhoenixSongScraper;
 
@@ -30,8 +30,13 @@ impl SiteScraper for PhoenixSongScraper {
         url.contains("phoenixsong.net/fanfiction/story/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("phoenixsong: bad url".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("phoenixsong: bad url".into()))?;
         let html = http::fetch(client, url).await?;
 
         let mut title = String::new();
@@ -110,11 +115,21 @@ impl SiteScraper for PhoenixSongScraper {
                                         if let Some(b) = el.select(&b_sel).next() {
                                             let btext = b.text().collect::<String>();
                                             let rest = el.text().collect::<String>();
-                                            let val = rest.replacen(&btext, "", 1).trim().to_string();
+                                            let val =
+                                                rest.replacen(&btext, "", 1).trim().to_string();
                                             if btext.contains("Rating") && rating.is_empty() {
-                                                rating = val.split(": ").nth(1).unwrap_or("").to_string();
+                                                rating = val
+                                                    .split(": ")
+                                                    .nth(1)
+                                                    .unwrap_or("")
+                                                    .to_string();
                                             } else if btext.contains("Words") {
-                                                words = val.chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap_or(0);
+                                                words = val
+                                                    .chars()
+                                                    .filter(|c| c.is_ascii_digit())
+                                                    .collect::<String>()
+                                                    .parse()
+                                                    .unwrap_or(0);
                                             } else if btext.contains("Status") {
                                                 if val.contains("Completed") {
                                                     status = "complete".to_string();
@@ -244,7 +259,10 @@ mod tests {
 
     #[test]
     fn parses_story_id() {
-        assert_eq!(PhoenixSongScraper::story_id("https://www.phoenixsong.net/fanfiction/story/1234/"), Some("1234".to_string()));
+        assert_eq!(
+            PhoenixSongScraper::story_id("https://www.phoenixsong.net/fanfiction/story/1234/"),
+            Some("1234".to_string())
+        );
         assert_eq!(PhoenixSongScraper::story_id("https://x.com/foo"), None);
     }
 
@@ -271,7 +289,12 @@ mod tests {
     #[test]
     fn extracts_words() {
         let val = "Words: 12,345".to_string();
-        let words: i64 = val.chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap();
+        let words: i64 = val
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .unwrap();
         assert_eq!(words, 12345);
     }
 }

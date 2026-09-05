@@ -8,9 +8,7 @@ use std::sync::Arc;
 use crate::error::AppError;
 use crate::server::AppState;
 
-use super::{
-    build_feed, fic_entry, html_escape, iso_now, opds_response, FeedKind,
-};
+use super::{FeedKind, build_feed, fic_entry, html_escape, iso_now, opds_response};
 
 /// Query params for tag feeds
 #[derive(Debug, Deserialize)]
@@ -32,20 +30,17 @@ impl TagQuery {
 }
 
 /// GET /opds/tags — Navigation feed listing all tag types
-pub async fn tag_types(
-    State(state): State<Arc<AppState>>,
-) -> Result<impl IntoResponse, AppError> {
+pub async fn tag_types(State(state): State<Arc<AppState>>) -> Result<impl IntoResponse, AppError> {
     #[derive(sqlx::FromRow)]
     struct TagTypeRow {
         id: i16,
         name: String,
     }
 
-    let rows: Vec<TagTypeRow> = sqlx::query_as::<_, TagTypeRow>(
-        "SELECT id, name FROM tag_types ORDER BY id",
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let rows: Vec<TagTypeRow> =
+        sqlx::query_as::<_, TagTypeRow>("SELECT id, name FROM tag_types ORDER BY id")
+            .fetch_all(&state.db)
+            .await?;
 
     let now = iso_now();
     let mut entries = String::new();
@@ -206,10 +201,7 @@ pub async fn fics_by_tag(
     let acq_map = super::acquisition_links_many(&state.db, base_url, &ids).await;
     let mut entries = String::new();
     for row in &rows {
-        let updated = row
-            .fic_updated
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string();
+        let updated = row.fic_updated.format("%Y-%m-%dT%H:%M:%SZ").to_string();
         let acq = acq_map.get(&row.id).map(|v| v.as_slice()).unwrap_or(&[]);
         entries.push_str(&fic_entry(
             &row.id,

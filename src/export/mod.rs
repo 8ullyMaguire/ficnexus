@@ -1,13 +1,13 @@
 /// Export subsystem: generates EPUB, HTML bundles, and converts to MOBI/PDF
 pub mod convert;
-pub mod fallback;
-pub mod epub;
-pub mod html_bundle;
-pub mod txt;
-pub mod md;
 pub mod docx;
+pub mod epub;
+pub mod fallback;
 pub mod fb2;
+pub mod html_bundle;
 pub mod kepub;
+pub mod md;
+pub mod txt;
 
 use std::collections::HashMap;
 

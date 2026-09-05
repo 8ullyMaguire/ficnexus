@@ -16,8 +16,8 @@ use async_trait::async_trait;
 use chrono::TimeZone;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct PmdFanfictionScraper;
 
@@ -27,7 +27,11 @@ impl SiteScraper for PmdFanfictionScraper {
         url.contains("pmdfanfiction.com") || url.contains("pmdff.com")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
         let doc = Html::parse_document(&html);
 
@@ -57,7 +61,12 @@ impl SiteScraper for PmdFanfictionScraper {
                         author = a.text().collect::<String>().trim().to_string();
                         if let Some(h) = a.value().attr("href") {
                             author_url = h.to_string();
-                            author_local_id = h.trim_end_matches('/').rsplit('/').next().unwrap_or("").to_string();
+                            author_local_id = h
+                                .trim_end_matches('/')
+                                .rsplit('/')
+                                .next()
+                                .unwrap_or("")
+                                .to_string();
                         }
                     }
                 }
@@ -111,7 +120,12 @@ impl SiteScraper for PmdFanfictionScraper {
         }
 
         // Story id from URL.
-        let story_id = url.trim_end_matches('/').rsplit('/').next().unwrap_or("").to_string();
+        let story_id = url
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+            .to_string();
         let now = chrono::Utc::now().timestamp_millis();
         Ok(FicMetadata {
             url_id: format!("pmd_{story_id}"),
@@ -231,9 +245,27 @@ mod tests {
 
     #[test]
     fn maps_status() {
-        assert_eq!(match "Oneshot" { "Completed" | "Oneshot" => "complete", _ => "ongoing" }, "complete");
-        assert_eq!(match "Hiatus" { "Hiatus" => "hiatus", _ => "ongoing" }, "hiatus");
-        assert_eq!(match "Ongoing" { "Completed" | "Oneshot" => "complete", _ => "ongoing" }, "ongoing");
+        assert_eq!(
+            match "Oneshot" {
+                "Completed" | "Oneshot" => "complete",
+                _ => "ongoing",
+            },
+            "complete"
+        );
+        assert_eq!(
+            match "Hiatus" {
+                "Hiatus" => "hiatus",
+                _ => "ongoing",
+            },
+            "hiatus"
+        );
+        assert_eq!(
+            match "Ongoing" {
+                "Completed" | "Oneshot" => "complete",
+                _ => "ongoing",
+            },
+            "ongoing"
+        );
     }
 
     #[test]

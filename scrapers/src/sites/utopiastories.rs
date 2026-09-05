@@ -16,8 +16,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 
 pub struct UtopiaStoriesScraper {
     adult_ok: AtomicBool,
@@ -57,15 +57,24 @@ impl SiteScraper for UtopiaStoriesScraper {
             self.adult_ok.store(true, Ordering::Relaxed);
             Ok(())
         } else {
-            Err(ScrapeError::AuthRequired("utopiastories: is_adult not set".into()))
+            Err(ScrapeError::AuthRequired(
+                "utopiastories: is_adult not set".into(),
+            ))
         }
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         if !self.adult_ok.load(Ordering::Relaxed) {
-            return Err(ScrapeError::AuthRequired("utopiastories: adult gate".into()));
+            return Err(ScrapeError::AuthRequired(
+                "utopiastories: adult gate".into(),
+            ));
         }
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("utopiastories: bad url".into()))?;
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("utopiastories: bad url".into()))?;
         let html = http::fetch(client, url).await?;
 
         if html.contains("Latest Stories") || html.contains("requested this story be removed") {
@@ -105,7 +114,8 @@ impl SiteScraper for UtopiaStoriesScraper {
                                     author = "Unknown".to_string();
                                 } else {
                                     author = a.text().collect::<String>().trim().to_string();
-                                    author_local_id = href.split('/').nth(2).unwrap_or("").to_string();
+                                    author_local_id =
+                                        href.split('/').nth(2).unwrap_or("").to_string();
                                     author_url = format!(
                                         "https://www.utopiastories.com/{}",
                                         href.replace("../..", "code")
@@ -160,7 +170,9 @@ impl SiteScraper for UtopiaStoriesScraper {
     ) -> Result<Vec<Chapter>, ScrapeError> {
         let content = fetch_chapter_text(client, &meta.source).await;
         if content.is_empty() {
-            return Err(ScrapeError::ParseError("utopiastories: no story text".into()));
+            return Err(ScrapeError::ParseError(
+                "utopiastories: no story text".into(),
+            ));
         }
         Ok(vec![Chapter {
             chapter_id: 1,
@@ -213,13 +225,19 @@ mod tests {
 
     #[test]
     fn parses_story_id() {
-        assert_eq!(UtopiaStoriesScraper::story_id("https://www.utopiastories.com/code/show_story.asp/recid/1234.html"), Some("1234".to_string()));
+        assert_eq!(
+            UtopiaStoriesScraper::story_id(
+                "https://www.utopiastories.com/code/show_story.asp/recid/1234.html"
+            ),
+            Some("1234".to_string())
+        );
         assert_eq!(UtopiaStoriesScraper::story_id("https://x.com/foo"), None);
     }
 
     #[test]
     fn strips_title_suffix() {
-        let t = "My Story:: GaggedUtopia's Story Archive".replace(":: GaggedUtopia's Story Archive", "");
+        let t = "My Story:: GaggedUtopia's Story Archive"
+            .replace(":: GaggedUtopia's Story Archive", "");
         assert_eq!(t, "My Story");
     }
 

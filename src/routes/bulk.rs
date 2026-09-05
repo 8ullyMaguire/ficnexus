@@ -6,10 +6,10 @@
 
 use std::sync::Arc;
 
-use axum::extract::{Query, State};
 use axum::Json;
+use axum::extract::{Query, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::db::queries;
 use crate::error::AppError;
@@ -196,10 +196,8 @@ async fn refresh_single_fic(state: &AppState, url_id: &str) -> Value {
         chapters: meta.chapters,
         words: meta.words,
         description: meta.desc.clone(),
-        fic_created: chrono::DateTime::from_timestamp_millis(meta.published)
-            .unwrap_or_default(),
-        fic_updated: chrono::DateTime::from_timestamp_millis(meta.updated)
-            .unwrap_or_default(),
+        fic_created: chrono::DateTime::from_timestamp_millis(meta.published).unwrap_or_default(),
+        fic_updated: chrono::DateTime::from_timestamp_millis(meta.updated).unwrap_or_default(),
         status: meta.status.clone(),
         source: meta.source.clone(),
         extra_meta: meta.extra_meta.clone(),
@@ -217,14 +215,12 @@ async fn refresh_single_fic(state: &AppState, url_id: &str) -> Value {
     // Reuse existing work or create one.
     let work_id = match existing.work_id {
         Some(wid) => wid,
-        None => {
-            match crate::works::find_or_create_work(&state.db, &meta).await {
-                Ok(w) => w.work_id,
-                Err(e) => {
-                    return json!({ "url_id": url_id, "status": "error", "message": format!("work creation failed: {e}") });
-                }
+        None => match crate::works::find_or_create_work(&state.db, &meta).await {
+            Ok(w) => w.work_id,
+            Err(e) => {
+                return json!({ "url_id": url_id, "status": "error", "message": format!("work creation failed: {e}") });
             }
-        }
+        },
     };
 
     if queries::get_work_by_source(&state.db, url_id)

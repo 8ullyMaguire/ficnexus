@@ -56,7 +56,8 @@ pub enum TieredRateLimitResult {
 pub trait TieredRateLimiter: Send + Sync {
     /// Check a request against the tier bucket for `tier`. `client_id` is the
     /// `X-Client-Id` header value when present.
-    async fn check(&self, ip: IpAddr, client_id: Option<&str>, tier: Tier) -> TieredRateLimitResult;
+    async fn check(&self, ip: IpAddr, client_id: Option<&str>, tier: Tier)
+    -> TieredRateLimitResult;
 
     /// Map a request path to its tier.
     fn tier_for_path(&self, path: &str) -> Tier;
@@ -80,10 +81,7 @@ pub trait TieredRateLimiter: Send + Sync {
 /// the transport. This is the same convention used by `request_log` in
 /// `src/routes/export.rs` (Zero-PII: the IP is only used for abuse
 /// aggregation, never exposed to admins).
-pub fn client_ip_from_headers(
-    xff: Option<&str>,
-    remote_addr: IpAddr,
-) -> IpAddr {
+pub fn client_ip_from_headers(xff: Option<&str>, remote_addr: IpAddr) -> IpAddr {
     xff.and_then(|s| s.split(',').next())
         .map(str::trim)
         .and_then(|s| s.parse().ok())

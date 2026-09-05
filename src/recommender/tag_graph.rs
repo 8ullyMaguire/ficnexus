@@ -52,7 +52,9 @@ pub fn meta_path_score(
                     continue;
                 }
                 let s = seed_score * work_tag_score;
-                let entry = scores.entry(work.clone()).or_insert((0.0, format!("tag {seed_tag}")));
+                let entry = scores
+                    .entry(work.clone())
+                    .or_insert((0.0, format!("tag {seed_tag}")));
                 entry.0 += s;
             }
         }
@@ -84,9 +86,17 @@ pub fn meta_path_score(
 
     let mut out: Vec<PathWalk> = scores
         .into_iter()
-        .map(|(work_id, (score, via))| PathWalk { work_id, score, via })
+        .map(|(work_id, (score, via))| PathWalk {
+            work_id,
+            score,
+            via,
+        })
         .collect();
-    out.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     out.truncate(max_candidates);
     out
 }
@@ -125,7 +135,10 @@ pub async fn load_tag_graph(
     let mut tag_works: HashMap<i32, Vec<(String, f64)>> = HashMap::new();
     let mut work_tags: HashMap<String, Vec<(i32, f64)>> = HashMap::new();
     for (work, tag, score) in rows {
-        tag_works.entry(tag).or_default().push((work.clone(), score));
+        tag_works
+            .entry(tag)
+            .or_default()
+            .push((work.clone(), score));
         work_tags.entry(work).or_default().push((tag, score));
     }
     Ok((tag_works, work_tags))
@@ -144,7 +157,9 @@ impl RecStrategy for TagGraphStrategy {
         user_id: Option<i32>,
     ) -> Result<Vec<ScoredRec>, RecError> {
         if user_id.is_some() {
-            return Err(RecError::NotEnoughData("tag_graph is seed-based only".into()));
+            return Err(RecError::NotEnoughData(
+                "tag_graph is seed-based only".into(),
+            ));
         }
         let Some(seed_id) = seed else {
             return Err(RecError::Strategy("tag_graph needs a seed work".into()));
@@ -172,7 +187,9 @@ impl RecStrategy for TagGraphStrategy {
             ctx.config.rec_max_recommendations,
         );
         if walks.is_empty() {
-            return Err(RecError::NotEnoughData("tag graph produced no candidates".into()));
+            return Err(RecError::NotEnoughData(
+                "tag graph produced no candidates".into(),
+            ));
         }
         Ok(walks
             .into_iter()
@@ -230,7 +247,10 @@ mod tests {
     fn meta_path_excludes_seed_and_intermediate() {
         let seed_tags = vec![(1, 1.0)];
         let mut tag_works: HashMap<i32, Vec<(String, f64)>> = HashMap::new();
-        tag_works.insert(1, vec![("S".into(), 1.0), ("I".into(), 1.0), ("C".into(), 1.0)]);
+        tag_works.insert(
+            1,
+            vec![("S".into(), 1.0), ("I".into(), 1.0), ("C".into(), 1.0)],
+        );
         let mut work_tags: HashMap<String, Vec<(i32, f64)>> = HashMap::new();
         work_tags.insert("S".into(), vec![(1, 1.0)]);
         work_tags.insert("I".into(), vec![(1, 1.0)]);
@@ -241,8 +261,11 @@ mod tests {
         // C shares tag 1 directly (score 1.0) AND via the two-hop through I
         // (+0.5) → C must outrank I (which only shares directly, score 1.0).
         assert!(ids.contains(&"C"), "{ids:?}");
-        assert!(ids.contains(&"I"), "I shares the tag directly, so it is a
-legit candidate: {ids:?}");
+        assert!(
+            ids.contains(&"I"),
+            "I shares the tag directly, so it is a
+legit candidate: {ids:?}"
+        );
         let c = walks.iter().find(|w| w.work_id == "C").unwrap();
         let i = walks.iter().find(|w| w.work_id == "I").unwrap();
         // Both share tag 1 directly AND symmetrically via the two-hop

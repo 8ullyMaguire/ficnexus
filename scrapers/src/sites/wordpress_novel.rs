@@ -15,7 +15,7 @@
 //! The adapter is instantiated with a host list so one implementation
 //! covers many sites; each URL is matched against the configured hosts.
 
-use crate::{FicMetadata, Chapter, SiteScraper, ScrapeError};
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 use async_trait::async_trait;
 
@@ -31,7 +31,12 @@ impl WordPressNovelScraper {
     fn story_slug(url: &str) -> Option<String> {
         let lower = url.to_lowercase();
         // strip scheme + host, keep path
-        let path = lower.split("://").nth(1).map(|r| r.split('/').nth(1)).flatten().unwrap_or("");
+        let path = lower
+            .split("://")
+            .nth(1)
+            .map(|r| r.split('/').nth(1))
+            .flatten()
+            .unwrap_or("");
         // strip .html suffix + any trailing path
         let slug = path.split(".html").next().unwrap_or(path);
         if slug.is_empty() {
@@ -49,13 +54,20 @@ impl SiteScraper for WordPressNovelScraper {
         self.hosts.iter().any(|h| lower.contains(h)) && lower.contains(".html")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let slug = WordPressNovelScraper::story_slug(url)
             .ok_or_else(|| ScrapeError::ParseError("no story slug in URL".into()))?;
 
         let resp = client
             .get(url)
-            .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0")
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+            )
             .send()
             .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
@@ -64,19 +76,28 @@ impl SiteScraper for WordPressNovelScraper {
             return Err(ScrapeError::NotFound);
         }
 
-        let html = resp.text().await.map_err(|e| ScrapeError::Network(e.to_string()))?;
+        let html = resp
+            .text()
+            .await
+            .map_err(|e| ScrapeError::Network(e.to_string()))?;
         let document = scraper::Html::parse_document(&html);
 
         // Title: h3.title
         let title = document
-            .select(&scraper::Selector::parse("h3.title").map_err(|e| ScrapeError::ParseError(e.to_string()))?)
+            .select(
+                &scraper::Selector::parse("h3.title")
+                    .map_err(|e| ScrapeError::ParseError(e.to_string()))?,
+            )
             .next()
             .map(|el| el.text().collect::<String>().trim().to_string())
             .unwrap_or_default();
 
         // Author: a[href*='/author/']
         let author_el = document
-            .select(&scraper::Selector::parse("a[href*='/author/']").map_err(|e| ScrapeError::ParseError(e.to_string()))?)
+            .select(
+                &scraper::Selector::parse("a[href*='/author/']")
+                    .map_err(|e| ScrapeError::ParseError(e.to_string()))?,
+            )
             .next();
         let (author, author_url) = match author_el {
             Some(a) => {
@@ -89,7 +110,10 @@ impl SiteScraper for WordPressNovelScraper {
 
         // Status: a[href*='status'] text
         let status = document
-            .select(&scraper::Selector::parse("a[href*='status']").map_err(|e| ScrapeError::ParseError(e.to_string()))?)
+            .select(
+                &scraper::Selector::parse("a[href*='status']")
+                    .map_err(|e| ScrapeError::ParseError(e.to_string()))?,
+            )
             .next()
             .map(|el| el.text().collect::<String>().trim().to_string())
             .map(|s| {
@@ -103,13 +127,18 @@ impl SiteScraper for WordPressNovelScraper {
 
         // Description: div.desc-text
         let desc = document
-            .select(&scraper::Selector::parse("div.desc-text").map_err(|e| ScrapeError::ParseError(e.to_string()))?)
+            .select(
+                &scraper::Selector::parse("div.desc-text")
+                    .map_err(|e| ScrapeError::ParseError(e.to_string()))?,
+            )
             .next()
             .map(|el| el.inner_html())
             .unwrap_or_default();
 
         if title.is_empty() && author.is_empty() {
-            return Err(ScrapeError::ParseError("wordpress novel page missing title+author".into()));
+            return Err(ScrapeError::ParseError(
+                "wordpress novel page missing title+author".into(),
+            ));
         }
 
         Ok(FicMetadata {
@@ -142,11 +171,17 @@ impl SiteScraper for WordPressNovelScraper {
         // (possibly a "full" list). Look for div.list-chapter links.
         let resp = client
             .get(&meta.source)
-            .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0")
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+            )
             .send()
             .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
-        let html = resp.text().await.map_err(|e| ScrapeError::Network(e.to_string()))?;
+        let html = resp
+            .text()
+            .await
+            .map_err(|e| ScrapeError::Network(e.to_string()))?;
 
         // Collect chapter (url, title) pairs in a scoped block.
         let links: Vec<(String, String)> = {
@@ -156,7 +191,11 @@ impl SiteScraper for WordPressNovelScraper {
             let mut links = Vec::new();
             for link in document.select(&sel) {
                 let href = link.value().attr("href").unwrap_or("");
-                let url = if href.starts_with("http") { href.to_string() } else { format!("https://{}{}", host_of(&meta.source), href) };
+                let url = if href.starts_with("http") {
+                    href.to_string()
+                } else {
+                    format!("https://{}{}", host_of(&meta.source), href)
+                };
                 let title = link.text().collect::<String>().trim().to_string();
                 links.push((url, title));
             }
@@ -165,16 +204,24 @@ impl SiteScraper for WordPressNovelScraper {
 
         let mut chapters = Vec::new();
         let mut i = 1;
-        let content_sel = scraper::Selector::parse("div.chapter-c, div.content, #chapter-content, .chapter-content")
-            .map_err(|e| ScrapeError::ParseError(e.to_string()))?;
+        let content_sel = scraper::Selector::parse(
+            "div.chapter-c, div.content, #chapter-content, .chapter-content",
+        )
+        .map_err(|e| ScrapeError::ParseError(e.to_string()))?;
         for (url, title) in links {
             let chap_resp = client
                 .get(&url)
-                .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0")
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+                )
                 .send()
                 .await
                 .map_err(|e| ScrapeError::Network(e.to_string()))?;
-            let chap_html = chap_resp.text().await.map_err(|e| ScrapeError::Network(e.to_string()))?;
+            let chap_html = chap_resp
+                .text()
+                .await
+                .map_err(|e| ScrapeError::Network(e.to_string()))?;
             let content = {
                 let chap_doc = scraper::Html::parse_document(&chap_html);
                 chap_doc
@@ -184,7 +231,11 @@ impl SiteScraper for WordPressNovelScraper {
                     .unwrap_or_default()
             };
             if !content.is_empty() {
-                chapters.push(Chapter { chapter_id: i, title, content });
+                chapters.push(Chapter {
+                    chapter_id: i,
+                    title,
+                    content,
+                });
                 i += 1;
             }
         }
@@ -208,19 +259,26 @@ mod tests {
     #[test]
     fn story_slug_extraction() {
         assert_eq!(
-            WordPressNovelScraper::story_slug("https://novelfull.com/some-story-title.html").as_deref(),
+            WordPressNovelScraper::story_slug("https://novelfull.com/some-story-title.html")
+                .as_deref(),
             Some("some-story-title")
         );
         assert_eq!(
-            WordPressNovelScraper::story_slug("https://novelfull.com/some-story-title.html?page=2").as_deref(),
+            WordPressNovelScraper::story_slug("https://novelfull.com/some-story-title.html?page=2")
+                .as_deref(),
             Some("some-story-title")
         );
-        assert_eq!(WordPressNovelScraper::story_slug("https://novelfull.com/"), None);
+        assert_eq!(
+            WordPressNovelScraper::story_slug("https://novelfull.com/"),
+            None
+        );
     }
 
     #[test]
     fn can_handle_hosts() {
-        let s = WordPressNovelScraper { hosts: &["novelfull.com", "novelhall.com"] };
+        let s = WordPressNovelScraper {
+            hosts: &["novelfull.com", "novelhall.com"],
+        };
         assert!(s.can_handle("https://novelfull.com/story.html"));
         assert!(s.can_handle("https://www.novelhall.com/another.html"));
         assert!(!s.can_handle("https://archiveofourown.org/works/1"));

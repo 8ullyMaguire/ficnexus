@@ -18,8 +18,8 @@ use chrono::TimeZone;
 use regex_lite::Regex;
 use scraper::{Html, Node, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 /// Per-site config for the eFiction-variant family.
 #[derive(Debug, Clone, Copy)]
@@ -32,32 +32,136 @@ pub struct EficVariantSite {
 }
 
 pub const EFIC_VARIANT_SITES: &[EficVariantSite] = &[
-    EficVariantSite { domain: "ashwinder.sycophanthex.com", prefix: "/viewstory.php?sid=", adult: false },
-    EficVariantSite { domain: "chaos.sycophanthex.com", prefix: "/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "chosentwofanfic.com", prefix: "/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "www.dracoandginny.com", prefix: "/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "efpfanfic.net", prefix: "/viewstory.php?sid=", adult: false },
-    EficVariantSite { domain: "erosnsappho.sycophanthex.com", prefix: "/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "archive.fanfictalk.com", prefix: "/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "imagine.e-fic.com", prefix: "/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "ksarchive.com", prefix: "/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "lumos.sycophanthex.com", prefix: "/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "www.midnightwhispers.net", prefix: "/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "ninelivesarchive.com", prefix: "/viewstory.php?sid=", adult: false },
-    EficVariantSite { domain: "occlumency.sycophanthex.com", prefix: "/viewstory.php?sid=", adult: false },
-    EficVariantSite { domain: "www.potionsandsnitches.org", prefix: "/fanfiction/viewstory.php?sid=", adult: false },
-    EficVariantSite { domain: "www.pretendercentre.com", prefix: "/missingpieces/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "www.psychfic.com", prefix: "/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "samandjack.net", prefix: "/fanfics/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "sheppardweir.com", prefix: "/fanfics/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "www.siye.co.uk", prefix: "/siye/viewstory.php?sid=", adult: false },
-    EficVariantSite { domain: "t.evancurrie.ca", prefix: "/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "themasque.net", prefix: "/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "www.twilighted.net", prefix: "/viewstory.php?sid=", adult: false },
-    EficVariantSite { domain: "voracity2.e-fic.com", prefix: "/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "www.walkingtheplank.org", prefix: "/archive/viewstory.php?sid=", adult: true },
-    EficVariantSite { domain: "www.whofic.com", prefix: "/viewstory.php?sid=", adult: false },
-    EficVariantSite { domain: "www.wolverineandrogue.com", prefix: "/wrfa/viewstory.php?sid=", adult: false },
+    EficVariantSite {
+        domain: "ashwinder.sycophanthex.com",
+        prefix: "/viewstory.php?sid=",
+        adult: false,
+    },
+    EficVariantSite {
+        domain: "chaos.sycophanthex.com",
+        prefix: "/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "chosentwofanfic.com",
+        prefix: "/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "www.dracoandginny.com",
+        prefix: "/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "efpfanfic.net",
+        prefix: "/viewstory.php?sid=",
+        adult: false,
+    },
+    EficVariantSite {
+        domain: "erosnsappho.sycophanthex.com",
+        prefix: "/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "archive.fanfictalk.com",
+        prefix: "/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "imagine.e-fic.com",
+        prefix: "/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "ksarchive.com",
+        prefix: "/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "lumos.sycophanthex.com",
+        prefix: "/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "www.midnightwhispers.net",
+        prefix: "/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "ninelivesarchive.com",
+        prefix: "/viewstory.php?sid=",
+        adult: false,
+    },
+    EficVariantSite {
+        domain: "occlumency.sycophanthex.com",
+        prefix: "/viewstory.php?sid=",
+        adult: false,
+    },
+    EficVariantSite {
+        domain: "www.potionsandsnitches.org",
+        prefix: "/fanfiction/viewstory.php?sid=",
+        adult: false,
+    },
+    EficVariantSite {
+        domain: "www.pretendercentre.com",
+        prefix: "/missingpieces/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "www.psychfic.com",
+        prefix: "/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "samandjack.net",
+        prefix: "/fanfics/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "sheppardweir.com",
+        prefix: "/fanfics/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "www.siye.co.uk",
+        prefix: "/siye/viewstory.php?sid=",
+        adult: false,
+    },
+    EficVariantSite {
+        domain: "t.evancurrie.ca",
+        prefix: "/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "themasque.net",
+        prefix: "/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "www.twilighted.net",
+        prefix: "/viewstory.php?sid=",
+        adult: false,
+    },
+    EficVariantSite {
+        domain: "voracity2.e-fic.com",
+        prefix: "/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "www.walkingtheplank.org",
+        prefix: "/archive/viewstory.php?sid=",
+        adult: true,
+    },
+    EficVariantSite {
+        domain: "www.whofic.com",
+        prefix: "/viewstory.php?sid=",
+        adult: false,
+    },
+    EficVariantSite {
+        domain: "www.wolverineandrogue.com",
+        prefix: "/wrfa/viewstory.php?sid=",
+        adult: false,
+    },
 ];
 
 /// Domain-driven scraper for the eFiction-variant family.
@@ -72,11 +176,18 @@ impl EficVariantScraper {
     }
 
     pub fn all() -> Vec<EficVariantScraper> {
-        EFIC_VARIANT_SITES.iter().map(|s| EficVariantScraper { site: s }).collect()
+        EFIC_VARIANT_SITES
+            .iter()
+            .map(|s| EficVariantScraper { site: s })
+            .collect()
     }
 
     fn base_url(&self) -> String {
-        format!("https://{}{}", self.site.domain, self.site.prefix.trim_end_matches("viewstory.php?sid="))
+        format!(
+            "https://{}{}",
+            self.site.domain,
+            self.site.prefix.trim_end_matches("viewstory.php?sid=")
+        )
     }
 
     fn page_url(&self, url: &str) -> String {
@@ -104,8 +215,14 @@ impl SiteScraper for EficVariantScraper {
         url.contains(self.site.domain) && url.contains("viewstory.php?sid=")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let story_id = self.story_id(url).ok_or_else(|| ScrapeError::ParseError("efiction-variant: bad url".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let story_id = self
+            .story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("efiction-variant: bad url".into()))?;
         let page_url = self.page_url(url);
         let html = http::fetch(client, &page_url).await?;
 
@@ -113,7 +230,9 @@ impl SiteScraper for EficVariantScraper {
             return Err(ScrapeError::Blocked);
         }
         if html.contains("By clicking this link, you acknowledge") {
-            return Err(ScrapeError::AuthRequired("efiction-variant adult gate".into()));
+            return Err(ScrapeError::AuthRequired(
+                "efiction-variant adult gate".into(),
+            ));
         }
 
         let doc = Html::parse_document(&html);
@@ -154,7 +273,12 @@ impl SiteScraper for EficVariantScraper {
         if let Ok(a_sel) = Selector::parse("a[href*='viewstory.php?sid=']") {
             chapters = doc
                 .select(&a_sel)
-                .filter(|a| a.value().attr("href").map(|h| chap_re.is_match(h)).unwrap_or(false))
+                .filter(|a| {
+                    a.value()
+                        .attr("href")
+                        .map(|h| chap_re.is_match(h))
+                        .unwrap_or(false)
+                })
                 .count() as i32;
         }
         if chapters == 0 {
@@ -241,7 +365,9 @@ impl SiteScraper for EficVariantScraper {
         client: &reqwest::Client,
         meta: &FicMetadata,
     ) -> Result<Vec<Chapter>, ScrapeError> {
-        let story_id = self.story_id(&meta.source).ok_or_else(|| ScrapeError::ParseError("efiction-variant: bad url".into()))?;
+        let story_id = self
+            .story_id(&meta.source)
+            .ok_or_else(|| ScrapeError::ParseError("efiction-variant: bad url".into()))?;
         let page_url = self.page_url(&meta.source);
         let html = http::fetch(client, &page_url).await?;
 
@@ -332,15 +458,30 @@ mod tests {
 
     #[test]
     fn from_url_matches_domains() {
-        assert!(EficVariantScraper::from_url("https://www.psychfic.com/viewstory.php?sid=1234").is_some());
-        assert!(EficVariantScraper::from_url("https://www.walkingtheplank.org/archive/viewstory.php?sid=1234").is_some());
-        assert!(EficVariantScraper::from_url("https://www.wolverineandrogue.com/wrfa/viewstory.php?sid=1234").is_some());
+        assert!(
+            EficVariantScraper::from_url("https://www.psychfic.com/viewstory.php?sid=1234")
+                .is_some()
+        );
+        assert!(
+            EficVariantScraper::from_url(
+                "https://www.walkingtheplank.org/archive/viewstory.php?sid=1234"
+            )
+            .is_some()
+        );
+        assert!(
+            EficVariantScraper::from_url(
+                "https://www.wolverineandrogue.com/wrfa/viewstory.php?sid=1234"
+            )
+            .is_some()
+        );
         assert!(EficVariantScraper::from_url("https://www.fanfiction.net/s/123").is_none());
     }
 
     #[test]
     fn parses_story_id() {
-        let s = EficVariantScraper { site: &EFIC_VARIANT_SITES[0] };
+        let s = EficVariantScraper {
+            site: &EFIC_VARIANT_SITES[0],
+        };
         assert_eq!(
             s.story_id("https://www.psychfic.com/viewstory.php?sid=1234&index=1"),
             Some("1234".to_string())

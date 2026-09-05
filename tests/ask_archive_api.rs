@@ -22,12 +22,12 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -65,8 +65,8 @@ async fn app() -> Router {
     let config = test_config();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -146,10 +146,15 @@ async fn post_ask(app: &Router, body: Value) -> (StatusCode, Value) {
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     if status != StatusCode::OK {
-        eprintln!("DEBUG non-200 for ask: status={status} body={}", String::from_utf8_lossy(&bytes));
+        eprintln!(
+            "DEBUG non-200 for ask: status={status} body={}",
+            String::from_utf8_lossy(&bytes)
+        );
     }
     (status, value)
 }
@@ -241,17 +246,34 @@ async fn ask_falls_back_to_plain_search_when_ollama_down() {
     let db = pool().await;
     let fics = ["askit_plain_a", "askit_plain_b"];
     cleanup(&db, &fics).await;
-    seed_fic(&db, "askit_plain_a", "The Sunken Lighthouse", "A tale of stormy seas.", 1000, 1, "complete").await;
-    seed_fic(&db, "askit_plain_b", "Baking with Dragons", "In which dragons learn pastry.", 2000, 3, "ongoing").await;
-
-    let app = app().await;
-    let (status, body) = post_ask(
-        &app,
-        json!({ "q": "lighthouse pastry" }),
+    seed_fic(
+        &db,
+        "askit_plain_a",
+        "The Sunken Lighthouse",
+        "A tale of stormy seas.",
+        1000,
+        1,
+        "complete",
     )
     .await;
+    seed_fic(
+        &db,
+        "askit_plain_b",
+        "Baking with Dragons",
+        "In which dragons learn pastry.",
+        2000,
+        3,
+        "ongoing",
+    )
+    .await;
+
+    let app = app().await;
+    let (status, body) = post_ask(&app, json!({ "q": "lighthouse pastry" })).await;
     assert_eq!(status, StatusCode::OK, "fallback must be 200: {body}");
-    assert_eq!(body["translated"], false, "ollama down ⇒ not translated: {body}");
+    assert_eq!(
+        body["translated"], false,
+        "ollama down ⇒ not translated: {body}"
+    );
     assert_eq!(body["nl_query"], "lighthouse pastry");
     assert_eq!(body["applied_params"], "lighthouse pastry");
     // Plain search on the raw NL actually ran against the seeded fics
@@ -285,7 +307,16 @@ async fn ask_returns_full_search_envelope_on_fallback() {
     let db = pool().await;
     let fics = ["askit_env_a"];
     cleanup(&db, &fics).await;
-    seed_fic(&db, "askit_env_a", "Envelope Test", "Envelope description words.", 100, 1, "complete").await;
+    seed_fic(
+        &db,
+        "askit_env_a",
+        "Envelope Test",
+        "Envelope description words.",
+        100,
+        1,
+        "complete",
+    )
+    .await;
 
     let app = app().await;
     let (status, body) = post_ask(&app, json!({ "q": "envelope" })).await;
@@ -294,7 +325,10 @@ async fn ask_returns_full_search_envelope_on_fallback() {
     assert!(body.get("page").is_some());
     assert!(body.get("per_page").is_some());
     assert!(body.get("results").is_some());
-    assert!(body.get("facets").is_some(), "facets must be present: {body}");
+    assert!(
+        body.get("facets").is_some(),
+        "facets must be present: {body}"
+    );
     assert_eq!(body["total"], 1);
     assert_eq!(result_ids(&body), vec!["askit_env_a"]);
     cleanup(&db, &fics).await;
@@ -344,9 +378,27 @@ async fn ask_uses_cached_translation_and_runs_translated_search() {
     let fics = ["askit_cached_a", "askit_cached_b"];
     cleanup(&db, &fics).await;
     // askit_cached_a: 60k words, complete — matches min_words=50000 + complete.
-    seed_fic(&db, "askit_cached_a", "Long Complete Fic", "A very long finished story about stars.", 60000, 40, "complete").await;
+    seed_fic(
+        &db,
+        "askit_cached_a",
+        "Long Complete Fic",
+        "A very long finished story about stars.",
+        60000,
+        40,
+        "complete",
+    )
+    .await;
     // askit_cached_b: 10k words, ongoing — fails both filters.
-    seed_fic(&db, "askit_cached_b", "Short WIP", "A short work in progress.", 10000, 2, "ongoing").await;
+    seed_fic(
+        &db,
+        "askit_cached_b",
+        "Short WIP",
+        "A short work in progress.",
+        10000,
+        2,
+        "ongoing",
+    )
+    .await;
 
     let nl = "cached translation test query";
     // Pre-seed the cache exactly like a fresh Ollama translation would store
@@ -364,12 +416,19 @@ async fn ask_uses_cached_translation_and_runs_translated_search() {
     let app = app().await;
     let (status, body) = post_ask(&app, json!({ "q": nl })).await;
     assert_eq!(status, StatusCode::OK, "cached path must be 200: {body}");
-    assert_eq!(body["translated"], true, "cache hit counts as translated: {body}");
+    assert_eq!(
+        body["translated"], true,
+        "cache hit counts as translated: {body}"
+    );
     assert_eq!(body["nl_query"], nl);
     // applied_params echo the cached v2 query (the "Interpreted as" chip).
     assert_eq!(body["applied_params"], v2);
     // Only the long complete fic matches words:>50k + status:complete.
-    assert_eq!(result_ids(&body), vec!["askit_cached_a"], "translated filters applied: {body}");
+    assert_eq!(
+        result_ids(&body),
+        vec!["askit_cached_a"],
+        "translated filters applied: {body}"
+    );
 
     fichub::search::ask_cache::delete_cached_translation(&mut redis, nl).await;
     cleanup(&db, &fics).await;
@@ -392,7 +451,16 @@ async fn ask_never_reads_postgres_archive() {
     let db = pool().await;
     let fics = ["askit_pgwrite_a"];
     cleanup(&db, &fics).await;
-    seed_fic(&db, "askit_pgwrite_a", "PG Write Archive", "A story about constellations.", 1000, 1, "complete").await;
+    seed_fic(
+        &db,
+        "askit_pgwrite_a",
+        "PG Write Archive",
+        "A story about constellations.",
+        1000,
+        1,
+        "complete",
+    )
+    .await;
 
     let nl = "postgres write-only archive test query";
 
@@ -425,17 +493,19 @@ async fn ask_never_reads_postgres_archive() {
         body["translated"], false,
         "PG row must NOT be consulted — only Redis is a lookup tier: {body}"
     );
-    assert_eq!(body["applied_params"], nl, "plain fallback params is the raw NL");
+    assert_eq!(
+        body["applied_params"], nl,
+        "plain fallback params is the raw NL"
+    );
 
     // The pre-seeded row is untouched (write-only: handler never reads,
     // and no fresh translation happened to overwrite it).
-    let row: Option<String> = sqlx::query_scalar(
-        "SELECT params::text FROM ask_translation_cache WHERE nl_query = $1",
-    )
-    .bind(fichub::search::ask_cache::normalize_nl_query(nl))
-    .fetch_optional(&db)
-    .await
-    .expect("pg read");
+    let row: Option<String> =
+        sqlx::query_scalar("SELECT params::text FROM ask_translation_cache WHERE nl_query = $1")
+            .bind(fichub::search::ask_cache::normalize_nl_query(nl))
+            .fetch_optional(&db)
+            .await
+            .expect("pg read");
     let row = row.expect("pre-seeded PG row must still exist");
     assert!(
         row.contains("constellations"),

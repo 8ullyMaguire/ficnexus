@@ -11,18 +11,21 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
-    body::Body,
-    http::{header, Request, StatusCode},
-    routing::put,
     Router,
+    body::Body,
+    http::{Request, StatusCode, header},
+    routing::put,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
-    DB_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+    DB_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
 }
 
 const USERNAME: &str = "metadata_test_user";
@@ -48,8 +51,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -88,8 +91,11 @@ async fn app() -> Router {
             .await
             .expect("rate limiter"),
         ),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -167,13 +173,12 @@ async fn seed_work(pool: &sqlx::PgPool, url_id: &str, title: &str, author: &str)
     .await
     .expect("seed fic_info failed");
 
-    let existing: Option<i32> = sqlx::query_scalar(
-        "SELECT id FROM works WHERE default_source_id = $1",
-    )
-    .bind(url_id)
-    .fetch_optional(pool)
-    .await
-    .expect("work lookup failed");
+    let existing: Option<i32> =
+        sqlx::query_scalar("SELECT id FROM works WHERE default_source_id = $1")
+            .bind(url_id)
+            .fetch_optional(pool)
+            .await
+            .expect("work lookup failed");
 
     let work_id = match existing {
         Some(id) => {
@@ -187,18 +192,16 @@ async fn seed_work(pool: &sqlx::PgPool, url_id: &str, title: &str, author: &str)
                 .expect("update seeded work failed");
             id
         }
-        None => {
-            sqlx::query_scalar(
-                "INSERT INTO works (canonical_title, canonical_author, description, default_source_id)
+        None => sqlx::query_scalar(
+            "INSERT INTO works (canonical_title, canonical_author, description, default_source_id)
                  VALUES ($1, $2, 'orig desc', $3) RETURNING id",
-            )
-            .bind(title)
-            .bind(author)
-            .bind(url_id)
-            .fetch_one(pool)
-            .await
-            .expect("seed work failed")
-        }
+        )
+        .bind(title)
+        .bind(author)
+        .bind(url_id)
+        .fetch_one(pool)
+        .await
+        .expect("seed work failed"),
     };
 
     // Re-link the fic_info source to this work (idempotent).
@@ -247,8 +250,13 @@ async fn send(
     };
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────
@@ -262,8 +270,13 @@ async fn admin_corrects_metadata_across_works_and_fic_info() {
     let db = pool().await;
     cleanup(&db).await;
     let admin_id = seed_user(&db, ADMIN_USERNAME, 10).await;
-    let (work_id, url_id) =
-        seed_work(&db, "meta-test-a", &format!("{TITLE_PREFIX} Alpha"), "Character A").await;
+    let (work_id, url_id) = seed_work(
+        &db,
+        "meta-test-a",
+        &format!("{TITLE_PREFIX} Alpha"),
+        "Character A",
+    )
+    .await;
     let app = app().await;
     let admin_token = auth_header(admin_id, 10, ADMIN_USERNAME);
 
@@ -282,7 +295,10 @@ async fn admin_corrects_metadata_across_works_and_fic_info() {
     .await;
     assert_eq!(status, StatusCode::OK, "update failed: {body}");
     assert_eq!(body["err"], 0);
-    assert_eq!(body["work"]["canonical_title"], format!("{TITLE_PREFIX} Alpha (Corrected)"));
+    assert_eq!(
+        body["work"]["canonical_title"],
+        format!("{TITLE_PREFIX} Alpha (Corrected)")
+    );
     assert_eq!(body["work"]["canonical_author"], "Character B");
     assert_eq!(body["work"]["description"], "A corrected description.");
 
@@ -299,13 +315,12 @@ async fn admin_corrects_metadata_across_works_and_fic_info() {
     assert_eq!(row.2, "A corrected description.");
 
     // Default source fic_info synced.
-    let fi: (String, String, String, String) = sqlx::query_as(
-        "SELECT title, author, status, description FROM fic_info WHERE id = $1",
-    )
-    .bind(&url_id)
-    .fetch_one(&db)
-    .await
-    .expect("fic_info row");
+    let fi: (String, String, String, String) =
+        sqlx::query_as("SELECT title, author, status, description FROM fic_info WHERE id = $1")
+            .bind(&url_id)
+            .fetch_one(&db)
+            .await
+            .expect("fic_info row");
     assert_eq!(fi.0, format!("{TITLE_PREFIX} Alpha (Corrected)"));
     assert_eq!(fi.1, "Character B");
     assert_eq!(fi.2, "complete");
@@ -320,8 +335,13 @@ async fn partial_update_only_touches_provided_fields() {
     let db = pool().await;
     cleanup(&db).await;
     let admin_id = seed_user(&db, ADMIN_USERNAME, 10).await;
-    let (work_id, url_id) =
-        seed_work(&db, "meta-test-b", &format!("{TITLE_PREFIX} Beta"), "Character A").await;
+    let (work_id, url_id) = seed_work(
+        &db,
+        "meta-test-b",
+        &format!("{TITLE_PREFIX} Beta"),
+        "Character A",
+    )
+    .await;
     let app = app().await;
     let admin_token = auth_header(admin_id, 10, ADMIN_USERNAME);
 
@@ -335,15 +355,22 @@ async fn partial_update_only_touches_provided_fields() {
     .await;
     assert_eq!(status, StatusCode::OK, "partial update failed: {body}");
     assert_eq!(body["work"]["canonical_author"], "Character B");
-    assert_eq!(body["work"]["canonical_title"], format!("{TITLE_PREFIX} Beta"), "title untouched");
+    assert_eq!(
+        body["work"]["canonical_title"],
+        format!("{TITLE_PREFIX} Beta"),
+        "title untouched"
+    );
 
-    let fi: (String, String) =
-        sqlx::query_as("SELECT title, author FROM fic_info WHERE id = $1")
-            .bind(&url_id)
-            .fetch_one(&db)
-            .await
-            .expect("fic_info row");
-    assert_eq!(fi.0, format!("{TITLE_PREFIX} Beta"), "fic_info title untouched");
+    let fi: (String, String) = sqlx::query_as("SELECT title, author FROM fic_info WHERE id = $1")
+        .bind(&url_id)
+        .fetch_one(&db)
+        .await
+        .expect("fic_info row");
+    assert_eq!(
+        fi.0,
+        format!("{TITLE_PREFIX} Beta"),
+        "fic_info title untouched"
+    );
     assert_eq!(fi.1, "Character B");
 }
 
@@ -355,8 +382,13 @@ async fn metadata_endpoint_requires_role_10() {
     let db = pool().await;
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME, 0).await;
-    let (work_id, _) =
-        seed_work(&db, "meta-test-c", &format!("{TITLE_PREFIX} Gamma"), "Character A").await;
+    let (work_id, _) = seed_work(
+        &db,
+        "meta-test-c",
+        &format!("{TITLE_PREFIX} Gamma"),
+        "Character A",
+    )
+    .await;
     let app = app().await;
     let user_token = auth_header(user_id, 0, USERNAME);
 
@@ -378,7 +410,11 @@ async fn metadata_endpoint_requires_role_10() {
         Some(json!({ "title": "Nope" })),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "anonymous must be forbidden: {body}");
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "anonymous must be forbidden: {body}"
+    );
     assert_eq!(body["err"], -403, "anonymous body: {body}");
 }
 
@@ -390,8 +426,13 @@ async fn metadata_endpoint_validates_input() {
     let db = pool().await;
     cleanup(&db).await;
     let admin_id = seed_user(&db, ADMIN_USERNAME, 10).await;
-    let (work_id, _) =
-        seed_work(&db, "meta-test-d", &format!("{TITLE_PREFIX} Delta"), "Character A").await;
+    let (work_id, _) = seed_work(
+        &db,
+        "meta-test-d",
+        &format!("{TITLE_PREFIX} Delta"),
+        "Character A",
+    )
+    .await;
     let app = app().await;
     let admin_token = auth_header(admin_id, 10, ADMIN_USERNAME);
 

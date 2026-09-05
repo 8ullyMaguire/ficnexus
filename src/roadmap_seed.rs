@@ -118,13 +118,15 @@ pub const PROPOSED_FEATURES: &[&str] = &[
 pub fn seed_list() -> Vec<SeedFeature> {
     let mut out: Vec<SeedFeature> = SHIPPED_FEATURES
         .iter()
-        .map(|text| SeedFeature { text, shipped: true })
+        .map(|text| SeedFeature {
+            text,
+            shipped: true,
+        })
         .collect();
-    out.extend(
-        PROPOSED_FEATURES
-            .iter()
-            .map(|text| SeedFeature { text, shipped: false }),
-    );
+    out.extend(PROPOSED_FEATURES.iter().map(|text| SeedFeature {
+        text,
+        shipped: false,
+    }));
     out
 }
 
@@ -202,14 +204,12 @@ pub async fn seed_roadmap_features(
             // the seed marks shipped gets upgraded. Never downgrade a shipped
             // cluster back to open.
             Some((id, current)) if current == status => {
-                sqlx::query(
-                    "UPDATE feature_clusters SET embedding = $1::vector WHERE id = $2",
-                )
-                .bind(&emb_sql)
-                .bind(id)
-                .execute(pool)
-                .await
-                .map_err(|e| OllamaError(format!("update failed: {e}")))?;
+                sqlx::query("UPDATE feature_clusters SET embedding = $1::vector WHERE id = $2")
+                    .bind(&emb_sql)
+                    .bind(id)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| OllamaError(format!("update failed: {e}")))?;
                 "unchanged".to_string()
             }
             Some((id, _)) => {

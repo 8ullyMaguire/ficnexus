@@ -19,10 +19,10 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::{get, post},
-    Router,
 };
 use serde_json::Value;
 use tower::ServiceExt; // oneshot
@@ -53,8 +53,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -75,21 +75,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -248,10 +256,12 @@ async fn cleanup(pool: &sqlx::PgPool, username: &str) {
         .bind(username)
         .execute(pool)
         .await;
-    let _ = sqlx::query("DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE username = $1)")
-        .bind(username)
-        .execute(pool)
-        .await;
+    let _ = sqlx::query(
+        "DELETE FROM notifications WHERE user_id IN (SELECT id FROM users WHERE username = $1)",
+    )
+    .bind(username)
+    .execute(pool)
+    .await;
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -317,7 +327,10 @@ async fn export_returns_csv_with_header_and_rows() {
         .unwrap();
     let csv = String::from_utf8(bytes.to_vec()).unwrap();
     let lines: Vec<&str> = csv.lines().collect();
-    assert!(lines.len() >= 2, "CSV should have a header + at least one row: {csv}");
+    assert!(
+        lines.len() >= 2,
+        "CSV should have a header + at least one row: {csv}"
+    );
     assert_eq!(
         lines[0], "title,author,source,bookmarked_at",
         "CSV header mismatch"
@@ -377,7 +390,11 @@ async fn import_enqueues_job_and_returns_queued() {
     let config = fichub::config::Config::from_env();
     let client = redis::Client::open(config.redis_url.clone()).unwrap();
     let mut conn = client.get_multiplexed_async_connection().await.unwrap();
-    let unique_key = format!("{}_test_{}", fichub::services::bookmark_import::BOOKMARK_IMPORT_QUEUE, user_id);
+    let unique_key = format!(
+        "{}_test_{}",
+        fichub::services::bookmark_import::BOOKMARK_IMPORT_QUEUE,
+        user_id
+    );
     let _: () = redis::cmd("DEL")
         .arg(&unique_key)
         .query_async(&mut conn)
@@ -388,14 +405,21 @@ async fn import_enqueues_job_and_returns_queued() {
         user_id,
         csv: "title,author,source\nSome Fic,Some Author,https://example.com/some-fic\n".to_string(),
     };
-    let worker = fichub::services::bookmark_import::BookmarkImportWorker::new(db.clone(), conn.clone());
-    worker.enqueue_to(&unique_key, &job).await.expect("enqueue should succeed");
+    let worker =
+        fichub::services::bookmark_import::BookmarkImportWorker::new(db.clone(), conn.clone());
+    worker
+        .enqueue_to(&unique_key, &job)
+        .await
+        .expect("enqueue should succeed");
     let len: i64 = redis::cmd("LLEN")
         .arg(&unique_key)
         .query_async(&mut conn)
         .await
         .unwrap();
-    assert_eq!(len, 1, "enqueue should push exactly one job onto {unique_key}");
+    assert_eq!(
+        len, 1,
+        "enqueue should push exactly one job onto {unique_key}"
+    );
     let _: () = redis::cmd("DEL")
         .arg(&unique_key)
         .query_async(&mut conn)
@@ -416,7 +440,10 @@ async fn import_enqueues_job_and_returns_queued() {
                 .uri("/api/bookmarks/import")
                 .method("POST")
                 .header("Authorization", token)
-                .header("content-type", "multipart/form-data; boundary=X-TEST-BOUNDARY")
+                .header(
+                    "content-type",
+                    "multipart/form-data; boundary=X-TEST-BOUNDARY",
+                )
                 .body(Body::from(body))
                 .unwrap(),
         )
@@ -484,9 +511,19 @@ JustTitle
         .await
         .expect("process_import should succeed");
 
-    assert_eq!(res.imported, 1, "exactly one new bookmark should import: {res:?}");
-    assert_eq!(res.duplicates, 1, "the repeated row should count as duplicate: {res:?}");
-    assert_eq!(res.errors.len(), 2, "malformed + unresolved rows should error: {res:?}");
+    assert_eq!(
+        res.imported, 1,
+        "exactly one new bookmark should import: {res:?}"
+    );
+    assert_eq!(
+        res.duplicates, 1,
+        "the repeated row should count as duplicate: {res:?}"
+    );
+    assert_eq!(
+        res.errors.len(),
+        2,
+        "malformed + unresolved rows should error: {res:?}"
+    );
 
     // Verify the bookmark row exists with the resolved url_id + work_id.
     let count: i64 = sqlx::query_scalar(
@@ -520,7 +557,8 @@ async fn import_creates_notification_on_completion() {
     )
     .await;
 
-    let csv = "title,author,source\nBkmkCsv Notify Fic,BkmkCsv Author,https://example.com/notify-fic\n";
+    let csv =
+        "title,author,source\nBkmkCsv Notify Fic,BkmkCsv Author,https://example.com/notify-fic\n";
     let job = fichub::services::bookmark_import::ImportJob {
         user_id,
         csv: csv.to_string(),
@@ -540,7 +578,10 @@ async fn import_creates_notification_on_completion() {
     .fetch_one(&db)
     .await
     .unwrap();
-    assert_eq!(notif_count, 1, "notification should be created on completion");
+    assert_eq!(
+        notif_count, 1,
+        "notification should be created on completion"
+    );
 
     let title: String = sqlx::query_scalar(
         "SELECT title FROM notifications WHERE user_id = $1 AND notification_type = 'bookmark_import'",

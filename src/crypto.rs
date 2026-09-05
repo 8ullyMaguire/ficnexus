@@ -9,8 +9,8 @@
 //! Encrypted form (base64 of): `nonce(12) || ciphertext || tag(16)`.
 
 use aes_gcm::{
-    aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
+    aead::{Aead, KeyInit},
 };
 use base64::Engine;
 use rand::RngCore;

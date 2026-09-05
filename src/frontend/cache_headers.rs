@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use axum::body::Body;
-use axum::http::{header, Request, Response};
+use axum::http::{Request, Response, header};
 use tower::{Layer, Service};
 
 const IMMUTABLE_MAX_AGE: u64 = 31536000; // 1 year
@@ -32,7 +32,9 @@ impl<S> Layer<S> for CacheHeadersLayer {
     type Service = CacheHeadersService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        CacheHeadersService { inner: Arc::new(inner) }
+        CacheHeadersService {
+            inner: Arc::new(inner),
+        }
     }
 }
 
@@ -45,7 +47,10 @@ type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 
 impl<S, ReqBody, ResBody> Service<Request<ReqBody>> for CacheHeadersService<S>
 where
-    S: Service<Request<ReqBody>, Response = Response<ResBody>, Error = Infallible> + Clone + Send + 'static,
+    S: Service<Request<ReqBody>, Response = Response<ResBody>, Error = Infallible>
+        + Clone
+        + Send
+        + 'static,
     S::Future: Send + 'static,
     ReqBody: Send + 'static,
     ResBody: Send + 'static,
@@ -71,7 +76,9 @@ where
             };
             resp.headers_mut().insert(
                 header::CACHE_CONTROL,
-                cache.parse().unwrap_or_else(|_| header::HeaderValue::from_static("no-cache")),
+                cache
+                    .parse()
+                    .unwrap_or_else(|_| header::HeaderValue::from_static("no-cache")),
             );
             Ok(resp)
         })
@@ -86,7 +93,7 @@ use Body as _Body;
 mod tests {
     use super::*;
     use axum::body::Body;
-    use axum::http::{header, Request, StatusCode};
+    use axum::http::{Request, StatusCode, header};
     use std::convert::Infallible;
     use tower::ServiceExt;
 
@@ -118,12 +125,15 @@ mod tests {
     async fn html_and_other_paths_get_no_cache() {
         let svc = CacheHeadersLayer::new().layer(tower::service_fn(echo_service));
 
-        for path in ["/", "/fic/abc", "/manifest.webmanifest", "/_app/immutable-x"] {
+        for path in [
+            "/",
+            "/fic/abc",
+            "/manifest.webmanifest",
+            "/_app/immutable-x",
+        ] {
             let resp = svc
                 .clone()
-                .oneshot(
-                    Request::builder().uri(path).body(Body::empty()).unwrap(),
-                )
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
                 .await
                 .unwrap();
             let cc = resp.headers().get(header::CACHE_CONTROL).unwrap();

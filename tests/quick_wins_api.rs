@@ -18,10 +18,10 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
 use serde_json::Value;
 use tower::ServiceExt; // oneshot
@@ -60,8 +60,8 @@ async fn app() -> Router {
     let config = test_config();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -82,21 +82,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false, // dynamic rate limiting off in tests
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false, // dynamic rate limiting off in tests
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -119,7 +127,10 @@ async fn app() -> Router {
             "/api/tags/autocomplete",
             get(fichub::tags::routes::tag_autocomplete),
         )
-        .route("/api/works/random", get(fichub::routes::search::random_work))
+        .route(
+            "/api/works/random",
+            get(fichub::routes::search::random_work),
+        )
         .route("/api/search", get(fichub::search::routes::search_handler))
         .with_state(state)
 }
@@ -244,12 +255,7 @@ fn auth_header(user_id: i32) -> String {
 }
 
 /// Remove ONLY the rows the seeding helpers create, so tests are re-runnable.
-async fn cleanup(
-    pool: &sqlx::PgPool,
-    fics: &[&str],
-    tags: &[&str],
-    users: &[&str],
-) {
+async fn cleanup(pool: &sqlx::PgPool, fics: &[&str], tags: &[&str], users: &[&str]) {
     for id in fics {
         let _ = sqlx::query("DELETE FROM fic_tags WHERE url_id = $1")
             .bind(id)
@@ -300,8 +306,20 @@ async fn tag_autocomplete_returns_tags_with_usage_counts() {
     // Self-heal: clear any rows from a previously aborted run.
     cleanup(&db, &fics, &tags, &[]).await;
 
-    seed_fic(&db, "quickwin_ac_a", "Autocomplete Alpha Fic", "A story about autocomplete alpha.").await;
-    seed_fic(&db, "quickwin_ac_b", "Autocomplete Beta Fic", "A story about autocomplete beta.").await;
+    seed_fic(
+        &db,
+        "quickwin_ac_a",
+        "Autocomplete Alpha Fic",
+        "A story about autocomplete alpha.",
+    )
+    .await;
+    seed_fic(
+        &db,
+        "quickwin_ac_b",
+        "Autocomplete Beta Fic",
+        "A story about autocomplete beta.",
+    )
+    .await;
 
     let tag_a = seed_tag(&db, "QuickWin Autocomplete Alpha", 4).await;
     let tag_b = seed_tag(&db, "QuickWin Autocomplete Beta", 4).await;
@@ -311,7 +329,12 @@ async fn tag_autocomplete_returns_tags_with_usage_counts() {
     seed_fic_tag(&db, "quickwin_ac_b", tag_b, 5).await;
 
     let router = app().await;
-    let body = get_json(&router, "/api/tags/autocomplete?q=QuickWin%20Autocomplete", None).await;
+    let body = get_json(
+        &router,
+        "/api/tags/autocomplete?q=QuickWin%20Autocomplete",
+        None,
+    )
+    .await;
     assert_eq!(body["err"], 0, "autocomplete err: {body}");
     let results = body["results"].as_array().expect("results array");
     assert!(
@@ -336,13 +359,19 @@ async fn tag_autocomplete_returns_tags_with_usage_counts() {
     }
     assert_eq!(alpha_count, Some(2), "alpha usage_count must be 2: {body}");
     assert_eq!(beta_count, Some(1), "beta usage_count must be 1: {body}");
-    assert!(alpha_pos < beta_pos, "more-used tag must sort first: {body}");
+    assert!(
+        alpha_pos < beta_pos,
+        "more-used tag must sort first: {body}"
+    );
     // Shape: id, name, tag_type_id present.
     let first = &results[0];
     assert!(first["id"].as_i64().is_some(), "id missing: {body}");
     // The autocomplete response serializes the type as "type_id" (not
     // "tag_type_id") — see tag_autocomplete in src/tags/routes.rs.
-    assert!(first["type_id"].as_i64().is_some(), "type_id missing: {body}");
+    assert!(
+        first["type_id"].as_i64().is_some(),
+        "type_id missing: {body}"
+    );
 
     cleanup(&db, &fics, &tags, &[]).await;
 }
@@ -373,8 +402,20 @@ async fn random_work_returns_full_metadata_fic() {
     let fics = ["quickwin_rand_a", "quickwin_rand_b"];
     cleanup(&db, &fics, &[], &[]).await;
 
-    seed_fic(&db, "quickwin_rand_a", "QuickWin Random Alpha", "A surprising tale of alpha.").await;
-    seed_fic(&db, "quickwin_rand_b", "QuickWin Random Beta", "A surprising tale of beta.").await;
+    seed_fic(
+        &db,
+        "quickwin_rand_a",
+        "QuickWin Random Alpha",
+        "A surprising tale of alpha.",
+    )
+    .await;
+    seed_fic(
+        &db,
+        "quickwin_rand_b",
+        "QuickWin Random Beta",
+        "A surprising tale of beta.",
+    )
+    .await;
 
     let router = app().await;
     let body = get_json(&router, "/api/works/random", None).await;
@@ -387,11 +428,20 @@ async fn random_work_returns_full_metadata_fic() {
     assert!(fic["author"].as_str().is_some(), "author missing: {body}");
     assert!(fic["source"].as_str().is_some(), "source missing: {body}");
     assert!(fic["words"].as_i64().is_some(), "words missing: {body}");
-    assert!(fic["chapters"].as_i64().is_some(), "chapters missing: {body}");
-    assert!(fic["status"].as_str().is_some(), "status missing: {body}");
-    assert!(fic["description"].as_str().is_some(), "description missing: {body}");
     assert!(
-        fic["description"].as_str().map(|d| !d.is_empty()).unwrap_or(false),
+        fic["chapters"].as_i64().is_some(),
+        "chapters missing: {body}"
+    );
+    assert!(fic["status"].as_str().is_some(), "status missing: {body}");
+    assert!(
+        fic["description"].as_str().is_some(),
+        "description missing: {body}"
+    );
+    assert!(
+        fic["description"]
+            .as_str()
+            .map(|d| !d.is_empty())
+            .unwrap_or(false),
         "description must be non-empty (eligible filter): {body}"
     );
 
@@ -414,8 +464,20 @@ async fn search_personal_filters_hide_and_library() {
     let username = "quickwins_pers_user";
     cleanup(&db, &fics, &[], &[username]).await;
 
-    seed_fic(&db, "quickwin_pers_a", "Persistent Filter Alpha", "Alpha subject matter personal filter test.").await;
-    seed_fic(&db, "quickwin_pers_b", "Persistent Filter Beta", "Beta subject matter personal filter test.").await;
+    seed_fic(
+        &db,
+        "quickwin_pers_a",
+        "Persistent Filter Alpha",
+        "Alpha subject matter personal filter test.",
+    )
+    .await;
+    seed_fic(
+        &db,
+        "quickwin_pers_b",
+        "Persistent Filter Beta",
+        "Beta subject matter personal filter test.",
+    )
+    .await;
 
     let user_id = seed_user(&db, username).await;
     let auth = auth_header(user_id);
@@ -477,51 +539,99 @@ async fn search_personal_filters_hide_and_library() {
         .iter()
         .filter_map(|r| r["url_id"].as_str().map(String::from))
         .collect();
-    assert!(ids.contains(&"quickwin_pers_a".to_string()), "baseline A: {body}");
-    assert!(ids.contains(&"quickwin_pers_b".to_string()), "baseline B: {body}");
+    assert!(
+        ids.contains(&"quickwin_pers_a".to_string()),
+        "baseline A: {body}"
+    );
+    assert!(
+        ids.contains(&"quickwin_pers_b".to_string()),
+        "baseline B: {body}"
+    );
 
     // hide_bookmarked=true → fic A (bookmarked) gone.
-    let body = get_json(&router, &format!("/api/search?q={q}&hide_bookmarked=true"), Some(&auth)).await;
+    let body = get_json(
+        &router,
+        &format!("/api/search?q={q}&hide_bookmarked=true"),
+        Some(&auth),
+    )
+    .await;
     let ids: Vec<String> = body["results"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(|r| r["url_id"].as_str().map(String::from))
         .collect();
-    assert!(!ids.contains(&"quickwin_pers_a".to_string()), "hide_bookmarked leaks A: {body}");
-    assert!(ids.contains(&"quickwin_pers_b".to_string()), "hide_bookmarked keeps B: {body}");
+    assert!(
+        !ids.contains(&"quickwin_pers_a".to_string()),
+        "hide_bookmarked leaks A: {body}"
+    );
+    assert!(
+        ids.contains(&"quickwin_pers_b".to_string()),
+        "hide_bookmarked keeps B: {body}"
+    );
 
     // hide_read=true → fic B (completed) gone.
-    let body = get_json(&router, &format!("/api/search?q={q}&hide_read=true"), Some(&auth)).await;
+    let body = get_json(
+        &router,
+        &format!("/api/search?q={q}&hide_read=true"),
+        Some(&auth),
+    )
+    .await;
     let ids: Vec<String> = body["results"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(|r| r["url_id"].as_str().map(String::from))
         .collect();
-    assert!(!ids.contains(&"quickwin_pers_b".to_string()), "hide_read leaks B: {body}");
-    assert!(ids.contains(&"quickwin_pers_a".to_string()), "hide_read keeps A: {body}");
+    assert!(
+        !ids.contains(&"quickwin_pers_b".to_string()),
+        "hide_read leaks B: {body}"
+    );
+    assert!(
+        ids.contains(&"quickwin_pers_a".to_string()),
+        "hide_read keeps A: {body}"
+    );
 
     // library_only=true → ONLY the bookmarked fic A.
-    let body = get_json(&router, &format!("/api/search?q={q}&library_only=true"), Some(&auth)).await;
+    let body = get_json(
+        &router,
+        &format!("/api/search?q={q}&library_only=true"),
+        Some(&auth),
+    )
+    .await;
     let ids: Vec<String> = body["results"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(|r| r["url_id"].as_str().map(String::from))
         .collect();
-    assert_eq!(ids, vec!["quickwin_pers_a".to_string()], "library_only: {body}");
+    assert_eq!(
+        ids,
+        vec!["quickwin_pers_a".to_string()],
+        "library_only: {body}"
+    );
 
     // Anonymous (no auth): personal filters are no-ops → both fics present.
-    let body = get_json(&router, &format!("/api/search?q={q}&hide_read=true&hide_bookmarked=true&library_only=true"), None).await;
+    let body = get_json(
+        &router,
+        &format!("/api/search?q={q}&hide_read=true&hide_bookmarked=true&library_only=true"),
+        None,
+    )
+    .await;
     let ids: Vec<String> = body["results"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(|r| r["url_id"].as_str().map(String::from))
         .collect();
-    assert!(ids.contains(&"quickwin_pers_a".to_string()), "anon keeps A: {body}");
-    assert!(ids.contains(&"quickwin_pers_b".to_string()), "anon keeps B: {body}");
+    assert!(
+        ids.contains(&"quickwin_pers_a".to_string()),
+        "anon keeps A: {body}"
+    );
+    assert!(
+        ids.contains(&"quickwin_pers_b".to_string()),
+        "anon keeps B: {body}"
+    );
 
     cleanup(&db, &fics, &[], &[username]).await;
 }

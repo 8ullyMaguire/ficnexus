@@ -16,10 +16,7 @@ use super::strategy::{RecError, RecStrategy, ScoredRec, StrategyContext};
 /// One k-means iteration over sparse tag-affinity vectors.
 /// Returns (centroids, assignments) — assignments[i] = cluster of user i.
 /// Pure function, unit-tested.
-pub fn kmeans_step(
-    vectors: &[Vec<(i32, f64)>],
-    centroids: &[Vec<(i32, f64)>],
-) -> Vec<usize> {
+pub fn kmeans_step(vectors: &[Vec<(i32, f64)>], centroids: &[Vec<(i32, f64)>]) -> Vec<usize> {
     vectors
         .iter()
         .map(|v| {
@@ -137,7 +134,9 @@ impl RecStrategy for ClustersStrategy {
         user_id: Option<i32>,
     ) -> Result<Vec<ScoredRec>, RecError> {
         if seed.is_some() {
-            return Err(RecError::NotEnoughData("clusters is personalized-only".into()));
+            return Err(RecError::NotEnoughData(
+                "clusters is personalized-only".into(),
+            ));
         }
         let Some(uid) = user_id else {
             return Err(RecError::Strategy("clusters needs a user".into()));
@@ -196,14 +195,15 @@ impl RecStrategy for ClustersStrategy {
         .fetch_all(&ctx.db)
         .await?;
         if top_tags.is_empty() {
-            return Err(RecError::NotEnoughData("cluster has no characteristic tags".into()));
+            return Err(RecError::NotEnoughData(
+                "cluster has no characteristic tags".into(),
+            ));
         }
-        let known: Vec<String> = sqlx::query_scalar(
-            "SELECT work_id FROM rec_user_signals WHERE user_id = $1",
-        )
-        .bind(uid)
-        .fetch_all(&ctx.db)
-        .await?;
+        let known: Vec<String> =
+            sqlx::query_scalar("SELECT work_id FROM rec_user_signals WHERE user_id = $1")
+                .bind(uid)
+                .fetch_all(&ctx.db)
+                .await?;
 
         let rows: Vec<(String, i64)> = sqlx::query_as(
             r#"SELECT f.id, COUNT(DISTINCT ft.tag_id) AS shared
@@ -220,7 +220,9 @@ impl RecStrategy for ClustersStrategy {
         .fetch_all(&ctx.db)
         .await?;
         if rows.is_empty() {
-            return Err(RecError::NotEnoughData("cluster produced no candidates".into()));
+            return Err(RecError::NotEnoughData(
+                "cluster produced no candidates".into(),
+            ));
         }
         Ok(rows
             .into_iter()
@@ -254,14 +256,18 @@ impl RecStrategy for ClustersStrategy {
             }
         }
         if vectors.len() < 4 {
-            return Err(RecError::NotEnoughData("too few tag-affinity vectors".into()));
+            return Err(RecError::NotEnoughData(
+                "too few tag-affinity vectors".into(),
+            ));
         }
         let k = 5usize.min(vectors.len() / 2);
         let (centroids, assignments) = run_kmeans(&vectors, k, 10);
 
         // Write memberships (idempotent).
         let mut tx = ctx.db.begin().await?;
-        sqlx::query("DELETE FROM rec_user_clusters").execute(&mut *tx).await?;
+        sqlx::query("DELETE FROM rec_user_clusters")
+            .execute(&mut *tx)
+            .await?;
         for (i, a) in assignments.iter().enumerate() {
             let affinity: HashMap<String, f64> = centroids
                 .iter()
@@ -304,8 +310,16 @@ mod tests {
         // Assignments must split {A,A,A} vs {B,B,B}.
         let a_set: std::collections::HashSet<usize> = assignments[..3].iter().copied().collect();
         let b_set: std::collections::HashSet<usize> = assignments[3..].iter().copied().collect();
-        assert_eq!(a_set.len(), 1, "group A must share one cluster: {assignments:?}");
-        assert_eq!(b_set.len(), 1, "group B must share one cluster: {assignments:?}");
+        assert_eq!(
+            a_set.len(),
+            1,
+            "group A must share one cluster: {assignments:?}"
+        );
+        assert_eq!(
+            b_set.len(),
+            1,
+            "group B must share one cluster: {assignments:?}"
+        );
         assert_ne!(a_set, b_set, "groups must be in different clusters");
     }
 

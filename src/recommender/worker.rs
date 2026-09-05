@@ -328,13 +328,13 @@ fn parse_bookmarks_page(html: &str, kind: BookmarkKind) -> (Vec<String>, bool) {
     let mut out = Vec::new();
     for li in doc.select(&li_sel) {
         for a in li.select(&a_sel) {
-            let Some(href) = a.value().attr("href") else { continue };
+            let Some(href) = a.value().attr("href") else {
+                continue;
+            };
             let target = match kind {
                 BookmarkKind::Bookmarkers => ao3_username(href)
                     .map(|raw| format!("{AO3_BASE}/users/{}", ao3_decode_user(&raw))),
-                BookmarkKind::Works => {
-                    ao3_work_id(href).map(|id| format!("{AO3_BASE}/works/{id}"))
-                }
+                BookmarkKind::Works => ao3_work_id(href).map(|id| format!("{AO3_BASE}/works/{id}")),
             };
             if let Some(t) = target {
                 if seen.insert(t.clone()) {
@@ -430,9 +430,8 @@ impl SiteFetcher for Ao3Fetcher {
         work_url: &str,
         max_pages: u32,
     ) -> Result<Vec<String>, ScrapeError> {
-        let work_id = ao3_work_id(work_url).ok_or_else(|| {
-            ScrapeError::ParseError(format!("not an AO3 work URL: {work_url}"))
-        })?;
+        let work_id = ao3_work_id(work_url)
+            .ok_or_else(|| ScrapeError::ParseError(format!("not an AO3 work URL: {work_url}")))?;
         let first = format!("{AO3_BASE}/works/{work_id}/bookmarks");
         Self::collect_bookmark_pages(client, first, BookmarkKind::Bookmarkers, max_pages).await
     }
@@ -443,9 +442,8 @@ impl SiteFetcher for Ao3Fetcher {
         user_url: &str,
         max_pages: u32,
     ) -> Result<Vec<String>, ScrapeError> {
-        let name = ao3_username(user_url).ok_or_else(|| {
-            ScrapeError::ParseError(format!("not an AO3 user URL: {user_url}"))
-        })?;
+        let name = ao3_username(user_url)
+            .ok_or_else(|| ScrapeError::ParseError(format!("not an AO3 user URL: {user_url}")))?;
         let first = format!(
             "{AO3_BASE}/users/{}/bookmarks",
             utf8_percent_encode_user(&name)
@@ -515,13 +513,12 @@ impl CollectionWorker {
     /// from unsupported sites (or manual uploads) are skipped with a debug
     /// log instead of being pushed onto a queue nobody polls.
     pub async fn enqueue_fic(&self, url_id: &str) -> Result<(), redis::RedisError> {
-        let row: Option<(Option<String>, Option<i32>)> = sqlx::query_as(
-            "SELECT source, work_id FROM fic_info WHERE id = $1",
-        )
-        .bind(url_id)
-        .fetch_optional(&self.db)
-        .await
-        .unwrap_or(None);
+        let row: Option<(Option<String>, Option<i32>)> =
+            sqlx::query_as("SELECT source, work_id FROM fic_info WHERE id = $1")
+                .bind(url_id)
+                .fetch_optional(&self.db)
+                .await
+                .unwrap_or(None);
 
         let Some((source, work_id)) = row else {
             debug!("enqueue_fic: url_id {url_id} not in fic_info — skipping");
@@ -531,17 +528,14 @@ impl CollectionWorker {
         // AO3 works: source is the fic URL used at scrape time.
         if let Some(src) = source.as_deref() {
             if src.contains(AO3_DOMAIN) {
-                let local_id =
-                    ao3_work_id(src).or_else(|| work_id.map(|w| w.to_string()));
+                let local_id = ao3_work_id(src).or_else(|| work_id.map(|w| w.to_string()));
                 if let Some(site_work_id) = local_id {
                     return self.enqueue(url_id, AO3_DOMAIN, &site_work_id).await;
                 }
             }
         }
 
-        debug!(
-            "enqueue_fic: {url_id} has no registered favourite-collection site — skipping"
-        );
+        debug!("enqueue_fic: {url_id} has no registered favourite-collection site — skipping");
         Ok(())
     }
 
@@ -558,9 +552,7 @@ impl CollectionWorker {
         site_work_id: &str,
     ) -> Result<(), redis::RedisError> {
         if !self.supports_domain(site_domain) {
-            debug!(
-                "enqueue: no SiteFetcher for {site_domain} — dropping {url_id}"
-            );
+            debug!("enqueue: no SiteFetcher for {site_domain} — dropping {url_id}");
             return Ok(());
         }
         let item = QueueItem {
@@ -617,7 +609,10 @@ impl CollectionWorker {
                             }
                         }
                         Err(e) => {
-                            warn!("Invalid queue item on {}: {} — payload: {}", domain, e, item_str);
+                            warn!(
+                                "Invalid queue item on {}: {} — payload: {}",
+                                domain, e, item_str
+                            );
                         }
                     }
                 }
@@ -759,12 +754,11 @@ impl CollectionWorker {
                 continue;
             };
             let url_id = crate::scrape::generate_url_id(1, &work_id);
-            let exists: Option<i32> =
-                sqlx::query_scalar("SELECT 1 FROM fic_info WHERE id = $1")
-                    .bind(&url_id)
-                    .fetch_optional(&self.db)
-                    .await
-                    .unwrap_or(None);
+            let exists: Option<i32> = sqlx::query_scalar("SELECT 1 FROM fic_info WHERE id = $1")
+                .bind(&url_id)
+                .fetch_optional(&self.db)
+                .await
+                .unwrap_or(None);
             if exists.is_some() {
                 ids.push(url_id);
             } else {
@@ -885,7 +879,10 @@ mod tests {
         let (works, has_next) = parse_bookmarks_page(html, BookmarkKind::Works);
         // Both chapter and work links resolve to the same canonical work URL,
         // and duplicates are removed.
-        assert_eq!(works, vec!["https://archiveofourown.org/works/111".to_string()]);
+        assert_eq!(
+            works,
+            vec!["https://archiveofourown.org/works/111".to_string()]
+        );
         assert!(!has_next);
     }
 

@@ -14,8 +14,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct MediaMinerScraper;
 
@@ -25,7 +25,11 @@ impl SiteScraper for MediaMinerScraper {
         url.contains("mediaminer.org/fanfic/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         // Chapter-list page is the no-trailing-slash URL.
         let page_url = url.trim_end_matches('/').to_string();
         let html = http::fetch(client, &page_url).await?;
@@ -53,7 +57,10 @@ impl SiteScraper for MediaMinerScraper {
         if let Ok(r_sel) = Selector::parse("div#post-rating") {
             if let Some(el) = doc.select(&r_sel).next() {
                 let raw = el.text().collect::<String>().trim().to_string();
-                rating = raw.trim_start_matches("[ ").trim_end_matches(" ]").to_string();
+                rating = raw
+                    .trim_start_matches("[ ")
+                    .trim_end_matches(" ]")
+                    .to_string();
             }
         }
 
@@ -96,7 +103,10 @@ impl SiteScraper for MediaMinerScraper {
                     }
                 }
                 // Words: 123 or 23.1K or 1.0M
-                if let Some(m) = Regex::new(r"\|\s*Words:\s*([\d.]+)(K|M)?\s*\|").unwrap().captures(&text) {
+                if let Some(m) = Regex::new(r"\|\s*Words:\s*([\d.]+)(K|M)?\s*\|")
+                    .unwrap()
+                    .captures(&text)
+                {
                     let num: f64 = m.get(1).unwrap().as_str().parse().unwrap_or(0.0);
                     let factor: f64 = match m.get(2).map(|x| x.as_str()) {
                         Some("K") => 1000.0,
@@ -218,7 +228,10 @@ mod tests {
     #[test]
     fn parses_words_k() {
         let text = "| Words: 23.1K | Status: In-Progress |";
-        let m = Regex::new(r"\|\s*Words:\s*([\d.]+)(K|M)?\s*\|").unwrap().captures(text).unwrap();
+        let m = Regex::new(r"\|\s*Words:\s*([\d.]+)(K|M)?\s*\|")
+            .unwrap()
+            .captures(text)
+            .unwrap();
         let num: f64 = m.get(1).unwrap().as_str().parse().unwrap();
         let factor: f64 = match m.get(2).map(|x| x.as_str()) {
             Some("K") => 1000.0,

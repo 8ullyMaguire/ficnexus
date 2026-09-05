@@ -14,8 +14,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 use super::{http, login};
+use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 
 pub struct DokugaScraper;
 
@@ -23,7 +23,10 @@ impl DokugaScraper {
     fn section_and_id(url: &str) -> Option<(String, String)> {
         let m = Regex::new(r"dokuga\.com/(fanfiction|spark)/story/(\d+)").ok()?;
         let c = m.captures(url)?;
-        Some((c.get(1)?.as_str().to_string(), c.get(2)?.as_str().to_string()))
+        Some((
+            c.get(1)?.as_str().to_string(),
+            c.get(2)?.as_str().to_string(),
+        ))
     }
 }
 
@@ -56,7 +59,11 @@ impl SiteScraper for DokugaScraper {
         Ok(())
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let (_section, story_id) = Self::section_and_id(url)
             .ok_or_else(|| ScrapeError::ParseError("dokuga: bad url".into()))?;
         let html = http::fetch(client, url).await?;
@@ -208,7 +215,8 @@ mod tests {
 
     #[test]
     fn parses_story_id() {
-        let (section, id) = DokugaScraper::section_and_id("http://www.dokuga.com/fanfiction/story/7528/1").unwrap();
+        let (section, id) =
+            DokugaScraper::section_and_id("http://www.dokuga.com/fanfiction/story/7528/1").unwrap();
         assert_eq!(section, "fanfiction");
         assert_eq!(id, "7528");
         assert!(DokugaScraper::section_and_id("https://x.com/foo").is_none());
@@ -228,7 +236,11 @@ mod tests {
         let html = r#"<html><body><div class="storytext"><p>Story text.</p></div></body></html>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("div.storytext").unwrap();
-        let s = doc.select(&sel).next().map(|el| el.inner_html()).unwrap_or_default();
+        let s = doc
+            .select(&sel)
+            .next()
+            .map(|el| el.inner_html())
+            .unwrap_or_default();
         assert!(s.contains("Story text."));
     }
 }

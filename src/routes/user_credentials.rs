@@ -2,8 +2,8 @@
 //! (AO3, FFN, etc.) used by the scraper to fetch works on behalf of users.
 
 use axum::{
-    extract::{Path, State},
     Json,
+    extract::{Path, State},
 };
 use serde::{Deserialize, Serialize};
 use sqlx;
@@ -53,7 +53,9 @@ pub async fn set_site_credentials_handler(
     let user_id = auth
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
-    let expires_at = req.expires_at.unwrap_or_else(|| chrono::Utc::now() + chrono::Duration::days(365));
+    let expires_at = req
+        .expires_at
+        .unwrap_or_else(|| chrono::Utc::now() + chrono::Duration::days(365));
 
     // Simple encryption (in production, use proper key management)
     let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "dev-secret-change-me".into());
@@ -69,7 +71,7 @@ pub async fn set_site_credentials_handler(
             expires_at = EXCLUDED.expires_at,
             created_at = now()
         RETURNING *
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(&req.domain)
@@ -92,7 +94,7 @@ pub async fn list_site_credentials_handler(
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let creds = sqlx::query_as::<_, UserSiteCredential>(
-        "SELECT * FROM user_site_credentials WHERE user_id = $1 ORDER BY domain"
+        "SELECT * FROM user_site_credentials WHERE user_id = $1 ORDER BY domain",
     )
     .bind(user_id)
     .fetch_all(&state.db)
@@ -111,13 +113,12 @@ pub async fn delete_site_credentials_handler(
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
-    let result = sqlx::query(
-        "DELETE FROM user_site_credentials WHERE user_id = $1 AND domain = $2"
-    )
-    .bind(user_id)
-    .bind(&domain)
-    .execute(&state.db)
-    .await?;
+    let result =
+        sqlx::query("DELETE FROM user_site_credentials WHERE user_id = $1 AND domain = $2")
+            .bind(user_id)
+            .bind(&domain)
+            .execute(&state.db)
+            .await?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("Credentials not found".into()));

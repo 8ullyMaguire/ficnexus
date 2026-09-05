@@ -36,15 +36,20 @@ async fn main() -> ExitCode {
         }
     };
 
-    let ollama_base = std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| "http://localhost:11434".into());
-    let ollama_model = std::env::var("OLLAMA_EMBED_MODEL").unwrap_or_else(|_| "nomic-embed-text".into());
+    let ollama_base =
+        std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| "http://localhost:11434".into());
+    let ollama_model =
+        std::env::var("OLLAMA_EMBED_MODEL").unwrap_or_else(|_| "nomic-embed-text".into());
     let http = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         .build()
         .expect("build reqwest client");
     let ollama = fichub::services::ollama::OllamaClient::new(ollama_base, ollama_model, http);
 
-    println!("Embedding + upserting {} features…", fichub::roadmap_seed::seed_list().len());
+    println!(
+        "Embedding + upserting {} features…",
+        fichub::roadmap_seed::seed_list().len()
+    );
 
     let report = match fichub::roadmap_seed::seed_roadmap_features(&pool, &ollama).await {
         Ok(report) => report,

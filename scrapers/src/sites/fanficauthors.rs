@@ -14,8 +14,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct FanficAuthorsScraper;
 
@@ -34,20 +34,29 @@ impl SiteScraper for FanficAuthorsScraper {
         url.contains(".fanficauthors.net/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let (zone, story_id) = Self::zone_and_id(url)
             .ok_or_else(|| ScrapeError::ParseError("fanficauthors: bad url".into()))?;
         let index_url = format!("{url}index/");
         let html = http::fetch(client, &index_url).await?;
         let doc = Html::parse_document(&html);
 
-        let author = zone.replace('-', " ").split(' ').map(|w| {
-            let mut c = w.chars();
-            match c.next() {
-                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                None => String::new(),
-            }
-        }).collect::<Vec<_>>().join(" ");
+        let author = zone
+            .replace('-', " ")
+            .split(' ')
+            .map(|w| {
+                let mut c = w.chars();
+                match c.next() {
+                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                    None => String::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
 
         // Title
         let mut title = String::new();
@@ -88,7 +97,12 @@ impl SiteScraper for FanficAuthorsScraper {
                 if let Ok(p_sel) = Selector::parse("p") {
                     let ps: Vec<_> = well.select(&p_sel).collect();
                     if let Some(p) = ps.get(1) {
-                        let metaline = p.text().collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ");
+                        let metaline = p
+                            .text()
+                            .collect::<String>()
+                            .split_whitespace()
+                            .collect::<Vec<_>>()
+                            .join(" ");
                         if let Some(m) = Regex::new(r"Status: (.+?) - Rating: (.+?) - Chapters: [0-9,]+ - Word count: ([0-9,]+?)(?: - Genre: ?(.*))?$").unwrap().captures(&metaline) {
                             let st = m.get(1).unwrap().as_str();
                             if st.contains("Completed") {
@@ -145,8 +159,8 @@ impl SiteScraper for FanficAuthorsScraper {
 
         let links: Vec<(String, String)> = {
             let doc = Html::parse_document(&html);
-            let sel = Selector::parse("a[href]")
-                .map_err(|e| ScrapeError::ParseError(e.to_string()))?;
+            let sel =
+                Selector::parse("a[href]").map_err(|e| ScrapeError::ParseError(e.to_string()))?;
             let chap_re = Regex::new(&format!(r"/{story_id}/([a-zA-Z0-9_]+)/")).unwrap();
             doc.select(&sel)
                 .filter_map(|a| {
@@ -227,7 +241,9 @@ mod tests {
 
     #[test]
     fn parses_zone_and_id() {
-        let (zone, id) = FanficAuthorsScraper::zone_and_id("https://abraxan.fanficauthors.net/Story_Name/").unwrap();
+        let (zone, id) =
+            FanficAuthorsScraper::zone_and_id("https://abraxan.fanficauthors.net/Story_Name/")
+                .unwrap();
         assert_eq!(zone, "abraxan");
         assert_eq!(id, "Story_Name");
     }
@@ -235,13 +251,18 @@ mod tests {
     #[test]
     fn formats_author_name() {
         let zone = "musings-of-apathy";
-        let author = zone.replace('-', " ").split(' ').map(|w| {
-            let mut c = w.chars();
-            match c.next() {
-                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                None => String::new(),
-            }
-        }).collect::<Vec<_>>().join(" ");
+        let author = zone
+            .replace('-', " ")
+            .split(' ')
+            .map(|w| {
+                let mut c = w.chars();
+                match c.next() {
+                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                    None => String::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
         assert_eq!(author, "Musings Of Apathy");
     }
 
@@ -250,7 +271,11 @@ mod tests {
         let html = r#"<html><body><div class="storytext"><p>Story text.</p></div></body></html>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("div.storytext").unwrap();
-        let s = doc.select(&sel).next().map(|el| el.inner_html()).unwrap_or_default();
+        let s = doc
+            .select(&sel)
+            .next()
+            .map(|el| el.inner_html())
+            .unwrap_or_default();
         assert!(s.contains("Story text."));
     }
 }

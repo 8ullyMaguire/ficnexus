@@ -1,10 +1,10 @@
 /// Harry Potter Fan Fiction Archive scraper (fanficauthors.net / hpfanficarchive.com)
 pub struct HpFanFicScraper;
 
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use async_trait::async_trait;
-use crate::{FicMetadata, Chapter, SiteScraper, ScrapeError};
-use scraper::{Html, Selector};
 use chrono::Utc;
+use scraper::{Html, Selector};
 
 #[async_trait]
 impl SiteScraper for HpFanFicScraper {
@@ -12,7 +12,11 @@ impl SiteScraper for HpFanFicScraper {
         url.contains("hpfanficarchive.com") || url.contains("fanficauthors.net")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let response = client
             .get(url)
             .header("User-Agent", "fichub.net/0.1.0")
@@ -24,7 +28,10 @@ impl SiteScraper for HpFanFicScraper {
             return Err(ScrapeError::NotFound);
         }
 
-        let html = response.text().await.map_err(|e| ScrapeError::Network(e.to_string()))?;
+        let html = response
+            .text()
+            .await
+            .map_err(|e| ScrapeError::Network(e.to_string()))?;
         let document = Html::parse_document(&html);
 
         let title = document
@@ -65,7 +72,11 @@ impl SiteScraper for HpFanFicScraper {
         })
     }
 
-    async fn fetch_chapters(&self, client: &reqwest::Client, meta: &FicMetadata) -> Result<Vec<Chapter>, ScrapeError> {
+    async fn fetch_chapters(
+        &self,
+        client: &reqwest::Client,
+        meta: &FicMetadata,
+    ) -> Result<Vec<Chapter>, ScrapeError> {
         let response = client
             .get(&meta.source)
             .header("User-Agent", "fichub.net/0.1.0")
@@ -73,7 +84,10 @@ impl SiteScraper for HpFanFicScraper {
             .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
 
-        let html = response.text().await.map_err(|e| ScrapeError::Network(e.to_string()))?;
+        let html = response
+            .text()
+            .await
+            .map_err(|e| ScrapeError::Network(e.to_string()))?;
         let document = Html::parse_document(&html);
 
         let content_sel = Selector::parse("div.story-content, div.fic-content, article").unwrap();

@@ -15,9 +15,9 @@
 
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
 use axum::Json;
-use serde_json::{json, Value};
+use axum::extract::{Path, State};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::server::AppState;
@@ -31,13 +31,21 @@ pub async fn get_series(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    let series = sqlx::query_as::<_, (i32, String, String, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)>(
-        "SELECT id, name, description, created_at, updated_at FROM series WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Series not found".into()))?;
+    let series =
+        sqlx::query_as::<
+            _,
+            (
+                i32,
+                String,
+                String,
+                chrono::DateTime<chrono::Utc>,
+                chrono::DateTime<chrono::Utc>,
+            ),
+        >("SELECT id, name, description, created_at, updated_at FROM series WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Series not found".into()))?;
 
     // Ordered works (position ASC — the reading order). A work's "default"
     // source (its url_id) is `default_source_id`; fall back to the
@@ -198,31 +206,34 @@ pub async fn get_author(
 
     // Also surface fic_info rows by this author that aren't yet linked to a
     // canonical work (orphan sources) so the bibliography is complete.
-    let orphans: Vec<Value> = sqlx::query_as::<_, (String, String, String, i64, i32, String, Option<i32>)>(
-        r#"SELECT fi.id, fi.title, fi.author, fi.words, fi.chapters, fi.status, fi.work_id
+    let orphans: Vec<Value> =
+        sqlx::query_as::<_, (String, String, String, i64, i32, String, Option<i32>)>(
+            r#"SELECT fi.id, fi.title, fi.author, fi.words, fi.chapters, fi.status, fi.work_id
            FROM fic_info fi
            WHERE LOWER(fi.author) = LOWER($1)
              AND fi.work_id IS NULL
            ORDER BY fi.fic_updated DESC
            LIMIT 50"#,
-    )
-    .bind(&name)
-    .fetch_all(&state.db)
-    .await?
-    .into_iter()
-    .map(|(url_id, title, author, words, chapters, status, _work_id)| {
-        json!({
-            "work_id": null,
-            "url_id": url_id,
-            "canonical_title": title,
-            "title": title,
-            "author": author,
-            "words": words,
-            "chapters": chapters,
-            "status": status,
-        })
-    })
-    .collect();
+        )
+        .bind(&name)
+        .fetch_all(&state.db)
+        .await?
+        .into_iter()
+        .map(
+            |(url_id, title, author, words, chapters, status, _work_id)| {
+                json!({
+                    "work_id": null,
+                    "url_id": url_id,
+                    "canonical_title": title,
+                    "title": title,
+                    "author": author,
+                    "words": words,
+                    "chapters": chapters,
+                    "status": status,
+                })
+            },
+        )
+        .collect();
 
     // Aggregate stats.
     let stats = sqlx::query_as::<_, (i64, Option<i64>)>(
@@ -287,14 +298,16 @@ pub async fn get_author(
         .collect();
 
         // Favorite tags (tags the user follows), for AO3-style display.
-        favorite_tags = sqlx::query_as::<_, (String, i16)>("
+        favorite_tags = sqlx::query_as::<_, (String, i16)>(
+            "
             SELECT t.name, t.tag_type_id
             FROM user_favorite_tags uft
             JOIN tags t ON t.id = uft.tag_id
             WHERE uft.user_id = $1
             ORDER BY t.name
             LIMIT 20
-        ")
+        ",
+        )
         .bind(author_user_id)
         .fetch_all(&state.db)
         .await?

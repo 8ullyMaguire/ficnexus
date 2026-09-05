@@ -45,9 +45,7 @@ struct ChatMessageResponse {
 /// Whether a remote diagnose call is possible: `AGENT_ENABLED=true` AND a
 /// remote base URL AND an API key.
 pub fn remote_configured(cfg: &Config) -> bool {
-    cfg.agent_enabled
-        && !cfg.agent_base_url.is_empty()
-        && cfg.agent_api_key.is_some()
+    cfg.agent_enabled && !cfg.agent_base_url.is_empty() && cfg.agent_api_key.is_some()
 }
 
 /// Run a single diagnose call against the remote OpenAI-compatible endpoint.
@@ -73,8 +71,14 @@ pub async fn diagnose_remote(
     let body = ChatRequest {
         model,
         messages: vec![
-            ChatMessage { role: "system", content: system_prompt.to_string() },
-            ChatMessage { role: "user", content: user_prompt.to_string() },
+            ChatMessage {
+                role: "system",
+                content: system_prompt.to_string(),
+            },
+            ChatMessage {
+                role: "user",
+                content: user_prompt.to_string(),
+            },
         ],
         max_tokens: 600,
     };
@@ -139,8 +143,14 @@ pub async fn diagnose_local(
     let body = LocalRequest {
         model,
         messages: vec![
-            LocalMessage { role: "system".into(), content: system_prompt.to_string() },
-            LocalMessage { role: "user".into(), content: user_prompt.to_string() },
+            LocalMessage {
+                role: "system".into(),
+                content: system_prompt.to_string(),
+            },
+            LocalMessage {
+                role: "user".into(),
+                content: user_prompt.to_string(),
+            },
         ],
         stream: false,
     };
@@ -194,11 +204,9 @@ pub async fn extract_metadata_remote(
         .chars()
         .take(cfg.agent_extract_max_snapshot_chars)
         .collect();
-    let user_prompt = format!(
-        "Source URL: {source_url}\n\nHTML snapshot (truncated):\n{truncated}"
-    );
-    diagnose_remote(http, cfg, EXTRACT_SYSTEM_PROMPT, &user_prompt)
-        .await
+    let user_prompt =
+        format!("Source URL: {source_url}\n\nHTML snapshot (truncated):\n{truncated}");
+    diagnose_remote(http, cfg, EXTRACT_SYSTEM_PROMPT, &user_prompt).await
 }
 
 /// Extract structured metadata from an HTML snapshot via local Ollama.
@@ -213,11 +221,9 @@ pub async fn extract_metadata_local(
         .chars()
         .take(cfg.agent_extract_max_snapshot_chars)
         .collect();
-    let user_prompt = format!(
-        "Source URL: {source_url}\n\nHTML snapshot (truncated):\n{truncated}"
-    );
-    diagnose_local(http, cfg, EXTRACT_SYSTEM_PROMPT, &user_prompt)
-        .await
+    let user_prompt =
+        format!("Source URL: {source_url}\n\nHTML snapshot (truncated):\n{truncated}");
+    diagnose_local(http, cfg, EXTRACT_SYSTEM_PROMPT, &user_prompt).await
 }
 
 #[cfg(test)]
@@ -330,7 +336,13 @@ mod tests {
             translate_user_budget_per_hour: 50,
             translate_badge_machine: false,
             translate_auto_approve_machine: false,
-            translate_locales: vec!["de".into(), "es".into(), "fr".into(), "pt-BR".into(), "zh".into()],
+            translate_locales: vec![
+                "de".into(),
+                "es".into(),
+                "fr".into(),
+                "pt-BR".into(),
+                "zh".into(),
+            ],
             translate_reading_locale_ask: true,
             translate_ui_strings: true,
             translate_keep_machine_on_dismiss: false,

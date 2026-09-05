@@ -106,7 +106,11 @@ mod tests {
         let now = 1_700_000_000_000u64;
         // Even with a plausible open time, a filled honeypot is a bot.
         assert_eq!(
-            inspect_submission(Some("http://spam.example"), Some(&(now - 5_000).to_string()), now),
+            inspect_submission(
+                Some("http://spam.example"),
+                Some(&(now - 5_000).to_string()),
+                now
+            ),
             TrapVerdict::RejectSilently
         );
         // Whitespace-only honeypot is treated as empty (bots that trim still pass).
@@ -120,7 +124,10 @@ mod tests {
     fn missing_opened_at_is_rejected() {
         let now = 1_700_000_000_000u64;
         // Direct API scripting (curl, no JS) never sets form_opened_at.
-        assert_eq!(inspect_submission(Some(""), None, now), TrapVerdict::RejectSilently);
+        assert_eq!(
+            inspect_submission(Some(""), None, now),
+            TrapVerdict::RejectSilently
+        );
         // Empty-string timestamp is equally missing.
         assert_eq!(
             inspect_submission(Some(""), Some(""), now),

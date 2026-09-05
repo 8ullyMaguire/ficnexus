@@ -9,12 +9,12 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::post,
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 use fichub::server::AppState;
@@ -29,7 +29,8 @@ fn db_guard() -> std::sync::MutexGuard<'static, ()> {
 }
 
 async fn pool() -> sqlx::PgPool {
-    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
+    let url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
     sqlx::PgPool::connect(&url).await.expect("connect pool")
 }
 
@@ -59,7 +60,10 @@ async fn app_with_mock(mailer: Arc<MockMailer>) -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
@@ -74,8 +78,11 @@ async fn app_with_mock(mailer: Arc<MockMailer>) -> Router {
             .await
             .expect("rate limiter"),
         ),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -134,11 +141,7 @@ fn token_for(user_id: i32, username: &str) -> String {
 }
 
 /// Helper: POST /api/send-to-kindle and return (status, body).
-async fn post_send(
-    app: &Router,
-    token: &str,
-    body: Value,
-) -> (StatusCode, Value) {
+async fn post_send(app: &Router, token: &str, body: Value) -> (StatusCode, Value) {
     let res = app
         .clone()
         .oneshot(
@@ -156,9 +159,9 @@ async fn post_send(
     let bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024)
         .await
         .unwrap();
-    let value: Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
-        json!({ "err": -999, "msg": String::from_utf8_lossy(&bytes).to_string() })
-    });
+    let value: Value = serde_json::from_slice(&bytes).unwrap_or_else(
+        |_| json!({ "err": -999, "msg": String::from_utf8_lossy(&bytes).to_string() }),
+    );
     (status, value)
 }
 
@@ -255,7 +258,10 @@ async fn send_to_kindle_no_email_on_file() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["err"], -1, "{body}");
     assert!(
-        body["msg"].as_str().unwrap_or("").contains("no email on file"),
+        body["msg"]
+            .as_str()
+            .unwrap_or("")
+            .contains("no email on file"),
         "{body}"
     );
     assert!(mailer.sent_mails().is_empty(), "nothing sent");

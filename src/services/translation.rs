@@ -131,47 +131,69 @@ pub async fn fetch_source(
     let text: Option<String> = match (typ, field) {
         (TranslationType::WorkMeta, "title") => {
             sqlx::query_scalar("SELECT title FROM fic_info WHERE id = $1")
-                .bind(key).fetch_optional(db).await?
+                .bind(key)
+                .fetch_optional(db)
+                .await?
         }
         (TranslationType::WorkMeta, "summary") => {
             sqlx::query_scalar("SELECT description FROM fic_info WHERE id = $1")
-                .bind(key).fetch_optional(db).await?
+                .bind(key)
+                .fetch_optional(db)
+                .await?
         }
         (TranslationType::Request, "title") => {
             sqlx::query_scalar("SELECT title FROM fic_requests WHERE id = $1")
-                .bind(num).fetch_optional(db).await?
+                .bind(num)
+                .fetch_optional(db)
+                .await?
         }
         (TranslationType::Request, "body") => {
             sqlx::query_scalar("SELECT body FROM fic_requests WHERE id = $1")
-                .bind(num).fetch_optional(db).await?
+                .bind(num)
+                .fetch_optional(db)
+                .await?
         }
         (TranslationType::RequestAnswer, "pitch") => {
             sqlx::query_scalar("SELECT pitch FROM fic_request_answers WHERE id = $1")
-                .bind(num).fetch_optional(db).await?
+                .bind(num)
+                .fetch_optional(db)
+                .await?
         }
         (TranslationType::ForumTopic, "title") => {
             sqlx::query_scalar("SELECT title FROM forum_topics WHERE id = $1")
-                .bind(num).fetch_optional(db).await?
+                .bind(num)
+                .fetch_optional(db)
+                .await?
         }
         (TranslationType::ForumTopic, "body") => {
             sqlx::query_scalar("SELECT body FROM forum_topics WHERE id = $1")
-                .bind(num).fetch_optional(db).await?
+                .bind(num)
+                .fetch_optional(db)
+                .await?
         }
         (TranslationType::ForumPost, "body") => {
             sqlx::query_scalar("SELECT body FROM forum_posts WHERE id = $1")
-                .bind(num).fetch_optional(db).await?
+                .bind(num)
+                .fetch_optional(db)
+                .await?
         }
         (TranslationType::Comment, "body") => {
             sqlx::query_scalar("SELECT body FROM comments WHERE id = $1")
-                .bind(num).fetch_optional(db).await?
+                .bind(num)
+                .fetch_optional(db)
+                .await?
         }
         (TranslationType::Review, "title") => {
             sqlx::query_scalar("SELECT COALESCE(title, '') FROM reviews WHERE id = $1")
-                .bind(num).fetch_optional(db).await?
+                .bind(num)
+                .fetch_optional(db)
+                .await?
         }
         (TranslationType::Review, "body") => {
             sqlx::query_scalar("SELECT body FROM reviews WHERE id = $1")
-                .bind(num).fetch_optional(db).await?
+                .bind(num)
+                .fetch_optional(db)
+                .await?
         }
         _ => return Ok(None),
     };
@@ -208,13 +230,19 @@ pub async fn resolve_chain(
         let source_hash: String = r.get("source_hash");
         let status: String = r.get("status");
         if status == "approved" {
-            return Ok(ResolvedTranslation { text, status: TranslationStatus::Approved });
+            return Ok(ResolvedTranslation {
+                text,
+                status: TranslationStatus::Approved,
+            });
         }
         if status == "machine" {
             // Only serve machine text while the source hasn't changed.
             if let Some(src) = fetch_source(db, typ, key, field).await? {
                 if sha256_hex(&src.text) == source_hash {
-                    return Ok(ResolvedTranslation { text, status: TranslationStatus::Machine });
+                    return Ok(ResolvedTranslation {
+                        text,
+                        status: TranslationStatus::Machine,
+                    });
                 }
             }
         }
@@ -222,8 +250,14 @@ pub async fn resolve_chain(
 
     // Fallback: original text.
     match fetch_source(db, typ, key, field).await? {
-        Some(src) => Ok(ResolvedTranslation { text: src.text, status: TranslationStatus::None }),
-        None => Ok(ResolvedTranslation { text: String::new(), status: TranslationStatus::None }),
+        Some(src) => Ok(ResolvedTranslation {
+            text: src.text,
+            status: TranslationStatus::None,
+        }),
+        None => Ok(ResolvedTranslation {
+            text: String::new(),
+            status: TranslationStatus::None,
+        }),
     }
 }
 
@@ -245,7 +279,9 @@ pub async fn resolve_batch(
 ) -> Result<HashMap<String, ResolvedTranslation>> {
     let mut out = HashMap::new();
     for item in items.iter().take(50) {
-        let Some(typ) = TranslationType::from_str(&item.typ) else { continue };
+        let Some(typ) = TranslationType::from_str(&item.typ) else {
+            continue;
+        };
         if !typ.allows_field(&item.field) {
             continue;
         }
@@ -294,8 +330,12 @@ pub async fn enqueue(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
     if current == 1 {
-        let _: i64 = redis::cmd("EXPIRE").arg(&hour_key).arg(3600i64)
-            .query_async(&mut *conn).await.unwrap_or(0);
+        let _: i64 = redis::cmd("EXPIRE")
+            .arg(&hour_key)
+            .arg(3600i64)
+            .query_async(&mut *conn)
+            .await
+            .unwrap_or(0);
     }
     if current > config.translate_global_budget_per_hour as u64 {
         return Err(AppError::RateLimited(3600));
@@ -314,8 +354,12 @@ pub async fn enqueue(
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?;
         if ucurrent == 1 {
-            let _: i64 = redis::cmd("EXPIRE").arg(&ukey).arg(3600i64)
-                .query_async(&mut *conn).await.unwrap_or(0);
+            let _: i64 = redis::cmd("EXPIRE")
+                .arg(&ukey)
+                .arg(3600i64)
+                .query_async(&mut *conn)
+                .await
+                .unwrap_or(0);
         }
         if ucurrent > config.translate_user_budget_per_hour as u64 {
             return Err(AppError::RateLimited(3600));
@@ -383,7 +427,11 @@ pub fn chunk_text(text: &str, max_chars: usize) -> Vec<String> {
             if para.chars().count() > max_chars {
                 let mut buf = String::new();
                 for line in para.split('\n') {
-                    let l = if buf.is_empty() { line.to_string() } else { format!("\n{line}") };
+                    let l = if buf.is_empty() {
+                        line.to_string()
+                    } else {
+                        format!("\n{line}")
+                    };
                     if buf.chars().count() + l.chars().count() <= max_chars {
                         buf.push_str(&l);
                     } else {
@@ -458,7 +506,9 @@ pub async fn run_worker(
         let field = job["field"].as_str().unwrap_or("");
         let locale = job["locale"].as_str().unwrap_or("");
 
-        let Some(typ) = TranslationType::from_str(typ_str) else { continue };
+        let Some(typ) = TranslationType::from_str(typ_str) else {
+            continue;
+        };
 
         // Source text + freshness check (dedupe by hash).
         let src = match fetch_source(&db, typ, key, field).await {
@@ -534,7 +584,11 @@ pub async fn run_worker(
         }
 
         let full = done_chunks.join("\n\n");
-        let status = if config.translate_auto_approve_machine { "approved" } else { "machine" };
+        let status = if config.translate_auto_approve_machine {
+            "approved"
+        } else {
+            "machine"
+        };
         let res = sqlx::query(
             r#"INSERT INTO translation_strings
                  (target_type, target_id, field, locale, source_hash, text, status, origin, model)
@@ -586,7 +640,13 @@ pub async fn run_worker(
                     "source_hash": source_hash,
                 });
                 let _ = crate::services::proposals::submit(
-                    &db, "translate", typ_str, key, payload, None, "llm",
+                    &db,
+                    "translate",
+                    typ_str,
+                    key,
+                    payload,
+                    None,
+                    "llm",
                 )
                 .await;
             }
@@ -614,8 +674,15 @@ mod tests {
 
     #[test]
     fn type_roundtrip() {
-        for t in ["work_meta", "request", "request_answer", "forum_topic",
-                  "forum_post", "comment", "review"] {
+        for t in [
+            "work_meta",
+            "request",
+            "request_answer",
+            "forum_topic",
+            "forum_post",
+            "comment",
+            "review",
+        ] {
             assert_eq!(TranslationType::from_str(t).unwrap().as_str(), t);
         }
         assert!(TranslationType::from_str("bogus").is_none());
@@ -634,11 +701,15 @@ mod tests {
     #[test]
     fn chunk_splits_on_paragraphs() {
         // Build a long-enough text that paragraphs alone sum > 200 (the func floor).
-        let long_para = "A.".repeat(80);   // 160 chars
-        let short_para = "B.".repeat(70);  // 140 chars
+        let long_para = "A.".repeat(80); // 160 chars
+        let short_para = "B.".repeat(70); // 140 chars
         let text = format!("{long_para}\n\n{short_para}"); // 302 chars total
         let chunks = chunk_text(&text, 200);
-        assert!(chunks.len() >= 2, "expected >= 2 chunks got {}", chunks.len());
+        assert!(
+            chunks.len() >= 2,
+            "expected >= 2 chunks got {}",
+            chunks.len()
+        );
         assert!(chunks.iter().all(|c| c.chars().count() <= 200));
     }
 

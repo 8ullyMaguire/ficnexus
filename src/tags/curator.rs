@@ -1,9 +1,9 @@
 use axum::{
-    extract::{Path, Query, State},
     Json,
+    extract::{Path, Query, State},
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::{AppError, AppResult};
@@ -128,7 +128,16 @@ pub async fn create_alias(
     .execute(&state.db)
     .await?;
 
-    crate::modlog::record_json(&state.db, user.user_id, user.username.clone(), "create_alias", "tag_alias", &body.alias_name, vec![("canonical_tag_id", serde_json::json!(body.canonical_tag_id))]).await;
+    crate::modlog::record_json(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "create_alias",
+        "tag_alias",
+        &body.alias_name,
+        vec![("canonical_tag_id", serde_json::json!(body.canonical_tag_id))],
+    )
+    .await;
     Ok(Json(json!({"err": 0, "msg": "alias created"})))
 }
 
@@ -152,7 +161,16 @@ pub async fn delete_alias(
         return Ok(Json(json!({"err": -5, "msg": "alias not found"})));
     }
 
-    crate::modlog::record_json(&state.db, user.user_id, user.username.clone(), "delete_alias", "tag_alias", &alias_name, vec![]).await;
+    crate::modlog::record_json(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "delete_alias",
+        "tag_alias",
+        &alias_name,
+        vec![],
+    )
+    .await;
     Ok(Json(json!({"err": 0, "msg": "alias deleted"})))
 }
 
@@ -168,7 +186,9 @@ pub async fn merge_tags(
     require_curator(&user)?;
 
     if body.source_tag_id == body.target_tag_id {
-        return Ok(Json(json!({"err": -1, "msg": "cannot merge a tag into itself"})));
+        return Ok(Json(
+            json!({"err": -1, "msg": "cannot merge a tag into itself"}),
+        ));
     }
 
     // Migrate fic_tags references (skip duplicates)
@@ -209,7 +229,16 @@ pub async fn merge_tags(
         .execute(&state.db)
         .await?;
 
-    crate::modlog::record_json(&state.db, user.user_id, user.username.clone(), "merge_tags", "tag", &body.source_tag_id.to_string(), vec![("target_tag_id", serde_json::json!(body.target_tag_id))]).await;
+    crate::modlog::record_json(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "merge_tags",
+        "tag",
+        &body.source_tag_id.to_string(),
+        vec![("target_tag_id", serde_json::json!(body.target_tag_id))],
+    )
+    .await;
     Ok(Json(json!({"err": 0, "msg": "tags merged"})))
 }
 
@@ -232,7 +261,16 @@ pub async fn delete_tag(
         return Ok(Json(json!({"err": -5, "msg": "tag not found"})));
     }
 
-    crate::modlog::record(&state.db, user.user_id, user.username.clone(), "delete_tag", "tag", &id.to_string(), serde_json::json!({})).await;
+    crate::modlog::record(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "delete_tag",
+        "tag",
+        &id.to_string(),
+        serde_json::json!({}),
+    )
+    .await;
     Ok(Json(json!({"err": 0, "msg": "tag deleted"})))
 }
 
@@ -264,7 +302,9 @@ pub async fn update_tag(
     require_curator(&user)?;
 
     if body.description.is_none() && body.tag_type_id.is_none() && body.canonical.is_none() {
-        return Ok(Json(json!({"err": -1, "msg": "nothing to update (send description, tag_type_id and/or canonical)"})));
+        return Ok(Json(
+            json!({"err": -1, "msg": "nothing to update (send description, tag_type_id and/or canonical)"}),
+        ));
     }
 
     // Verify the tag exists first (404-style err -5, matching delete_tag).
@@ -286,7 +326,9 @@ pub async fn update_tag(
             .fetch_optional(&state.db)
             .await?;
         if type_ok.is_none() {
-            return Ok(Json(json!({"err": -1, "msg": format!("unknown tag_type_id {type_id}")})));
+            return Ok(Json(
+                json!({"err": -1, "msg": format!("unknown tag_type_id {type_id}")}),
+            ));
         }
     }
 
@@ -420,7 +462,16 @@ pub async fn resolve_flag(
         return Ok(Json(json!({"err": -5, "msg": "flag not found"})));
     }
 
-    crate::modlog::record(&state.db, user.user_id, user.username.clone(), "resolve_flag", "tag_flag", &id.to_string(), serde_json::json!({"resolved": body.resolved})).await;
+    crate::modlog::record(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "resolve_flag",
+        "tag_flag",
+        &id.to_string(),
+        serde_json::json!({"resolved": body.resolved}),
+    )
+    .await;
 
     Ok(Json(json!({"err": 0, "msg": "flag updated"})))
 }

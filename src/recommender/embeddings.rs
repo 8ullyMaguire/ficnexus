@@ -22,11 +22,7 @@ use super::strategy::{RecError, RecStrategy, ScoredRec, StrategyContext};
 
 /// Text used to embed a work: title + summary + top tags by score.
 /// The content_hash gates re-embedding — same text → same hash → skipped.
-pub fn build_embed_text(
-    title: &str,
-    description: &str,
-    top_tags: &[String],
-) -> String {
+pub fn build_embed_text(title: &str, description: &str, top_tags: &[String]) -> String {
     let mut parts = Vec::with_capacity(2 + top_tags.len());
     parts.push(title.trim().to_string());
     if !description.trim().is_empty() {
@@ -178,7 +174,9 @@ impl RecStrategy for EmbeddingsStrategy {
         .fetch_all(&ctx.db)
         .await?;
         if rows.is_empty() {
-            return Err(RecError::NotEnoughData("user profile has no embeddings".into()));
+            return Err(RecError::NotEnoughData(
+                "user profile has no embeddings".into(),
+            ));
         }
         Ok(rows
             .into_iter()
@@ -276,11 +274,12 @@ pub async fn user_profile_centroid(
     for (work_id, vec_text, weight) in rows {
         known.insert(work_id);
         let parsed = parse_vector_literal(&vec_text);
-        let age_days = now
-            .signed_duration_since(now)
-            .num_seconds() as f64
-            / 86400.0;
-        let recency = if age_days <= 0.0 { 1.0 } else { (-age_days / 30.0).exp() };
+        let age_days = now.signed_duration_since(now).num_seconds() as f64 / 86400.0;
+        let recency = if age_days <= 0.0 {
+            1.0
+        } else {
+            (-age_days / 30.0).exp()
+        };
         let w = weight * recency;
         for (i, v) in parsed.iter().enumerate() {
             if let Some(c) = centroid.get_mut(i) {
@@ -333,7 +332,11 @@ mod tests {
 
     #[test]
     fn embed_text_joins_parts() {
-        let text = build_embed_text("Title", "A dragon story", &["Harry Potter".into(), "Angst".into()]);
+        let text = build_embed_text(
+            "Title",
+            "A dragon story",
+            &["Harry Potter".into(), "Angst".into()],
+        );
         assert!(text.contains("Title"));
         assert!(text.contains("A dragon story"));
         assert!(text.contains("Harry Potter"));

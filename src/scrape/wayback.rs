@@ -44,8 +44,7 @@ impl CdxRateLimiter {
             ))
             .await;
         }
-        self.last_request_ms
-            .store(now_ms(), Ordering::Relaxed);
+        self.last_request_ms.store(now_ms(), Ordering::Relaxed);
     }
 }
 
@@ -107,13 +106,7 @@ impl WaybackService {
         if !self.config.enabled {
             return None;
         }
-        fetch_snapshot_html(
-            http,
-            &self.limiter,
-            url,
-            self.config.max_snapshot_age_days,
-        )
-        .await
+        fetch_snapshot_html(http, &self.limiter, url, self.config.max_snapshot_age_days).await
     }
 }
 
@@ -127,9 +120,7 @@ pub async fn get_latest_snapshot_url(
     original_url: &str,
     max_age_days: i32,
 ) -> Result<Option<String>, String> {
-    limiter
-        .wait(Duration::from_secs(1))
-        .await;
+    limiter.wait(Duration::from_secs(1)).await;
 
     let from = (Utc::now() - ChronoDuration::days(max_age_days as i64))
         .format("%Y%m%d")
@@ -289,14 +280,15 @@ fn strip_script_by_src(html: &str, domain: &str) -> String {
 fn inject_base_href(html: &str, original_url: &str) -> String {
     let lower = html.to_lowercase();
     if let Some(head_end) = lower.find("</head>") {
-        let base = format!(
-            "<base href=\"{}\">",
-            original_url.trim_end_matches('/')
-        );
+        let base = format!("<base href=\"{}\">", original_url.trim_end_matches('/'));
         return format!("{}{}{}", &html[..head_end], base, &html[head_end..]);
     }
     // No head: prepend.
-    format!("<head><base href=\"{}\"></head>{}", original_url.trim_end_matches('/'), html)
+    format!(
+        "<head><base href=\"{}\"></head>{}",
+        original_url.trim_end_matches('/'),
+        html
+    )
 }
 
 /// Simple URL encoding for query parameters.
@@ -324,7 +316,10 @@ mod tests {
         let url = get_latest_snapshot_url_for_test(body, "https://example.com/story/123");
         assert_eq!(
             url.unwrap(),
-            Some("https://web.archive.org/web/20231015010203/https://example.com/story/123".to_string())
+            Some(
+                "https://web.archive.org/web/20231015010203/https://example.com/story/123"
+                    .to_string()
+            )
         );
     }
 

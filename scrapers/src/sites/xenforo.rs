@@ -1,10 +1,10 @@
 /// XenForo forum scraper (SpaceBattles, SufficientVelocity, QuestionableQuesting)
 pub struct XenForoScraper;
 
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use async_trait::async_trait;
-use crate::{FicMetadata, Chapter, SiteScraper, ScrapeError};
-use scraper::{Html, Selector};
 use chrono::Utc;
+use scraper::{Html, Selector};
 
 // Domains that use XenForo
 const XENFORO_DOMAINS: &[&str] = &[
@@ -41,7 +41,10 @@ mod tests {
         let s = XenForoScraper;
         let url = "https://boards.theforce.net/threads/kyp-durron-skiing-triathlon.50062326/";
         assert!(s.can_handle(url));
-        assert_eq!(XenForoScraper::extract_thread_id(url).as_deref(), Some("50062326"));
+        assert_eq!(
+            XenForoScraper::extract_thread_id(url).as_deref(),
+            Some("50062326")
+        );
     }
 
     #[test]
@@ -64,7 +67,11 @@ impl SiteScraper for XenForoScraper {
         Self::is_xenforo_url(url)
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let thread_id = Self::extract_thread_id(url)
             .ok_or_else(|| ScrapeError::ParseError("could not extract thread ID".into()))?;
 
@@ -79,7 +86,9 @@ impl SiteScraper for XenForoScraper {
             return Err(ScrapeError::NotFound);
         }
 
-        let html = response.text().await
+        let html = response
+            .text()
+            .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
         let document = Html::parse_document(&html);
 
@@ -141,7 +150,11 @@ impl SiteScraper for XenForoScraper {
         })
     }
 
-    async fn fetch_chapters(&self, client: &reqwest::Client, meta: &FicMetadata) -> Result<Vec<Chapter>, ScrapeError> {
+    async fn fetch_chapters(
+        &self,
+        client: &reqwest::Client,
+        meta: &FicMetadata,
+    ) -> Result<Vec<Chapter>, ScrapeError> {
         let mut chapters = Vec::new();
 
         // For XenForo, we fetch the thread page by page
@@ -154,7 +167,9 @@ impl SiteScraper for XenForoScraper {
             .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
 
-        let html = response.text().await
+        let html = response
+            .text()
+            .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
         let document = Html::parse_document(&html);
 
@@ -185,7 +200,9 @@ impl SiteScraper for XenForoScraper {
         }
 
         if chapters.is_empty() {
-            return Err(ScrapeError::ParseError("no content found in XenForo thread".into()));
+            return Err(ScrapeError::ParseError(
+                "no content found in XenForo thread".into(),
+            ));
         }
 
         Ok(chapters)

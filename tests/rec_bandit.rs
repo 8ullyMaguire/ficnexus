@@ -16,7 +16,9 @@ fn db_guard() -> std::sync::MutexGuard<'static, ()> {
 
 async fn pool() -> sqlx::PgPool {
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (load .env)");
-    sqlx::PgPool::connect(&database_url).await.expect("db connect")
+    sqlx::PgPool::connect(&database_url)
+        .await
+        .expect("db connect")
 }
 
 fn test_ctx(
@@ -121,12 +123,27 @@ async fn bandit_engagement_updates_alpha() {
 
     // Cleanup.
     for id in ["rectestbandit_a", "rectestbandit_b"] {
-        let _ = sqlx::query("DELETE FROM rec_bandit_arms WHERE work_id = $1").bind(id).execute(&db).await;
-        let _ = sqlx::query("DELETE FROM rec_impressions WHERE work_id = $1").bind(id).execute(&db).await;
-        let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1").bind(id).execute(&db).await;
+        let _ = sqlx::query("DELETE FROM rec_bandit_arms WHERE work_id = $1")
+            .bind(id)
+            .execute(&db)
+            .await;
+        let _ = sqlx::query("DELETE FROM rec_impressions WHERE work_id = $1")
+            .bind(id)
+            .execute(&db)
+            .await;
+        let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1")
+            .bind(id)
+            .execute(&db)
+            .await;
     }
-    let _ = sqlx::query("DELETE FROM bookmarks WHERE user_id = $1").bind(user_id).execute(&db).await;
-    let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(user).execute(&db).await;
+    let _ = sqlx::query("DELETE FROM bookmarks WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(user)
+        .execute(&db)
+        .await;
 }
 
 #[ignore]
@@ -164,7 +181,10 @@ async fn bandit_cold_impression_updates_beta() {
     let (_engaged, missed) = fichub::recommender::bandit::reconcile_impressions(&ctx)
         .await
         .expect("reconcile");
-    assert!(missed >= 1, "cold impression must count as missed: {missed}");
+    assert!(
+        missed >= 1,
+        "cold impression must count as missed: {missed}"
+    );
 
     let beta: f64 = sqlx::query_scalar(
         "SELECT beta FROM rec_bandit_arms WHERE work_id = 'rectestbandit_c' AND strategy = 'bandit'",
@@ -174,10 +194,19 @@ async fn bandit_cold_impression_updates_beta() {
     .expect("beta");
     assert!(beta >= 2.0, "beta must have incremented: {beta}");
 
-    let _ = sqlx::query("DELETE FROM rec_bandit_arms WHERE work_id = 'rectestbandit_c'").execute(&db).await;
-    let _ = sqlx::query("DELETE FROM rec_impressions WHERE work_id = 'rectestbandit_c'").execute(&db).await;
-    let _ = sqlx::query("DELETE FROM fic_info WHERE id = 'rectestbandit_c'").execute(&db).await;
-    let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(user).execute(&db).await;
+    let _ = sqlx::query("DELETE FROM rec_bandit_arms WHERE work_id = 'rectestbandit_c'")
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM rec_impressions WHERE work_id = 'rectestbandit_c'")
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM fic_info WHERE id = 'rectestbandit_c'")
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(user)
+        .execute(&db)
+        .await;
 }
 
 #[ignore]
@@ -205,6 +234,10 @@ async fn bandit_decay_pulls_arms_toward_uniform() {
     // The meaningful decay assertion is alpha shrinking; beta just stays ≥ 1.
     assert!(beta >= 1.0, "beta must not shrink below 1: {beta}");
 
-    let _ = sqlx::query("DELETE FROM rec_bandit_arms WHERE work_id = 'rectestbandit_d'").execute(&db).await;
-    let _ = sqlx::query("DELETE FROM fic_info WHERE id = 'rectestbandit_d'").execute(&db).await;
+    let _ = sqlx::query("DELETE FROM rec_bandit_arms WHERE work_id = 'rectestbandit_d'")
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM fic_info WHERE id = 'rectestbandit_d'")
+        .execute(&db)
+        .await;
 }

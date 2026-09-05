@@ -133,7 +133,9 @@ mod tests {
     fn topics_sql_shape() {
         let q = FtsQuery::parse("hurt comfort", None, Some(20), Some(40));
         let sql = topics_search_sql(&q);
-        assert!(sql.starts_with("SELECT id, ts_rank(search_vector, websearch_to_tsquery('english', $1)) AS rank"));
+        assert!(sql.starts_with(
+            "SELECT id, ts_rank(search_vector, websearch_to_tsquery('english', $1)) AS rank"
+        ));
         assert!(sql.contains("WHERE search_vector @@ websearch_to_tsquery('english', $1)"));
         assert!(sql.contains("deleted_at IS NULL AND is_hidden = FALSE"));
         assert!(sql.contains("ORDER BY rank DESC, last_activity_at DESC"));

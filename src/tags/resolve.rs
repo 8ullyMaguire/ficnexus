@@ -31,14 +31,12 @@ pub async fn resolve_tag(
 
     // Step 2: Look up in tag_aliases
     if let Some(canonical_id) = lookup_alias(pool, tag_name).await? {
-        let tag = lookup_tag_by_id(pool, canonical_id)
-            .await?
-            .ok_or_else(|| {
-                AppError::Internal(format!(
-                    "alias '{}' points to non-existent tag id {}",
-                    tag_name, canonical_id
-                ))
-            })?;
+        let tag = lookup_tag_by_id(pool, canonical_id).await?.ok_or_else(|| {
+            AppError::Internal(format!(
+                "alias '{}' points to non-existent tag id {}",
+                tag_name, canonical_id
+            ))
+        })?;
         return Ok(TagResolution {
             tag_id: tag.0,
             tag_name: tag.1,
@@ -58,26 +56,20 @@ pub async fn resolve_tag(
 }
 
 /// Look up a tag by its exact name (COLLATE "C" case-sensitive).
-async fn lookup_tag(
-    pool: &PgPool,
-    name: &str,
-) -> Result<Option<(i32, String, i16)>, sqlx::Error> {
-    sqlx::query_as(
-        "SELECT id, name, tag_type_id FROM tags WHERE name = $1",
-    )
-    .bind(name)
-    .fetch_optional(pool)
-    .await
+async fn lookup_tag(pool: &PgPool, name: &str) -> Result<Option<(i32, String, i16)>, sqlx::Error> {
+    sqlx::query_as("SELECT id, name, tag_type_id FROM tags WHERE name = $1")
+        .bind(name)
+        .fetch_optional(pool)
+        .await
 }
 
 /// Look up a canonical tag id from an alias name.
 async fn lookup_alias(pool: &PgPool, name: &str) -> Result<Option<i32>, sqlx::Error> {
-    let row: Option<(i32,)> = sqlx::query_as(
-        "SELECT canonical_tag_id FROM tag_aliases WHERE alias_name = $1",
-    )
-    .bind(name)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(i32,)> =
+        sqlx::query_as("SELECT canonical_tag_id FROM tag_aliases WHERE alias_name = $1")
+            .bind(name)
+            .fetch_optional(pool)
+            .await?;
     Ok(row.map(|r| r.0))
 }
 
@@ -86,23 +78,20 @@ async fn lookup_tag_by_id(
     pool: &PgPool,
     id: i32,
 ) -> Result<Option<(i32, String, i16)>, sqlx::Error> {
-    sqlx::query_as(
-        "SELECT id, name, tag_type_id FROM tags WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await
+    sqlx::query_as("SELECT id, name, tag_type_id FROM tags WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
 }
 
 /// Create a new canonical tag and return its id.
 async fn create_tag(pool: &PgPool, name: &str, tag_type_id: i16) -> Result<i32, sqlx::Error> {
-    let row: (i32,) = sqlx::query_as(
-        "INSERT INTO tags (name, tag_type_id) VALUES ($1, $2) RETURNING id",
-    )
-    .bind(name)
-    .bind(tag_type_id)
-    .fetch_one(pool)
-    .await?;
+    let row: (i32,) =
+        sqlx::query_as("INSERT INTO tags (name, tag_type_id) VALUES ($1, $2) RETURNING id")
+            .bind(name)
+            .bind(tag_type_id)
+            .fetch_one(pool)
+            .await?;
     Ok(row.0)
 }
 
@@ -113,7 +102,10 @@ mod tests {
     #[test]
     fn test_tag_resolution_struct_sizes() {
         // Verify the struct layout is reasonable
-        assert_eq!(std::mem::size_of::<TagResolution>(), std::mem::size_of::<(i32, String, i16, bool)>());
+        assert_eq!(
+            std::mem::size_of::<TagResolution>(),
+            std::mem::size_of::<(i32, String, i16, bool)>()
+        );
     }
 
     #[test]

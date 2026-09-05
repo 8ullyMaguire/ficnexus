@@ -1,7 +1,7 @@
-use axum::extract::{State, Query};
 use axum::Json;
+use axum::extract::{Query, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::db::queries;
@@ -21,23 +21,26 @@ pub struct ReadingListQuery {
     pub status: Option<String>,
 }
 
-
 /// GET /api/v1/users/{id}/reading-stats — reading stats
 pub async fn get_reading_stats_handler(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(user_id): axum::extract::Path<i32>,
 ) -> Result<Json<Value>, AppError> {
     let stats = queries::get_user_reading_stats(&state.db, user_id).await?;
-    let (total_words, total_works, streak) = queries::get_user_reading_aggregate(&state.db, user_id).await?;
+    let (total_words, total_works, streak) =
+        queries::get_user_reading_aggregate(&state.db, user_id).await?;
 
-    let items: Vec<Value> = stats.into_iter().map(|s| {
-        json!({
-            "work_id": s.work_id,
-            "words_read": s.words_read,
-            "read_count": s.read_count,
-            "last_read_at": s.last_read_at.to_rfc3339(),
+    let items: Vec<Value> = stats
+        .into_iter()
+        .map(|s| {
+            json!({
+                "work_id": s.work_id,
+                "words_read": s.words_read,
+                "read_count": s.read_count,
+                "last_read_at": s.last_read_at.to_rfc3339(),
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({
         "err": 0,
@@ -54,7 +57,9 @@ pub async fn record_read_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<crate::routes::social::ReadingRecordBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     queries::record_work_read(&state.db, user_id, body.work_id, body.words_read).await?;
 
@@ -89,15 +94,29 @@ pub async fn update_reading_status_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<UpdateReadingStatusBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     // Validate status
     match body.status.as_str() {
         "want_to_read" | "reading" | "completed" | "dropped" => {}
-        _ => return Err(AppError::BadRequest(format!("Invalid status: '{}'. Must be one of: want_to_read, reading, completed, dropped", body.status))),
+        _ => {
+            return Err(AppError::BadRequest(format!(
+                "Invalid status: '{}'. Must be one of: want_to_read, reading, completed, dropped",
+                body.status
+            )));
+        }
     }
 
-    queries::update_reading_status(&state.db, user_id, body.work_id, &body.status, body.current_chapter).await?;
+    queries::update_reading_status(
+        &state.db,
+        user_id,
+        body.work_id,
+        &body.status,
+        body.current_chapter,
+    )
+    .await?;
 
     Ok(Json(json!({ "err": 0, "msg": "Reading status updated" })))
 }
@@ -108,29 +127,39 @@ pub async fn get_reading_list_handler(
     State(state): State<Arc<AppState>>,
     Query(query): Query<ReadingListQuery>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     // Validate status filter if provided
     if let Some(ref status) = query.status {
         match status.as_str() {
             "want_to_read" | "reading" | "completed" | "dropped" => {}
-            _ => return Err(AppError::BadRequest(format!("Invalid status filter: '{}'", status))),
+            _ => {
+                return Err(AppError::BadRequest(format!(
+                    "Invalid status filter: '{}'",
+                    status
+                )));
+            }
         }
     }
 
     let list = queries::get_reading_stats_list(&state.db, user_id, query.status.as_deref()).await?;
 
-    let items: Vec<Value> = list.into_iter().map(|r| {
-        json!({
-            "id": r.id,
-            "work_id": r.work_id,
-            "words_read": r.words_read,
-            "read_count": r.read_count,
-            "status": r.status,
-            "current_chapter": r.current_chapter,
-            "last_read_at": r.last_read_at.to_rfc3339(),
+    let items: Vec<Value> = list
+        .into_iter()
+        .map(|r| {
+            json!({
+                "id": r.id,
+                "work_id": r.work_id,
+                "words_read": r.words_read,
+                "read_count": r.read_count,
+                "status": r.status,
+                "current_chapter": r.current_chapter,
+                "last_read_at": r.last_read_at.to_rfc3339(),
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({ "err": 0, "reading_list": items })))
 }
@@ -155,22 +184,29 @@ pub async fn get_reading_history_handler(
     State(state): State<Arc<AppState>>,
     Query(query): Query<HistoryQuery>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
     let limit = query.limit.unwrap_or(50).clamp(1, 100);
     let offset = query.offset.unwrap_or(0);
     let (items, total) = queries::get_reading_history(&state.db, user_id, limit, offset).await?;
-    let entries: Vec<Value> = items.into_iter().map(|h| {
-        json!({
-            "id": h.id,
-            "work_id": h.work_id,
-            "url_id": h.url_id,
-            "title": h.title,
-            "author": h.author,
-            "chapter_num": h.chapter_num,
-            "visited_at": h.visited_at.to_rfc3339(),
+    let entries: Vec<Value> = items
+        .into_iter()
+        .map(|h| {
+            json!({
+                "id": h.id,
+                "work_id": h.work_id,
+                "url_id": h.url_id,
+                "title": h.title,
+                "author": h.author,
+                "chapter_num": h.chapter_num,
+                "visited_at": h.visited_at.to_rfc3339(),
+            })
         })
-    }).collect();
-    Ok(Json(json!({ "err": 0, "history": entries, "total": total, "limit": limit, "offset": offset })))
+        .collect();
+    Ok(Json(
+        json!({ "err": 0, "history": entries, "total": total, "limit": limit, "offset": offset }),
+    ))
 }
 
 /// POST /api/reading/history — record a visit to a work
@@ -179,7 +215,9 @@ pub async fn record_read_history_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<HistoryRecordBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
     queries::record_read_history(&state.db, user_id, body.work_id, body.chapter_num).await?;
     Ok(Json(json!({ "err": 0, "msg": "Visit recorded" })))
 }
@@ -190,7 +228,9 @@ pub async fn delete_read_history_handler(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(id): axum::extract::Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
     let removed = queries::delete_read_history(&state.db, user_id, id).await?;
     Ok(Json(json!({ "err": 0, "removed": removed })))
 }
@@ -200,7 +240,9 @@ pub async fn clear_read_history_handler(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
     queries::clear_read_history(&state.db, user_id).await?;
     Ok(Json(json!({ "err": 0, "msg": "History cleared" })))
 }

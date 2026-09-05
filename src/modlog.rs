@@ -112,9 +112,13 @@ pub fn actor_from_auth(auth: &crate::routes::auth::AuthUser) -> (Option<i32>, Op
 }
 
 /// Simple guard for "any logged-in user" (not admin/curator-only).
-pub fn require_logged_in(auth: &crate::routes::auth::AuthUser) -> Result<(), crate::error::AppError> {
+pub fn require_logged_in(
+    auth: &crate::routes::auth::AuthUser,
+) -> Result<(), crate::error::AppError> {
     if auth.user_id.is_none() {
-        return Err(crate::error::AppError::Unauthorized("Login required".to_string()));
+        return Err(crate::error::AppError::Unauthorized(
+            "Login required".to_string(),
+        ));
     }
     Ok(())
 }

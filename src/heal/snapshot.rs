@@ -17,7 +17,13 @@ const MAX_SNAPSHOT_BYTES: usize = 200 * 1024;
 fn safe_domain(domain: &str) -> String {
     domain
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '.' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -27,10 +33,7 @@ fn strip_script_style(html: &str) -> String {
     let mut rest = html;
     loop {
         let lower = rest.to_lowercase();
-        let (open_script, open_style) = (
-            lower.find("<script"),
-            lower.find("<style"),
-        );
+        let (open_script, open_style) = (lower.find("<script"), lower.find("<style"));
         let open = match (open_script, open_style) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (Some(a), None) => Some(a),
@@ -44,7 +47,11 @@ fn strip_script_style(html: &str) -> String {
         out.push_str(&rest[..open_idx]);
         let after_open = &rest[open_idx..];
         // Find the closing tag: `</script>` / `</style>`.
-        let tag = if after_open.to_lowercase().starts_with("<script") { "</script>" } else { "</style>" };
+        let tag = if after_open.to_lowercase().starts_with("<script") {
+            "</script>"
+        } else {
+            "</style>"
+        };
         let close = after_open.to_lowercase().find(tag);
         match close {
             Some(close_idx) => {

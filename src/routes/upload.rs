@@ -1,8 +1,8 @@
 use axum::{
-    extract::{Multipart, Path, State},
     Json,
+    extract::{Multipart, Path, State},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;
@@ -86,11 +86,8 @@ pub async fn handle_manual_upload(
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    let verdict = honeypot::inspect_submission(
-        website.as_deref(),
-        form_opened_at.as_deref(),
-        now_ms,
-    );
+    let verdict =
+        honeypot::inspect_submission(website.as_deref(), form_opened_at.as_deref(), now_ms);
     if verdict == TrapVerdict::RejectSilently {
         tracing::warn!("manual upload silently rejected (honeypot/timing trap)");
         return Ok(Json(json!(
@@ -105,7 +102,9 @@ pub async fn handle_manual_upload(
     }
 
     if title.is_empty() || author.is_empty() || file_data.is_empty() {
-        return Err(AppError::BadRequest("title, author, and file are required".to_string()));
+        return Err(AppError::BadRequest(
+            "title, author, and file are required".to_string(),
+        ));
     }
 
     // ── Upload hardening ──────────────────────────────────────────────
@@ -165,10 +164,8 @@ pub async fn handle_manual_upload(
         chapters: meta.chapters,
         words: meta.words,
         description: meta.desc.clone(),
-        fic_created: chrono::DateTime::from_timestamp_millis(meta.published)
-            .unwrap_or_default(),
-        fic_updated: chrono::DateTime::from_timestamp_millis(meta.updated)
-            .unwrap_or_default(),
+        fic_created: chrono::DateTime::from_timestamp_millis(meta.published).unwrap_or_default(),
+        fic_updated: chrono::DateTime::from_timestamp_millis(meta.updated).unwrap_or_default(),
         status: meta.status.clone(),
         source: meta.source.clone(),
         extra_meta: meta.extra_meta.clone(),
@@ -232,13 +229,10 @@ pub async fn handle_manual_upload(
     .await?;
 
     // Generate HTML bundle
-    let (html_path, html_hash) = crate::export::html_bundle::create_html_bundle(
-        &meta,
-        &chapters,
-        &state.config.tmp_dir,
-    )
-    .await
-    .map_err(|e| AppError::ExportError(e.to_string()))?;
+    let (html_path, html_hash) =
+        crate::export::html_bundle::create_html_bundle(&meta, &chapters, &state.config.tmp_dir)
+            .await
+            .map_err(|e| AppError::ExportError(e.to_string()))?;
     let html_cache_dest = crate::cache::disk::cache_path(
         &state.config.cache_dir,
         &crate::cache::EType::Html,
@@ -257,7 +251,9 @@ pub async fn handle_manual_upload(
     .await?;
 
     // Award XP for manual upload
-    let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 50, "manual_upload").await;
+    let _ =
+        crate::db::queries::update_reputation_and_promote(&state.db, user_id, 50, "manual_upload")
+            .await;
     let _ = crate::db::queries::check_and_award_badges(&state.db, user_id, "manual_upload").await;
 
     // Fetch the user's current reputation so the frontend can show a toast
@@ -314,7 +310,9 @@ pub async fn handle_fic_update(
     }
 
     if file_data.is_empty() {
-        return Err(AppError::BadRequest("file is required for update".to_string()));
+        return Err(AppError::BadRequest(
+            "file is required for update".to_string(),
+        ));
     }
 
     // Get existing metadata
@@ -361,26 +359,15 @@ pub async fn handle_fic_update(
     );
     crate::cache::disk::move_to_cache(&epub_path, &cache_dest)?;
     let version = state.config.export_version + version_bump;
-    crate::db::queries::insert_export_log(
-        &state.db,
-        &url_id,
-        version,
-        "epub",
-        &url_id,
-        &epub_hash,
-    )
-    .await?;
+    crate::db::queries::insert_export_log(&state.db, &url_id, version, "epub", &url_id, &epub_hash)
+        .await?;
 
     // Notify followers
-    let _ = crate::db::queries::notify_work_followers(
-        &state.db,
-        work.id,
-        &new_meta.title,
-    )
-    .await;
+    let _ = crate::db::queries::notify_work_followers(&state.db, work.id, &new_meta.title).await;
 
     // Award reputation for keeping content fresh (encourages updates).
-    let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 10, "fic_update").await;
+    let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 10, "fic_update")
+        .await;
     let reputation: i32 = sqlx::query_scalar("SELECT reputation FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_one(&state.db)
@@ -423,5 +410,7 @@ pub async fn handle_fic_delete(
         .execute(&state.db)
         .await?;
 
-    Ok(Json(json!({"err": 0, "msg": "Fic hidden from public view"})))
+    Ok(Json(
+        json!({"err": 0, "msg": "Fic hidden from public view"}),
+    ))
 }

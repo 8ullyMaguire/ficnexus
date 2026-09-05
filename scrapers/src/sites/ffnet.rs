@@ -1,10 +1,10 @@
 /// FanFiction.net site scraper
 pub struct FfNetScraper;
 
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use async_trait::async_trait;
-use crate::{FicMetadata, Chapter, SiteScraper, ScrapeError};
-use scraper::{Html, Selector};
 use chrono::Utc;
+use scraper::{Html, Selector};
 
 impl FfNetScraper {
     fn extract_story_id(url: &str) -> Option<String> {
@@ -20,9 +20,14 @@ impl SiteScraper for FfNetScraper {
         url.contains("fanfiction.net") || url.contains("fictionpress.com")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let story_id = Self::extract_story_id(url)
-            .ok_or_else(|| ScrapeError::ParseError("could not extract story ID from FF.net URL".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let story_id = Self::extract_story_id(url).ok_or_else(|| {
+            ScrapeError::ParseError("could not extract story ID from FF.net URL".into())
+        })?;
 
         let fic_url = format!("https://www.fanfiction.net/s/{story_id}/1/");
         // FFN sits behind Cloudflare's "Just a moment" wall. Plain reqwest is
@@ -57,8 +62,9 @@ impl SiteScraper for FfNetScraper {
     }
 
     async fn lookup_from_html(&self, html: &str, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let story_id = Self::extract_story_id(url)
-            .ok_or_else(|| ScrapeError::ParseError("could not extract story ID from FF.net URL".into()))?;
+        let story_id = Self::extract_story_id(url).ok_or_else(|| {
+            ScrapeError::ParseError("could not extract story ID from FF.net URL".into())
+        })?;
         let fic_url = format!("https://www.fanfiction.net/s/{story_id}/1/");
 
         let (title, author, author_url, description, words, chapters) = {
@@ -98,16 +104,18 @@ impl SiteScraper for FfNetScraper {
             let words = document
                 .select(&Selector::parse("#profile_top span[data-xutitle='word count']").unwrap())
                 .next()
-                .and_then(|el| {
-                    el.text().collect::<String>().replace(',', "").parse().ok()
-                })
+                .and_then(|el| el.text().collect::<String>().replace(',', "").parse().ok())
                 .unwrap_or(0);
 
             let chapters = document
                 .select(&Selector::parse("#profile_top span[data-xutitle='chapters']").unwrap())
                 .next()
                 .and_then(|el| {
-                    el.text().collect::<String>().trim().split('/').next()
+                    el.text()
+                        .collect::<String>()
+                        .trim()
+                        .split('/')
+                        .next()
                         .and_then(|s| s.trim().parse().ok())
                 })
                 .unwrap_or(1);
@@ -147,7 +155,11 @@ impl SiteScraper for FfNetScraper {
         Ok(meta)
     }
 
-    async fn fetch_chapters(&self, _client: &reqwest::Client, meta: &FicMetadata) -> Result<Vec<Chapter>, ScrapeError> {
+    async fn fetch_chapters(
+        &self,
+        _client: &reqwest::Client,
+        meta: &FicMetadata,
+    ) -> Result<Vec<Chapter>, ScrapeError> {
         let mut chapters = Vec::new();
         let story_id = &meta.author_local_id;
 
@@ -161,7 +173,11 @@ impl SiteScraper for FfNetScraper {
         Ok(chapters)
     }
 
-    async fn fetch_chapters_from_html(&self, _html: &str, _meta: &FicMetadata) -> Result<Vec<Chapter>, ScrapeError> {
+    async fn fetch_chapters_from_html(
+        &self,
+        _html: &str,
+        _meta: &FicMetadata,
+    ) -> Result<Vec<Chapter>, ScrapeError> {
         // FFN chapters are per-page; a Wayback snapshot of the full-work URL
         // is not something FFN produces (each chapter has its own URL). For
         // from-html ingest, we can only parse a single page: use the
@@ -180,8 +196,9 @@ impl SiteScraper for FfNetScraper {
         client: &reqwest::Client,
         url: &str,
     ) -> Result<Vec<crate::ExtractedTag>, ScrapeError> {
-        let story_id = Self::extract_story_id(url)
-            .ok_or_else(|| ScrapeError::ParseError("could not extract story ID from FFN URL".into()))?;
+        let story_id = Self::extract_story_id(url).ok_or_else(|| {
+            ScrapeError::ParseError("could not extract story ID from FFN URL".into())
+        })?;
 
         let fic_url = format!("https://www.fanfiction.net/s/{story_id}/1");
         let response = client
@@ -195,7 +212,9 @@ impl SiteScraper for FfNetScraper {
             return Err(ScrapeError::NotFound);
         }
 
-        let html = response.text().await
+        let html = response
+            .text()
+            .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
         let doc = Html::parse_document(&html);
         let mut tags = Vec::new();
@@ -262,7 +281,11 @@ impl FfNetScraper {
 }
 
 /// Map fichub.net API metadata into our `FicMetadata`.
-fn fallback_to_metadata(story_id: &str, fic_url: &str, fb: crate::fichub_net::FallbackMeta) -> FicMetadata {
+fn fallback_to_metadata(
+    story_id: &str,
+    fic_url: &str,
+    fb: crate::fichub_net::FallbackMeta,
+) -> FicMetadata {
     let now = chrono::Utc::now().timestamp_millis();
     let updated = chrono::DateTime::parse_from_rfc3339(&fb.updated)
         .map(|dt| dt.timestamp_millis())

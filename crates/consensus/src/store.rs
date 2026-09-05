@@ -149,34 +149,26 @@ impl RatingStore for SqlxStore {
         category: Option<&str>,
     ) -> Result<Vec<Feature>> {
         let rows = match (status, category) {
-            (Some(s), Some(c)) => {
-                sqlx::query_as::<_, Feature>(SQL_FEATURES_BY_STATUS_AND_CATEGORY)
-                    .bind(s)
-                    .bind(c)
-                    .fetch_all(&self.pool)
-                    .await
-                    .map_err(StoreError::from)?
-            }
-            (Some(s), None) => {
-                sqlx::query_as::<_, Feature>(SQL_FEATURES_BY_STATUS)
-                    .bind(s)
-                    .fetch_all(&self.pool)
-                    .await
-                    .map_err(StoreError::from)?
-            }
-            (None, Some(c)) => {
-                sqlx::query_as::<_, Feature>(SQL_FEATURES_BY_CATEGORY)
-                    .bind(c)
-                    .fetch_all(&self.pool)
-                    .await
-                    .map_err(StoreError::from)?
-            }
-            (None, None) => {
-                sqlx::query_as::<_, Feature>(SQL_FEATURES_ALL)
-                    .fetch_all(&self.pool)
-                    .await
-                    .map_err(StoreError::from)?
-            }
+            (Some(s), Some(c)) => sqlx::query_as::<_, Feature>(SQL_FEATURES_BY_STATUS_AND_CATEGORY)
+                .bind(s)
+                .bind(c)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(StoreError::from)?,
+            (Some(s), None) => sqlx::query_as::<_, Feature>(SQL_FEATURES_BY_STATUS)
+                .bind(s)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(StoreError::from)?,
+            (None, Some(c)) => sqlx::query_as::<_, Feature>(SQL_FEATURES_BY_CATEGORY)
+                .bind(c)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(StoreError::from)?,
+            (None, None) => sqlx::query_as::<_, Feature>(SQL_FEATURES_ALL)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(StoreError::from)?,
         };
         Ok(rows)
     }

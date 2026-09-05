@@ -4,7 +4,7 @@
 //! pure query layer over the materialized graphs.
 
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 
 use crate::error::{AppError, AppResult};
@@ -72,7 +72,7 @@ async fn recommend_tags(db: &PgPool, seed: Option<&str>, limit: i64) -> AppResul
                 ORDER BY inter DESC NULLS LAST
                 LIMIT $2"#,
         )
-                .bind(name)
+        .bind(name)
         .bind(limit)
         .fetch_all(db)
         .await?;
@@ -107,12 +107,16 @@ async fn recommend_tags(db: &PgPool, seed: Option<&str>, limit: i64) -> AppResul
                 score: uses as f64,
                 reason: "popular tag".into(),
             })
-                        .collect())
+            .collect())
     }
 }
 
 /// Similar authors via the materialized `rec_author_graph`. `seed` = author name.
-async fn recommend_authors(db: &PgPool, seed: Option<&str>, limit: i64) -> AppResult<Vec<EntityRec>> {
+async fn recommend_authors(
+    db: &PgPool,
+    seed: Option<&str>,
+    limit: i64,
+) -> AppResult<Vec<EntityRec>> {
     let s = seed.ok_or_else(|| AppError::BadRequest("seed author required".into()))?;
     let rows: Vec<(String, f64)> = sqlx::query_as(
         r#"SELECT CASE WHEN author_a = $1 THEN author_b ELSE author_a END AS neighbour,
@@ -133,12 +137,16 @@ async fn recommend_authors(db: &PgPool, seed: Option<&str>, limit: i64) -> AppRe
             name: n,
             score,
             reason: format!("readers of {s} also read this author"),
-                    })
+        })
         .collect())
 }
 
 /// Similar collections (reading lists) via shared works in reading_list_items.
-async fn recommend_collections(db: &PgPool, seed: Option<&str>, limit: i64) -> AppResult<Vec<EntityRec>> {
+async fn recommend_collections(
+    db: &PgPool,
+    seed: Option<&str>,
+    limit: i64,
+) -> AppResult<Vec<EntityRec>> {
     let s = seed.ok_or_else(|| AppError::BadRequest("seed collection title required".into()))?;
     let rows: Vec<(String, f64)> = sqlx::query_as(
         r#"WITH seed AS (

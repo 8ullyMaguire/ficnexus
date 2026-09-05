@@ -36,12 +36,12 @@
 //! handlers here do thin sqlx query work against the forum tables (created by
 //! migration 041).
 
+use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
-use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::db::queries;
@@ -52,7 +52,6 @@ use crate::server::AppState;
 /// Max topics returned per page (API contract: default 25, max 100).
 const DEFAULT_LIMIT: i64 = 25;
 const MAX_LIMIT: i64 = 100;
-
 
 /// FicNexus roles (migration 007): 0 reader, 5 curator, 10 admin.
 /// Legacy read-only after F7 — the ACTIVE gate is site-wide level:
@@ -200,11 +199,10 @@ pub async fn my_level(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let row: Option<(i16, i64)> =
-        sqlx::query_as("SELECT level, exp FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(&state.db)
-            .await?;
+    let row: Option<(i16, i64)> = sqlx::query_as("SELECT level, exp FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&state.db)
+        .await?;
     let (level, exp) = row.ok_or_else(|| AppError::BadRequest("user not found".to_string()))?;
     let per = exp_per_level().max(1);
     let next_level_exp = i64::from(level.saturating_add(1)) * per;
@@ -269,7 +267,9 @@ pub struct TopicDetailParams {
     pub inc_views: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Deserialize)]
 pub struct CreateTopicBody {
@@ -340,7 +340,8 @@ pub struct CreateBanBody {
 
 /// Require a logged-in user; 401 otherwise (repo convention).
 fn require_user(auth: &AuthUser) -> Result<i32, AppError> {
-    auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))
+    auth.user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))
 }
 
 /// Public-read gate for forum content. When `FORUM_PUBLIC_READ=false` the
@@ -370,7 +371,9 @@ fn validate_slug(slug: &str) -> Result<String, AppError> {
     let s = slug.trim().to_lowercase();
     let len = s.chars().count();
     if !(3..=60).contains(&len) {
-        return Err(AppError::BadRequest("slug must be 3-60 characters".to_string()));
+        return Err(AppError::BadRequest(
+            "slug must be 3-60 characters".to_string(),
+        ));
     }
     if !s
         .chars()
@@ -384,10 +387,7 @@ fn validate_slug(slug: &str) -> Result<String, AppError> {
 }
 
 /// Trim + cap a title at 120 chars, description at 1000 chars.
-fn validate_category_fields(
-    title: &str,
-    description: &str,
-) -> Result<(String, String), AppError> {
+fn validate_category_fields(title: &str, description: &str) -> Result<(String, String), AppError> {
     let title = title.trim();
     if title.is_empty() {
         return Err(AppError::BadRequest("title must not be empty".to_string()));
@@ -397,7 +397,9 @@ fn validate_category_fields(
     }
     let description = description.trim();
     if description.chars().count() > 1000 {
-        return Err(AppError::BadRequest("description too long (max 1000)".to_string()));
+        return Err(AppError::BadRequest(
+            "description too long (max 1000)".to_string(),
+        ));
     }
     Ok((title.to_string(), description.to_string()))
 }
@@ -451,12 +453,11 @@ fn slugify_topic_title(title: &str) -> String {
 /// startup; each row gets `{base}-{id}` so collisions are impossible even if
 /// two topics share a title. Best-effort: failures are logged, never fatal.
 pub async fn backfill_topic_slugs(db: &sqlx::PgPool) {
-    let rows: Vec<(i64, String)> = sqlx::query_as(
-        "SELECT id, title FROM forum_topics WHERE topic_slug IS NULL",
-    )
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
+    let rows: Vec<(i64, String)> =
+        sqlx::query_as("SELECT id, title FROM forum_topics WHERE topic_slug IS NULL")
+            .fetch_all(db)
+            .await
+            .unwrap_or_default();
     for (id, title) in rows {
         let slug = format!("{}-{id}", slugify_topic_title(&title));
         if let Err(e) = sqlx::query("UPDATE forum_topics SET topic_slug = $2 WHERE id = $1")
@@ -472,16 +473,12 @@ pub async fn backfill_topic_slugs(db: &sqlx::PgPool) {
 
 /// Look up a topic by its unique slug. Returns the topic id — 400 (repo
 /// convention for missing resources) if absent or soft-deleted.
-async fn topic_id_by_slug(
-    state: &AppState,
-    slug: &str,
-) -> Result<i64, AppError> {
-    let row: Option<(i64,)> = sqlx::query_as(
-        "SELECT id FROM forum_topics WHERE topic_slug = $1 AND deleted_at IS NULL",
-    )
-    .bind(slug)
-    .fetch_optional(&state.db)
-    .await?;
+async fn topic_id_by_slug(state: &AppState, slug: &str) -> Result<i64, AppError> {
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM forum_topics WHERE topic_slug = $1 AND deleted_at IS NULL")
+            .bind(slug)
+            .fetch_optional(&state.db)
+            .await?;
     row.map(|r| r.0)
         .ok_or_else(|| AppError::BadRequest("topic not found".to_string()))
 }
@@ -493,7 +490,9 @@ fn validate_forum_body(body: &str) -> Result<String, AppError> {
         return Err(AppError::BadRequest("body must not be empty".to_string()));
     }
     if b.chars().count() > 20_000 {
-        return Err(AppError::BadRequest("body too long (max 20000)".to_string()));
+        return Err(AppError::BadRequest(
+            "body too long (max 20000)".to_string(),
+        ));
     }
     Ok(b.to_string())
 }
@@ -563,10 +562,7 @@ async fn is_banned(state: &AppState, user_id: i32, category_id: i64) -> Result<b
 
 /// Check that a live (non-deleted, non-hidden) post exists; returns
 /// (author_id, score, mod_count) — 400 if missing/deleted.
-async fn load_moddable_post(
-    db: &sqlx::PgPool,
-    post_id: i64,
-) -> Result<(i32, i32, i32), AppError> {
+async fn load_moddable_post(db: &sqlx::PgPool, post_id: i64) -> Result<(i32, i32, i32), AppError> {
     let row: Option<(i32, i32, i32)> = sqlx::query_as(
         "SELECT author_id, score, mod_count FROM forum_posts
          WHERE id = $1 AND deleted_at IS NULL AND is_hidden = FALSE",
@@ -578,7 +574,11 @@ async fn load_moddable_post(
 }
 
 /// Has this moderator already modded this post?
-async fn already_modded(db: &sqlx::PgPool, post_id: i64, moderator_id: i32) -> Result<bool, AppError> {
+async fn already_modded(
+    db: &sqlx::PgPool,
+    post_id: i64,
+    moderator_id: i32,
+) -> Result<bool, AppError> {
     let hit: Option<bool> = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM forum_mod_actions WHERE post_id = $1 AND moderator_id = $2)",
     )
@@ -595,12 +595,11 @@ async fn load_user_mod_profile(
     db: &sqlx::PgPool,
     user_id: i32,
 ) -> Result<(i16, i64, String), AppError> {
-    let row: Option<(i16, i64, String)> = sqlx::query_as(
-        "SELECT level, exp, created_at::text FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(db)
-    .await?;
+    let row: Option<(i16, i64, String)> =
+        sqlx::query_as("SELECT level, exp, created_at::text FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(db)
+            .await?;
     row.ok_or_else(|| AppError::BadRequest("user not found".to_string()))
 }
 
@@ -615,14 +614,20 @@ async fn mod_eligibility(
     let min_exp = state.config.forum_mod_min_exp;
     let min_age_days = state.config.forum_mod_min_age_days;
     if level < min_level {
-        return Ok((false, Some(format!("level {level} < {min_level} (curator) required"))));
+        return Ok((
+            false,
+            Some(format!("level {level} < {min_level} (curator) required")),
+        ));
     }
     let created = DateTime::parse_from_rfc3339(&normalize_offset(&created_at))
         .map(|dt| dt.with_timezone(&Utc))
         .unwrap_or(Utc::now());
     let age_days = (Utc::now() - created).num_days();
     if age_days < i64::from(min_age_days) {
-        return Ok((false, Some(format!("account younger than {min_age_days} days"))));
+        return Ok((
+            false,
+            Some(format!("account younger than {min_age_days} days")),
+        ));
     }
     if exp < i64::from(min_exp) {
         return Ok((false, Some(format!("exp {exp} < {min_exp}"))));
@@ -637,10 +642,7 @@ async fn mod_eligibility(
 /// F6: a metamod suspension (`cooldown_until` in the future) zeroes the
 /// grant — the moderator keeps their row but gets no points and no refresh
 /// until the cooldown passes.
-async fn current_grant(
-    state: &AppState,
-    user_id: i32,
-) -> Result<(i16, String), AppError> {
+async fn current_grant(state: &AppState, user_id: i32) -> Result<(i16, String), AppError> {
     let row: Option<(i16, String, Option<String>)> = sqlx::query_as(
         "SELECT points_left, expires_at::text, cooldown_until::text FROM forum_mod_grants WHERE user_id = $1",
     )
@@ -665,7 +667,8 @@ async fn current_grant(
             return Ok((points, expires_at));
         }
         // Window expired — reset in place (keep any cooldown marker intact).
-        let new_expires = Utc::now() + chrono::Duration::hours(i64::from(state.config.forum_window_hours));
+        let new_expires =
+            Utc::now() + chrono::Duration::hours(i64::from(state.config.forum_window_hours));
         sqlx::query(
             "UPDATE forum_mod_grants SET points_left = $2, granted_at = NOW(), expires_at = $3 WHERE user_id = $1",
         )
@@ -674,10 +677,14 @@ async fn current_grant(
         .bind(new_expires)
         .execute(&state.db)
         .await?;
-        return Ok((state.config.forum_points_per_window as i16, new_expires.to_rfc3339()));
+        return Ok((
+            state.config.forum_points_per_window as i16,
+            new_expires.to_rfc3339(),
+        ));
     }
     // No grant yet — create the first window.
-    let new_expires = Utc::now() + chrono::Duration::hours(i64::from(state.config.forum_window_hours));
+    let new_expires =
+        Utc::now() + chrono::Duration::hours(i64::from(state.config.forum_window_hours));
     sqlx::query(
         "INSERT INTO forum_mod_grants (user_id, points_left, expires_at) VALUES ($1, $2, $3)
          ON CONFLICT (user_id) DO UPDATE SET
@@ -689,7 +696,10 @@ async fn current_grant(
     .bind(new_expires)
     .execute(&state.db)
     .await?;
-    Ok((state.config.forum_points_per_window as i16, new_expires.to_rfc3339()))
+    Ok((
+        state.config.forum_points_per_window as i16,
+        new_expires.to_rfc3339(),
+    ))
 }
 
 /// GET /api/forum/moderation/status — my points / window / eligibility.
@@ -723,7 +733,8 @@ pub async fn moderation_status(
     .bind(META_UNFAIR)
     .bind(state.config.forum_meta_audit_window)
     .fetch_one(&state.db)
-    .await {
+    .await
+    {
         Ok((total, unfair)) if total > 0 => (Some(unfair as f64 / total as f64), None::<String>),
         _ => (None, None),
     };
@@ -762,17 +773,19 @@ pub async fn moderation_queue(
     };
     let min_pool = state.config.forum_mod_pool_min;
     if !eligible || points_left <= 0 {
-        return Err(AppError::Forbidden("No moderation points available".to_string()));
+        return Err(AppError::Forbidden(
+            "No moderation points available".to_string(),
+        ));
     }
     // Pool check: point mechanics activate once enough eligible mods exist.
-    let pool: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM users WHERE role >= $1",
-    )
-    .bind(state.config.forum_mod_min_level)
-    .fetch_one(&state.db)
-    .await?;
+    let pool: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE role >= $1")
+        .bind(state.config.forum_mod_min_level)
+        .fetch_one(&state.db)
+        .await?;
     if pool < i64::from(min_pool) {
-        return Ok(Json(json!({ "err": 0, "items": [], "count": 0, "pool_too_small": true })));
+        return Ok(Json(
+            json!({ "err": 0, "items": [], "count": 0, "pool_too_small": true }),
+        ));
     }
 
     let rows: Vec<(i64, i64, String, String, i32, i32, String)> = sqlx::query_as(
@@ -796,18 +809,20 @@ pub async fn moderation_queue(
     .await?;
     let items: Vec<Value> = rows
         .into_iter()
-        .map(|(post_id, topic_id, author_username, body, score, mod_count, created_at)| {
-            json!({
-                "post_id": post_id,
-                "topic_id": topic_id,
-                "author_username": author_username,
-                "body": body,
-                "score": score,
-                "mod_count": mod_count,
-                "reason": Value::Null,
-                "created_at": created_at,
-            })
-        })
+        .map(
+            |(post_id, topic_id, author_username, body, score, mod_count, created_at)| {
+                json!({
+                    "post_id": post_id,
+                    "topic_id": topic_id,
+                    "author_username": author_username,
+                    "body": body,
+                    "score": score,
+                    "mod_count": mod_count,
+                    "reason": Value::Null,
+                    "created_at": created_at,
+                })
+            },
+        )
         .collect();
     let count = items.len() as i64;
     Ok(Json(json!({ "err": 0, "items": items, "count": count })))
@@ -825,7 +840,9 @@ pub async fn moderate_post(
     let user_id = require_user(&auth)?;
     let reason = body.reason.trim().to_string();
     let Some(delta) = mod_delta(&reason) else {
-        return Err(AppError::BadRequest("invalid moderation reason".to_string()));
+        return Err(AppError::BadRequest(
+            "invalid moderation reason".to_string(),
+        ));
     };
     let (eligible, _) = mod_eligibility(&state, user_id).await?;
     if !eligible {
@@ -837,10 +854,14 @@ pub async fn moderate_post(
     }
     let (author_id, _score, mod_count) = load_moddable_post(&state.db, post_id).await?;
     if author_id == user_id {
-        return Err(AppError::Forbidden("Cannot moderate your own post".to_string()));
+        return Err(AppError::Forbidden(
+            "Cannot moderate your own post".to_string(),
+        ));
     }
     if mod_count >= 5 {
-        return Err(AppError::BadRequest("post has reached the moderation limit".to_string()));
+        return Err(AppError::BadRequest(
+            "post has reached the moderation limit".to_string(),
+        ));
     }
     if already_modded(&state.db, post_id, user_id).await? {
         return Err(AppError::Conflict(
@@ -919,12 +940,11 @@ pub async fn post_moderations(
     Path(post_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
     require_user(&auth)?;
-    let exists: Option<bool> = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM forum_posts WHERE id = $1)",
-    )
-    .bind(post_id)
-    .fetch_one(&state.db)
-    .await?;
+    let exists: Option<bool> =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM forum_posts WHERE id = $1)")
+            .bind(post_id)
+            .fetch_one(&state.db)
+            .await?;
     if !exists.unwrap_or(false) {
         return Err(AppError::BadRequest("post not found".to_string()));
     }
@@ -948,7 +968,9 @@ pub async fn post_moderations(
             })
         })
         .collect();
-    Ok(Json(json!({ "err": 0, "items": items, "count": items.len() })))
+    Ok(Json(
+        json!({ "err": 0, "items": items, "count": items.len() }),
+    ))
 }
 
 // ── F6: metamoderation (SPEC-COMMUNITY-PLATFORM §2 Layer 2 + §3 + §4) ─────
@@ -984,7 +1006,10 @@ async fn meta_eligibility(
         .unwrap_or(Utc::now());
     let age_days = (Utc::now() - created).num_days();
     if age_days < i64::from(min_age_days) {
-        return Ok((false, Some(format!("account younger than {min_age_days} days"))));
+        return Ok((
+            false,
+            Some(format!("account younger than {min_age_days} days")),
+        ));
     }
     if exp < i64::from(min_exp) {
         return Ok((false, Some(format!("exp {exp} < {min_exp}"))));
@@ -996,7 +1021,10 @@ async fn meta_eligibility(
     .fetch_one(&state.db)
     .await?;
     if post_count < i64::from(min_posts) {
-        return Ok((false, Some(format!("{post_count} forum posts < {min_posts} required"))));
+        return Ok((
+            false,
+            Some(format!("{post_count} forum posts < {min_posts} required")),
+        ));
     }
     Ok((true, None))
 }
@@ -1071,16 +1099,24 @@ pub async fn metamod_queue(
             "next_cursor": Value::Null,
         })));
     }
-    let filter = params.filter.as_deref().unwrap_or("unreviewed").to_lowercase();
+    let filter = params
+        .filter
+        .as_deref()
+        .unwrap_or("unreviewed")
+        .to_lowercase();
     let limit = clamp_limit(params.limit);
     let fetch = limit + 1;
     let cursor = params.cursor.unwrap_or(i64::MAX);
-    let verdict_filter: Option<i16> = params.verdict.as_deref().map(|v| match v.to_lowercase().as_str() {
-        "fair" => META_FAIR,
-        "unfair" => META_UNFAIR,
-        "unsure" => META_UNSURE,
-        _ => META_FAIR,
-    });
+    let verdict_filter: Option<i16> =
+        params
+            .verdict
+            .as_deref()
+            .map(|v| match v.to_lowercase().as_str() {
+                "fair" => META_FAIR,
+                "unfair" => META_UNFAIR,
+                "unsure" => META_UNSURE,
+                _ => META_FAIR,
+            });
 
     let rows: Vec<(i64, i64, i64, String, String, i16, i32, String, Option<i16>)> = match filter.as_str() {
         "reviewed" => {
@@ -1166,8 +1202,16 @@ pub async fn metamod_queue(
     };
 
     let has_more = rows.len() as i64 > limit;
-    let page = if has_more { &rows[..limit as usize] } else { &rows[..] };
-    let next_cursor = if has_more { Some(page.last().map(|r| r.0).unwrap_or(0)) } else { None };
+    let page = if has_more {
+        &rows[..limit as usize]
+    } else {
+        &rows[..]
+    };
+    let next_cursor = if has_more {
+        Some(page.last().map(|r| r.0).unwrap_or(0))
+    } else {
+        None
+    };
     let verdict_str = |v: Option<i16>| match v {
         Some(0) => Value::String("fair".to_string()),
         Some(1) => Value::String("unfair".to_string()),
@@ -1176,23 +1220,37 @@ pub async fn metamod_queue(
     };
     let items: Vec<Value> = page
         .iter()
-        .map(|(action_id, post_id, topic_id, excerpt, reason, delta, score_after, created_at, my_v)| {
-            json!({
-                "grant_id": action_id,
-                "action_id": action_id,
-                "post_id": post_id,
-                "topic_id": topic_id,
-                "excerpt": excerpt,
-                "reason": reason,
-                "delta": delta,
-                "score_after": score_after,
-                "created_at": created_at,
-                "my_verdict": verdict_str(*my_v),
-            })
-        })
+        .map(
+            |(
+                action_id,
+                post_id,
+                topic_id,
+                excerpt,
+                reason,
+                delta,
+                score_after,
+                created_at,
+                my_v,
+            )| {
+                json!({
+                    "grant_id": action_id,
+                    "action_id": action_id,
+                    "post_id": post_id,
+                    "topic_id": topic_id,
+                    "excerpt": excerpt,
+                    "reason": reason,
+                    "delta": delta,
+                    "score_after": score_after,
+                    "created_at": created_at,
+                    "my_verdict": verdict_str(*my_v),
+                })
+            },
+        )
         .collect();
     let count = items.len() as i64;
-    Ok(Json(json!({ "err": 0, "items": items, "count": count, "next_cursor": next_cursor })))
+    Ok(Json(
+        json!({ "err": 0, "items": items, "count": count, "next_cursor": next_cursor }),
+    ))
 }
 
 /// GET /api/forum/metamod/grants/{id} — anonymized context (FR-009). Curator only.
@@ -1216,7 +1274,8 @@ pub async fn metamod_grant_detail(
     .bind(grant_id)
     .fetch_optional(&state.db)
     .await?;
-    let Some((action_id, post_id, topic_id, excerpt, reason, delta, score_after, created_at)) = row else {
+    let Some((action_id, post_id, topic_id, excerpt, reason, delta, score_after, created_at)) = row
+    else {
         return Err(AppError::BadRequest("grant not found".to_string()));
     };
     Ok(Json(json!({
@@ -1249,36 +1308,51 @@ pub async fn metamod_grant_verdict(
         "fair" => META_FAIR,
         "unfair" => META_UNFAIR,
         "unsure" => META_UNSURE,
-        _ => return Err(AppError::BadRequest("verdict must be 'fair', 'unfair' or 'unsure'".to_string())),
+        _ => {
+            return Err(AppError::BadRequest(
+                "verdict must be 'fair', 'unfair' or 'unsure'".to_string(),
+            ));
+        }
     };
     let (eligible, reason) = meta_eligibility(&state, voter_id).await?;
     if !eligible {
-        return Err(AppError::Forbidden(reason.unwrap_or_else(|| "Not eligible to metamoderate".to_string())));
+        return Err(AppError::Forbidden(
+            reason.unwrap_or_else(|| "Not eligible to metamoderate".to_string()),
+        ));
     }
-    let moderator_id: Option<i32> = sqlx::query_scalar("SELECT moderator_id FROM forum_mod_actions WHERE id = $1")
-        .bind(grant_id)
-        .fetch_optional(&state.db)
-        .await?;
+    let moderator_id: Option<i32> =
+        sqlx::query_scalar("SELECT moderator_id FROM forum_mod_actions WHERE id = $1")
+            .bind(grant_id)
+            .fetch_optional(&state.db)
+            .await?;
     let Some(moderator_id) = moderator_id else {
         return Err(AppError::BadRequest("grant not found".to_string()));
     };
     if moderator_id == voter_id {
-        return Err(AppError::Forbidden("Cannot rate your own moderation action".to_string()));
+        return Err(AppError::Forbidden(
+            "Cannot rate your own moderation action".to_string(),
+        ));
     }
-    let insert = sqlx::query("INSERT INTO forum_metamod_votes (mod_action_id, voter_id, verdict) VALUES ($1,$2,$3)")
-        .bind(grant_id)
-        .bind(voter_id)
-        .bind(verdict)
-        .execute(&state.db)
-        .await;
+    let insert = sqlx::query(
+        "INSERT INTO forum_metamod_votes (mod_action_id, voter_id, verdict) VALUES ($1,$2,$3)",
+    )
+    .bind(grant_id)
+    .bind(voter_id)
+    .bind(verdict)
+    .execute(&state.db)
+    .await;
     if let Err(sqlx::Error::Database(db_err)) = &insert {
         if db_err.is_unique_violation() {
-            return Err(AppError::Conflict("You already rated this moderation action".to_string()));
+            return Err(AppError::Conflict(
+                "You already rated this moderation action".to_string(),
+            ));
         }
     }
     insert.map_err(AppError::from)?;
     check_meta_cooldown(&state, moderator_id).await?;
-    Ok(Json(json!({ "err": 0, "grant_id": grant_id, "verdict": body.verdict.trim().to_lowercase() })))
+    Ok(Json(
+        json!({ "err": 0, "grant_id": grant_id, "verdict": body.verdict.trim().to_lowercase() }),
+    ))
 }
 
 /// POST /api/forum/metamod/{actionId}/vote — record one metamod rating.
@@ -1310,14 +1384,15 @@ pub async fn metamod_vote(
         ));
     }
     // The action must exist AND must belong to someone else's moderation.
-    let moderator_id: Option<i32> = sqlx::query_scalar(
-        "SELECT moderator_id FROM forum_mod_actions WHERE id = $1",
-    )
-    .bind(action_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let moderator_id: Option<i32> =
+        sqlx::query_scalar("SELECT moderator_id FROM forum_mod_actions WHERE id = $1")
+            .bind(action_id)
+            .fetch_optional(&state.db)
+            .await?;
     let Some(moderator_id) = moderator_id else {
-        return Err(AppError::BadRequest("moderation action not found".to_string()));
+        return Err(AppError::BadRequest(
+            "moderation action not found".to_string(),
+        ));
     };
     if moderator_id == voter_id {
         return Err(AppError::Forbidden(
@@ -1385,7 +1460,8 @@ async fn check_meta_cooldown(state: &AppState, moderator_id: i32) -> Result<(), 
     }
 
     // Crossing the threshold → cooldown_until = now + COOLDOWN_DAYS.
-    let until = Utc::now() + chrono::Duration::days(i64::from(state.config.forum_meta_cooldown_days));
+    let until =
+        Utc::now() + chrono::Duration::days(i64::from(state.config.forum_meta_cooldown_days));
     sqlx::query(
         "INSERT INTO forum_mod_grants (user_id, points_left, expires_at, cooldown_until)
          VALUES ($1, 0, NOW() + interval '72 hours', $2)
@@ -1449,7 +1525,9 @@ pub async fn admin_hide_post(
         vec![("hidden_until", json!(until.to_rfc3339()))],
     )
     .await;
-    Ok(Json(json!({ "err": 0, "post_id": post_id, "hidden_until": until.to_rfc3339(), "msg": "Post hidden" })))
+    Ok(Json(
+        json!({ "err": 0, "post_id": post_id, "hidden_until": until.to_rfc3339(), "msg": "Post hidden" }),
+    ))
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -1470,14 +1548,24 @@ pub async fn admin_lock_topic(
     let new_status = match body.and_then(|b| b.locked) {
         Some(true) => "locked",
         Some(false) => "open",
-        None => if status == "locked" { "open" } else { "locked" },
+        None => {
+            if status == "locked" {
+                "open"
+            } else {
+                "locked"
+            }
+        }
     };
     sqlx::query("UPDATE forum_topics SET status = $2, updated_at = NOW() WHERE id = $1")
         .bind(topic_id)
         .bind(&new_status)
         .execute(&state.db)
         .await?;
-    let action = if new_status == "locked" { "forum_lock" } else { "forum_unlock" };
+    let action = if new_status == "locked" {
+        "forum_lock"
+    } else {
+        "forum_unlock"
+    };
     crate::modlog::record_json(
         &state.db,
         Some(actor_id),
@@ -1488,7 +1576,9 @@ pub async fn admin_lock_topic(
         vec![("status", json!(new_status))],
     )
     .await;
-    Ok(Json(json!({ "err": 0, "id": topic_id, "status": new_status, "msg": "Topic locked" })))
+    Ok(Json(
+        json!({ "err": 0, "id": topic_id, "status": new_status, "msg": "Topic locked" }),
+    ))
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -1509,14 +1599,24 @@ pub async fn admin_pin_topic(
     let new_status = match body.and_then(|b| b.pinned) {
         Some(true) => "pinned",
         Some(false) => "open",
-        None => if status == "pinned" { "open" } else { "pinned" },
+        None => {
+            if status == "pinned" {
+                "open"
+            } else {
+                "pinned"
+            }
+        }
     };
     sqlx::query("UPDATE forum_topics SET status = $2, updated_at = NOW() WHERE id = $1")
         .bind(topic_id)
         .bind(&new_status)
         .execute(&state.db)
         .await?;
-    let action = if new_status == "pinned" { "forum_pin" } else { "forum_unpin" };
+    let action = if new_status == "pinned" {
+        "forum_pin"
+    } else {
+        "forum_unpin"
+    };
     crate::modlog::record_json(
         &state.db,
         Some(actor_id),
@@ -1527,7 +1627,9 @@ pub async fn admin_pin_topic(
         vec![("status", json!(new_status))],
     )
     .await;
-    Ok(Json(json!({ "err": 0, "id": topic_id, "status": new_status, "msg": "Topic pinned" })))
+    Ok(Json(
+        json!({ "err": 0, "id": topic_id, "status": new_status, "msg": "Topic pinned" }),
+    ))
 }
 
 /// POST /api/admin/forum/bans — create a ban. Scope ≤ own level: forum-scope
@@ -1541,10 +1643,14 @@ pub async fn admin_create_ban(
     let actor_id = require_user(&auth)?;
     let scope = body.scope.trim().to_string();
     if scope != "forum" && scope != "category" {
-        return Err(AppError::BadRequest("scope must be 'forum' or 'category'".to_string()));
+        return Err(AppError::BadRequest(
+            "scope must be 'forum' or 'category'".to_string(),
+        ));
     }
     if scope == "forum" && auth.role < 10 {
-        return Err(AppError::Forbidden("Forum-scope bans require admin (role >= 10)".to_string()));
+        return Err(AppError::Forbidden(
+            "Forum-scope bans require admin (role >= 10)".to_string(),
+        ));
     }
     if scope == "category" && auth.role < MOD_ROLE {
         return Err(AppError::Forbidden("Moderator access required".to_string()));
@@ -1553,12 +1659,11 @@ pub async fn admin_create_ban(
         let cid = body.category_id.ok_or_else(|| {
             AppError::BadRequest("category_id required for category-scope bans".to_string())
         })?;
-        let exists: Option<bool> = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM forum_categories WHERE id = $1)",
-        )
-        .bind(cid)
-        .fetch_one(&state.db)
-        .await?;
+        let exists: Option<bool> =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM forum_categories WHERE id = $1)")
+                .bind(cid)
+                .fetch_one(&state.db)
+                .await?;
         if !exists.unwrap_or(false) {
             return Err(AppError::BadRequest("category not found".to_string()));
         }
@@ -1571,7 +1676,9 @@ pub async fn admin_create_ban(
         Some(s) if !s.trim().is_empty() => Some(
             DateTime::parse_from_rfc3339(s.trim())
                 .map(|dt| dt.with_timezone(&Utc))
-                .map_err(|_| AppError::BadRequest("expires_at must be RFC3339 or null".to_string()))?,
+                .map_err(|_| {
+                    AppError::BadRequest("expires_at must be RFC3339 or null".to_string())
+                })?,
         ),
         _ => None,
     };
@@ -1603,13 +1710,23 @@ pub async fn admin_create_ban(
         vec![
             ("user_id", json!(body.user_id)),
             ("scope", json!(scope)),
-            ("category_id", category_id.map(|c| json!(c)).unwrap_or(Value::Null)),
+            (
+                "category_id",
+                category_id.map(|c| json!(c)).unwrap_or(Value::Null),
+            ),
             ("reason", json!(reason)),
-            ("expires_at", expires_at.map(|e| json!(e.to_rfc3339())).unwrap_or(Value::Null)),
+            (
+                "expires_at",
+                expires_at
+                    .map(|e| json!(e.to_rfc3339()))
+                    .unwrap_or(Value::Null),
+            ),
         ],
     )
     .await;
-    Ok(Json(json!({ "err": 0, "id": ban_id, "msg": "Ban created" })))
+    Ok(Json(
+        json!({ "err": 0, "id": ban_id, "msg": "Ban created" }),
+    ))
 }
 
 /// DELETE /api/admin/forum/bans/{id} — lift a ban (role ≥ 5). Logs 'forum_unban'.
@@ -1647,9 +1764,18 @@ pub async fn admin_list_bans(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
     require_mod(&auth)?;
-    let rows: Vec<(i64, i32, String, Option<String>, Option<i64>, Option<String>, String, String, Option<String>)> =
-        sqlx::query_as(
-            r#"SELECT b.id, b.user_id, u.username, b.reason,
+    let rows: Vec<(
+        i64,
+        i32,
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+        String,
+        String,
+        Option<String>,
+    )> = sqlx::query_as(
+        r#"SELECT b.id, b.user_id, u.username, b.reason,
                       b.category_id, c.slug, bu.username,
                       b.created_at::text, b.expires_at::text
                FROM forum_bans b
@@ -1657,13 +1783,23 @@ pub async fn admin_list_bans(
                LEFT JOIN forum_categories c ON c.id = b.category_id
                LEFT JOIN users bu ON bu.id = b.banned_by
                ORDER BY b.created_at DESC"#,
-        )
-        .fetch_all(&state.db)
-        .await?;
+    )
+    .fetch_all(&state.db)
+    .await?;
     let items: Vec<Value> = rows
         .into_iter()
         .map(
-            |(id, user_id, user_username, reason, category_id, category_slug, banned_by_username, created_at, expires_at)| {
+            |(
+                id,
+                user_id,
+                user_username,
+                reason,
+                category_id,
+                category_slug,
+                banned_by_username,
+                created_at,
+                expires_at,
+            )| {
                 json!({
                     "id": id,
                     "user_id": user_id,
@@ -1679,7 +1815,9 @@ pub async fn admin_list_bans(
             },
         )
         .collect();
-    Ok(Json(json!({ "err": 0, "items": items, "count": items.len() })))
+    Ok(Json(
+        json!({ "err": 0, "items": items, "count": items.len() }),
+    ))
 }
 
 /// T036: GET /api/forum/moderation/user/{userId}/grants — recent moderation grants for a user.
@@ -1708,7 +1846,9 @@ pub async fn moderation_user_grants(
             json!({ "id": id, "post_id": post_id, "topic_id": topic_id, "reason": reason, "delta": delta, "score_after": score_after, "created_at": created_at })
         })
         .collect();
-    Ok(Json(json!({ "err": 0, "user_id": user_id, "items": items, "count": items.len() })))
+    Ok(Json(
+        json!({ "err": 0, "user_id": user_id, "items": items, "count": items.len() }),
+    ))
 }
 
 /// Fetch a topic row (id, author_id, category_id, title, status) that is not
@@ -1732,7 +1872,6 @@ fn actor_parts(auth: &AuthUser) -> (Option<i32>, Option<String>) {
     (auth.user_id, auth.username.clone())
 }
 
-
 /// Postgres `::text` renders timezone offsets without a colon (`+02` or
 /// `+0200`); chrono needs `+02:00`. Insert the colon when the trailing offset
 /// is a bare ±HH or ±HHMM.
@@ -1740,7 +1879,8 @@ fn normalize_offset(s: &str) -> String {
     let bytes = s.as_bytes();
     let len = bytes.len();
     // Bare ±HH at the end (e.g. "+02"): position len-3 is the sign.
-    if len >= 4 && (bytes[len - 3] == b'+' || bytes[len - 3] == b'-')
+    if len >= 4
+        && (bytes[len - 3] == b'+' || bytes[len - 3] == b'-')
         && bytes[len - 2].is_ascii_digit()
         && bytes[len - 1].is_ascii_digit()
     {
@@ -1753,7 +1893,8 @@ fn normalize_offset(s: &str) -> String {
         return out;
     }
     // ±HHMM without colon at the end (e.g. "+0200"): position len-5 is the sign.
-    if len >= 6 && (bytes[len - 5] == b'+' || bytes[len - 5] == b'-')
+    if len >= 6
+        && (bytes[len - 5] == b'+' || bytes[len - 5] == b'-')
         && bytes[len - 4].is_ascii_digit()
         && bytes[len - 3].is_ascii_digit()
         && bytes[len - 2].is_ascii_digit()
@@ -1766,20 +1907,25 @@ fn normalize_offset(s: &str) -> String {
     s.to_string()
 }
 
-
 #[cfg(test)]
 mod mention_tests {
     use super::*;
 
     #[test]
     fn extracts_basic_mentions() {
-        assert_eq!(extract_mentions("hi @alice and @bob!"), vec!["alice", "bob"]);
+        assert_eq!(
+            extract_mentions("hi @alice and @bob!"),
+            vec!["alice", "bob"]
+        );
     }
 
     #[test]
     fn skips_email_and_inline_at() {
         // foo@bar is an email-ish token, not a mention.
-        assert_eq!(extract_mentions("mail me at foo@bar.com"), Vec::<String>::new());
+        assert_eq!(
+            extract_mentions("mail me at foo@bar.com"),
+            Vec::<String>::new()
+        );
         assert_eq!(extract_mentions("see @user in text"), vec!["user"]);
     }
 
@@ -1823,16 +1969,11 @@ fn extract_mentions(body: &str) -> Vec<String> {
 }
 
 /// Fetch a category row by slug (visible to readers: not archived).
-async fn category_id_by_slug(
-    state: &AppState,
-    slug: &str,
-) -> Result<i64, AppError> {
-    let row: Option<(i64,)> = sqlx::query_as(
-        "SELECT id FROM forum_categories WHERE slug = $1",
-    )
-    .bind(slug)
-    .fetch_optional(&state.db)
-    .await?;
+async fn category_id_by_slug(state: &AppState, slug: &str) -> Result<i64, AppError> {
+    let row: Option<(i64,)> = sqlx::query_as("SELECT id FROM forum_categories WHERE slug = $1")
+        .bind(slug)
+        .fetch_optional(&state.db)
+        .await?;
     row.map(|r| r.0)
         .ok_or_else(|| AppError::BadRequest("category not found".to_string()))
 }
@@ -1854,9 +1995,18 @@ pub async fn list_categories(
     // All categories are visible (the DDL has no archive flag); the predicate
     // below is forward-compatible with a future `status` column (F7 archiving)
     // and matches every row today.
-    let rows: Vec<(i64, String, String, String, i32, bool, String, i64, Option<String>)> =
-        sqlx::query_as(
-            r#"SELECT c.id, c.slug, c.title, c.description, c.position, c.is_mod_only,
+    let rows: Vec<(
+        i64,
+        String,
+        String,
+        String,
+        i32,
+        bool,
+        String,
+        i64,
+        Option<String>,
+    )> = sqlx::query_as(
+        r#"SELECT c.id, c.slug, c.title, c.description, c.position, c.is_mod_only,
                       c.created_at::text,
                       (SELECT COUNT(*) FROM forum_topics t
                         WHERE t.category_id = c.id
@@ -1867,15 +2017,25 @@ pub async fn list_categories(
                FROM forum_categories c
                WHERE ($1::boolean OR c.is_mod_only = FALSE)
                ORDER BY c.position ASC, c.id ASC"#,
-        )
-        .bind(is_anon)
-        .fetch_all(&state.db)
-        .await?;
+    )
+    .bind(is_anon)
+    .fetch_all(&state.db)
+    .await?;
 
     let items: Vec<Value> = rows
         .into_iter()
         .map(
-            |(id, slug, title, description, position, is_mod_only, created_at, topic_count, last_activity)| {
+            |(
+                id,
+                slug,
+                title,
+                description,
+                position,
+                is_mod_only,
+                created_at,
+                topic_count,
+                last_activity,
+            )| {
                 json!({
                     "id": id,
                     "slug": slug,
@@ -1909,16 +2069,13 @@ pub async fn list_topics(
     let is_anon = user_id == 0;
     let category_id = category_id_by_slug(&state, params.category.trim()).await?;
     if is_anon {
-        let mod_only: Option<bool> = sqlx::query_scalar(
-            "SELECT is_mod_only FROM forum_categories WHERE id = $1",
-        )
-        .bind(category_id)
-        .fetch_optional(&state.db)
-        .await?;
+        let mod_only: Option<bool> =
+            sqlx::query_scalar("SELECT is_mod_only FROM forum_categories WHERE id = $1")
+                .bind(category_id)
+                .fetch_optional(&state.db)
+                .await?;
         if mod_only.unwrap_or(true) {
-            return Err(AppError::Forbidden(
-                "This board requires login".to_string(),
-            ));
+            return Err(AppError::Forbidden("This board requires login".to_string()));
         }
     }
     let limit = params.limit.unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
@@ -1996,13 +2153,27 @@ pub async fn list_topics(
         ).bind(category_id).bind(cursor).bind(fetch_n).bind(user_id).fetch_all(&state.db).await?,
     };
 
-
     let has_more = rows.len() as i64 > limit;
     let items: Vec<Value> = rows
         .into_iter()
         .take(limit as usize)
         .map(
-            |(id, title, topic_slug, author_id, author_username, reply_count, vote_score, view_count, last_post_id, status, last_activity_at, created_at, unread, last_read_post_id)| {
+            |(
+                id,
+                title,
+                topic_slug,
+                author_id,
+                author_username,
+                reply_count,
+                vote_score,
+                view_count,
+                last_post_id,
+                status,
+                last_activity_at,
+                created_at,
+                unread,
+                last_read_post_id,
+            )| {
                 let mut obj = json!({
                     "id": id,
                     "title": title,
@@ -2044,9 +2215,17 @@ pub async fn list_topics(
 /// GET /api/forum/unread — cross-category unread topics for the caller (auth required).
 /// Mirrors NodeBB /unread: topics where last_post_id > last_read_post_id.
 /// Query: ?limit & ?cursor (id).
-pub async fn unread_topics(auth: AuthUser, State(state): State<Arc<AppState>>, Query(q): Query<std::collections::HashMap<String,String>>) -> Result<Json<Value>, AppError> {
+pub async fn unread_topics(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let limit: i64 = q.get("limit").and_then(|s| s.parse().ok()).unwrap_or(25).clamp(1,100);
+    let limit: i64 = q
+        .get("limit")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(25)
+        .clamp(1, 100);
     let cursor: Option<i64> = q.get("cursor").and_then(|s| s.parse().ok());
     let fetch_n = limit + 1;
     let rows: Vec<(i64,String,Option<String>,i32,String,i64,i64,i64,i64,String,Option<String>,String,i64,String)> = sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
@@ -2060,19 +2239,41 @@ pub async fn unread_topics(auth: AuthUser, State(state): State<Arc<AppState>>, Q
         .bind(user_id).bind(cursor).bind(fetch_n).fetch_all(&state.db).await?;
     let has_more = rows.len() as i64 > limit;
     let items: Vec<Value> = rows.into_iter().take(limit as usize).map(|(id,title,topic_slug,author_id,author_username,reply_count,vote_score,view_count,last_post_id,status,last_activity_at,created_at,category_slug,category_title)| json!({"id":id,"title":title,"topic_slug":topic_slug,"author_id":author_id,"author_username":author_username,"reply_count":reply_count,"vote_score":vote_score,"view_count":view_count,"last_post_id":last_post_id,"status":status,"last_activity_at":last_activity_at,"created_at":created_at,"category_slug":category_slug,"category_title":category_title,"unread":true})).collect();
-    let next_cursor = if has_more { items.last().and_then(|i| i["id"].as_i64()) } else { None };
-    Ok(Json(json!({"err":0,"items":items,"next_cursor":next_cursor,"limit":limit})))
+    let next_cursor = if has_more {
+        items.last().and_then(|i| i["id"].as_i64())
+    } else {
+        None
+    };
+    Ok(Json(
+        json!({"err":0,"items":items,"next_cursor":next_cursor,"limit":limit}),
+    ))
 }
 
 /// GET /api/forum/recent — recent topics across all categories (NodeBB /recent).
 /// Query: ?limit & ?cursor & ?category (optional filter by slug).
-pub async fn recent_topics(auth: AuthUser, State(state): State<Arc<AppState>>, Query(q): Query<std::collections::HashMap<String,String>>) -> Result<Json<Value>, AppError> {
-    let user_id = public_reader_id(&auth, &state)?; let _is_anon=user_id==0;
-    let limit: i64 = q.get("limit").and_then(|s| s.parse().ok()).unwrap_or(25).clamp(1,100);
+pub async fn recent_topics(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Value>, AppError> {
+    let user_id = public_reader_id(&auth, &state)?;
+    let _is_anon = user_id == 0;
+    let limit: i64 = q
+        .get("limit")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(25)
+        .clamp(1, 100);
     let cursor: Option<i64> = q.get("cursor").and_then(|s| s.parse().ok());
-    let cat_filter = q.get("category").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-    let cat_id: Option<i64> = if let Some(slug)=&cat_filter { Some(category_id_by_slug(&state, slug).await?) } else { None };
-    let fetch_n=limit+1;
+    let cat_filter = q
+        .get("category")
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let cat_id: Option<i64> = if let Some(slug) = &cat_filter {
+        Some(category_id_by_slug(&state, slug).await?)
+    } else {
+        None
+    };
+    let fetch_n = limit + 1;
     let rows: Vec<(i64,String,Option<String>,i32,String,i64,i64,i64,i64,String,Option<String>,String,bool,String,String)> = sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
         (SELECT COUNT(*) - 1 FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL AND p.is_hidden=FALSE)::bigint,
         (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id)::bigint,
@@ -2085,19 +2286,41 @@ pub async fn recent_topics(auth: AuthUser, State(state): State<Arc<AppState>>, Q
         .bind(cursor).bind(fetch_n).bind(user_id).bind(cat_id).fetch_all(&state.db).await?;
     let has_more = rows.len() as i64 > limit;
     let items: Vec<Value> = rows.into_iter().take(limit as usize).map(|(id,title,topic_slug,author_id,author_username,reply_count,vote_score,view_count,last_post_id,status,last_activity_at,created_at,unread,category_slug,category_title)| json!({"id":id,"title":title,"topic_slug":topic_slug,"author_id":author_id,"author_username":author_username,"reply_count":reply_count,"vote_score":vote_score,"view_count":view_count,"last_post_id":last_post_id,"status":status,"last_activity_at":last_activity_at,"created_at":created_at,"unread":unread,"category_slug":category_slug,"category_title":category_title})).collect();
-    let next_cursor = if has_more { items.last().and_then(|i| i["id"].as_i64()) } else { None };
-    Ok(Json(json!({"err":0,"items":items,"next_cursor":next_cursor,"limit":limit})))
+    let next_cursor = if has_more {
+        items.last().and_then(|i| i["id"].as_i64())
+    } else {
+        None
+    };
+    Ok(Json(
+        json!({"err":0,"items":items,"next_cursor":next_cursor,"limit":limit}),
+    ))
 }
 
 /// GET /api/forum/popular — popular topics by view_count or reply_count (NodeBB /popular).
 /// Query: ?limit & ?cursor & ?sort=views|posts|votes (default views).
-pub async fn popular_topics(auth: AuthUser, State(state): State<Arc<AppState>>, Query(q): Query<std::collections::HashMap<String,String>>) -> Result<Json<Value>, AppError> {
+pub async fn popular_topics(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<Value>, AppError> {
     let user_id = public_reader_id(&auth, &state)?;
-    let limit: i64 = q.get("limit").and_then(|s| s.parse().ok()).unwrap_or(25).clamp(1,100);
+    let limit: i64 = q
+        .get("limit")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(25)
+        .clamp(1, 100);
     let cursor: Option<i64> = q.get("cursor").and_then(|s| s.parse().ok());
     let sort = q.get("sort").map(|s| s.as_str()).unwrap_or("views");
-    let order_sql = match sort { "posts"|"replies" => "(SELECT COUNT(*) FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL) DESC", "votes" => "(SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id) DESC", _ => "t.view_count DESC" };
-    let fetch_n=limit+1;
+    let order_sql = match sort {
+        "posts" | "replies" => {
+            "(SELECT COUNT(*) FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL) DESC"
+        }
+        "votes" => {
+            "(SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id) DESC"
+        }
+        _ => "t.view_count DESC",
+    };
+    let fetch_n = limit + 1;
     // Use a single query with dynamic ORDER BY via CASE branching (avoid string interpolation)
     let rows: Vec<(i64,String,Option<String>,i32,String,i64,i64,i64,i64,String,Option<String>,String,String,String)> = match sort {
         "posts"|"replies" => sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
@@ -2125,66 +2348,166 @@ pub async fn popular_topics(auth: AuthUser, State(state): State<Arc<AppState>>, 
     let _ = (user_id, order_sql);
     let has_more = rows.len() as i64 > limit;
     let items: Vec<Value> = rows.into_iter().take(limit as usize).map(|(id,title,topic_slug,author_id,author_username,reply_count,vote_score,view_count,last_post_id,status,last_activity_at,created_at,category_slug,category_title)| json!({"id":id,"title":title,"topic_slug":topic_slug,"author_id":author_id,"author_username":author_username,"reply_count":reply_count,"vote_score":vote_score,"view_count":view_count,"last_post_id":last_post_id,"status":status,"last_activity_at":last_activity_at,"created_at":created_at,"category_slug":category_slug,"category_title":category_title})).collect();
-    let next_cursor = if has_more { items.last().and_then(|i| i["id"].as_i64()) } else { None };
-    Ok(Json(json!({"err":0,"items":items,"next_cursor":next_cursor,"limit":limit,"sort":sort})))
+    let next_cursor = if has_more {
+        items.last().and_then(|i| i["id"].as_i64())
+    } else {
+        None
+    };
+    Ok(Json(
+        json!({"err":0,"items":items,"next_cursor":next_cursor,"limit":limit,"sort":sort}),
+    ))
 }
 
 /// GET /api/forum/recent.rss & /api/forum/popular.rss — RSS feeds (NodeBB feeds.js parity, minimal).
-pub async fn forum_rss(State(state): State<Arc<AppState>>, axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String,String>>) -> Result<axum::response::Response, AppError> {
+pub async fn forum_rss(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<axum::response::Response, AppError> {
     let feed = q.get("feed").map(|s| s.as_str()).unwrap_or("recent");
-    let limit: i64 = q.get("limit").and_then(|s| s.parse().ok()).unwrap_or(20).clamp(1,50);
-    let order = if feed=="popular" { "t.view_count DESC" } else { "t.last_activity_at DESC" };
+    let limit: i64 = q
+        .get("limit")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(20)
+        .clamp(1, 50);
+    let order = if feed == "popular" {
+        "t.view_count DESC"
+    } else {
+        "t.last_activity_at DESC"
+    };
     let _ = order;
-    let rows: Vec<(i64,String,Option<String>,String,String)> = if feed=="popular" {
+    let rows: Vec<(i64, String, Option<String>, String, String)> = if feed == "popular" {
         sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.created_at::text, c.title FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE ORDER BY t.view_count DESC, t.id DESC LIMIT $1"#).bind(limit).fetch_all(&state.db).await?
     } else {
         sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.created_at::text, c.title FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE ORDER BY t.last_activity_at DESC, t.id DESC LIMIT $1"#).bind(limit).fetch_all(&state.db).await?
     };
-    let mut xml = String::from(r#"<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>FicNexus Forum</title><link>/forum</link><description>Recent topics</description>"#);
-    for (id,title,slug,created,cat) in rows { let link=format!("/forum/board/{}.{}", slug.unwrap_or_else(|| format!("topic-{}", id)), id); xml.push_str(&format!("<item><title>{}</title><link>{}</link><category>{}</category><pubDate>{}</pubDate><guid>{}</guid></item>", quick_xml::escape::escape(&title), quick_xml::escape::escape(&link), quick_xml::escape::escape(&cat), quick_xml::escape::escape(&created), id)); }
+    let mut xml = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>FicNexus Forum</title><link>/forum</link><description>Recent topics</description>"#,
+    );
+    for (id, title, slug, created, cat) in rows {
+        let link = format!(
+            "/forum/board/{}.{}",
+            slug.unwrap_or_else(|| format!("topic-{}", id)),
+            id
+        );
+        xml.push_str(&format!("<item><title>{}</title><link>{}</link><category>{}</category><pubDate>{}</pubDate><guid>{}</guid></item>", quick_xml::escape::escape(&title), quick_xml::escape::escape(&link), quick_xml::escape::escape(&cat), quick_xml::escape::escape(&created), id));
+    }
     xml.push_str("</channel></rss>");
-    Ok(([(axum::http::header::CONTENT_TYPE, "application/rss+xml; charset=utf-8")], xml).into_response())
+    Ok((
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "application/rss+xml; charset=utf-8",
+        )],
+        xml,
+    )
+        .into_response())
 }
 
 /// POST /api/forum/topics/{id}/tags — attach tags to a topic (NodeBB topics/tags.js parity, minimal).
 /// Body: { tags: string[] } — creates missing global tags then links.
 /// Requires author or mod.
-pub async fn set_topic_tags(auth: AuthUser, State(state): State<Arc<AppState>>, Path(topic_id): Path<i64>, Json(body): Json<Value>) -> Result<Json<Value>, AppError> {
+pub async fn set_topic_tags(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(topic_id): Path<i64>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let tags: Vec<String> = body.get("tags").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|v| v.as_str()).map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty() && s.len()<=32).collect()).unwrap_or_default();
-    if tags.len()>5 { return Err(AppError::BadRequest("max 5 tags".to_string())); }
-    let topic: Option<(i32,)> = sqlx::query_as("SELECT author_id FROM forum_topics WHERE id=$1 AND deleted_at IS NULL").bind(topic_id).fetch_optional(&state.db).await?;
+    let tags: Vec<String> = body
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty() && s.len() <= 32)
+                .collect()
+        })
+        .unwrap_or_default();
+    if tags.len() > 5 {
+        return Err(AppError::BadRequest("max 5 tags".to_string()));
+    }
+    let topic: Option<(i32,)> =
+        sqlx::query_as("SELECT author_id FROM forum_topics WHERE id=$1 AND deleted_at IS NULL")
+            .bind(topic_id)
+            .fetch_optional(&state.db)
+            .await?;
     let (author_id,) = topic.ok_or_else(|| AppError::NotFound("topic not found".to_string()))?;
-    let is_author = author_id==user_id;
+    let is_author = author_id == user_id;
     let is_mod = auth.level >= 50;
-    if !is_author && !is_mod { return Err(AppError::Forbidden("not allowed".to_string())); }
+    if !is_author && !is_mod {
+        return Err(AppError::Forbidden("not allowed".to_string()));
+    }
     // Upsert tags into global tags table then link via forum_topic_tags (create table if not exists via migration 073, but also ensure here)
     let _ = sqlx::query("CREATE TABLE IF NOT EXISTS forum_topic_tags (topic_id bigint NOT NULL REFERENCES forum_topics(id) ON DELETE CASCADE, tag text NOT NULL, PRIMARY KEY(topic_id, tag))").execute(&state.db).await;
-    sqlx::query("DELETE FROM forum_topic_tags WHERE topic_id=$1").bind(topic_id).execute(&state.db).await?;
-    for tag in &tags { let _ = sqlx::query("INSERT INTO forum_topic_tags (topic_id, tag) VALUES ($1,$2) ON CONFLICT DO NOTHING").bind(topic_id).bind(tag).execute(&state.db).await; }
+    sqlx::query("DELETE FROM forum_topic_tags WHERE topic_id=$1")
+        .bind(topic_id)
+        .execute(&state.db)
+        .await?;
+    for tag in &tags {
+        let _ = sqlx::query(
+            "INSERT INTO forum_topic_tags (topic_id, tag) VALUES ($1,$2) ON CONFLICT DO NOTHING",
+        )
+        .bind(topic_id)
+        .bind(tag)
+        .execute(&state.db)
+        .await;
+    }
     Ok(Json(json!({"err":0,"tags":tags})))
 }
-pub async fn get_topic_tags(State(state): State<Arc<AppState>>, Path(topic_id): Path<i64>) -> Result<Json<Value>, AppError> {
-    let tags: Vec<(String,)> = sqlx::query_as("SELECT tag FROM forum_topic_tags WHERE topic_id=$1 ORDER BY tag").bind(topic_id).fetch_all(&state.db).await.unwrap_or_default();
-    Ok(Json(json!({"err":0,"tags": tags.into_iter().map(|(t,)| t).collect::<Vec<_>>()})))
+pub async fn get_topic_tags(
+    State(state): State<Arc<AppState>>,
+    Path(topic_id): Path<i64>,
+) -> Result<Json<Value>, AppError> {
+    let tags: Vec<(String,)> =
+        sqlx::query_as("SELECT tag FROM forum_topic_tags WHERE topic_id=$1 ORDER BY tag")
+            .bind(topic_id)
+            .fetch_all(&state.db)
+            .await
+            .unwrap_or_default();
+    Ok(Json(
+        json!({"err":0,"tags": tags.into_iter().map(|(t,)| t).collect::<Vec<_>>()}),
+    ))
 }
 
 /// GET /api/forum/preferences — per-user pagination prefs (NodeBB user.getSettings parity, minimal).
 /// Stored in user_preferences JSONB or a dedicated table; we use a tiny table.
-pub async fn get_forum_prefs(auth: AuthUser, State(state): State<Arc<AppState>>) -> Result<Json<Value>, AppError> {
+pub async fn get_forum_prefs(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
     let _ = sqlx::query("CREATE TABLE IF NOT EXISTS forum_user_prefs (user_id integer PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, posts_per_page integer NOT NULL DEFAULT 25, topic_sort text NOT NULL DEFAULT 'recently_replied')").execute(&state.db).await;
-    let row: Option<(i32,String)> = sqlx::query_as("SELECT posts_per_page, topic_sort FROM forum_user_prefs WHERE user_id=$1").bind(user_id).fetch_optional(&state.db).await?;
+    let row: Option<(i32, String)> =
+        sqlx::query_as("SELECT posts_per_page, topic_sort FROM forum_user_prefs WHERE user_id=$1")
+            .bind(user_id)
+            .fetch_optional(&state.db)
+            .await?;
     let (ppp, sort) = row.unwrap_or((25, "recently_replied".to_string()));
-    Ok(Json(json!({"err":0,"posts_per_page":ppp,"topic_sort":sort})))
+    Ok(Json(
+        json!({"err":0,"posts_per_page":ppp,"topic_sort":sort}),
+    ))
 }
-pub async fn set_forum_prefs(auth: AuthUser, State(state): State<Arc<AppState>>, Json(body): Json<Value>) -> Result<Json<Value>, AppError> {
+pub async fn set_forum_prefs(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let ppp: i32 = body.get("posts_per_page").and_then(|v| v.as_i64()).map(|n| (n as i32).clamp(10,100)).unwrap_or(25);
-    let sort = body.get("topic_sort").and_then(|v| v.as_str()).unwrap_or("recently_replied").to_string();
+    let ppp: i32 = body
+        .get("posts_per_page")
+        .and_then(|v| v.as_i64())
+        .map(|n| (n as i32).clamp(10, 100))
+        .unwrap_or(25);
+    let sort = body
+        .get("topic_sort")
+        .and_then(|v| v.as_str())
+        .unwrap_or("recently_replied")
+        .to_string();
     let _ = sqlx::query("CREATE TABLE IF NOT EXISTS forum_user_prefs (user_id integer PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, posts_per_page integer NOT NULL DEFAULT 25, topic_sort text NOT NULL DEFAULT 'recently_replied')").execute(&state.db).await;
     sqlx::query("INSERT INTO forum_user_prefs (user_id, posts_per_page, topic_sort) VALUES ($1,$2,$3) ON CONFLICT (user_id) DO UPDATE SET posts_per_page=$2, topic_sort=$3").bind(user_id).bind(ppp).bind(&sort).execute(&state.db).await?;
-    Ok(Json(json!({"err":0,"posts_per_page":ppp,"topic_sort":sort})))
+    Ok(Json(
+        json!({"err":0,"posts_per_page":ppp,"topic_sort":sort}),
+    ))
 }
 
 /// POST /api/forum/categories — create category (admin only, role ≥ 10).
@@ -2216,7 +2539,9 @@ pub async fn create_category(
         _ => AppError::from(e),
     })?;
 
-    Ok(Json(json!({ "err": 0, "id": id, "msg": "Category created" })))
+    Ok(Json(
+        json!({ "err": 0, "id": id, "msg": "Category created" }),
+    ))
 }
 
 /// PATCH /api/forum/categories/{id} — edit/reorder category (admin only).
@@ -2274,7 +2599,9 @@ pub async fn update_category(
         _ => AppError::from(e),
     })?;
 
-    Ok(Json(json!({ "err": 0, "id": id, "msg": "Category updated" })))
+    Ok(Json(
+        json!({ "err": 0, "id": id, "msg": "Category updated" }),
+    ))
 }
 
 // ── F3: topic write path ───────────────────────────────────────────────────
@@ -2293,36 +2620,50 @@ pub async fn topic_detail(
     // view topics in public categories. Mod-only category + anon → 403.
     let user_id = public_reader_id(&auth, &state)?;
     let is_anon = user_id == 0;
-    let (id, author_id, category_id, title, status) =
-        load_live_topic(&state.db, topic_id).await?;
+    let (id, author_id, category_id, title, status) = load_live_topic(&state.db, topic_id).await?;
     if is_anon {
-        let mod_only: Option<bool> = sqlx::query_scalar(
-            "SELECT is_mod_only FROM forum_categories WHERE id = $1",
-        )
-        .bind(category_id)
-        .fetch_optional(&state.db)
-        .await?;
+        let mod_only: Option<bool> =
+            sqlx::query_scalar("SELECT is_mod_only FROM forum_categories WHERE id = $1")
+                .bind(category_id)
+                .fetch_optional(&state.db)
+                .await?;
         if mod_only.unwrap_or(true) {
-            return Err(AppError::Forbidden(
-                "This board requires login".to_string(),
-            ));
+            return Err(AppError::Forbidden("This board requires login".to_string()));
         }
     }
 
-    let topic_row: Option<(String, String, String, String, Option<String>, i64, String, Option<String>, Option<String>)> =
-        sqlx::query_as(
-            r#"SELECT u.username, c.slug, c.title, t.body, t.topic_slug, t.view_count,
+    let topic_row: Option<(
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+        i64,
+        String,
+        Option<String>,
+        Option<String>,
+    )> = sqlx::query_as(
+        r#"SELECT u.username, c.slug, c.title, t.body, t.topic_slug, t.view_count,
                       t.created_at::text, t.updated_at::text, t.payload::text
                FROM forum_topics t
                JOIN users u ON u.id = t.author_id
                JOIN forum_categories c ON c.id = t.category_id
                WHERE t.id = $1 AND t.deleted_at IS NULL"#,
-        )
-        .bind(topic_id)
-        .fetch_optional(&state.db)
-        .await?;
-    let Some((author_username, category_slug, category_title, op_body, topic_slug, view_count, created_at, updated_at, payload)) =
-        topic_row
+    )
+    .bind(topic_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some((
+        author_username,
+        category_slug,
+        category_title,
+        op_body,
+        topic_slug,
+        view_count,
+        created_at,
+        updated_at,
+        payload,
+    )) = topic_row
     else {
         return Err(AppError::BadRequest("topic not found".to_string()));
     };
@@ -2395,7 +2736,10 @@ pub async fn topic_detail(
         .fetch_all(&state.db)
         .await?;
         for (qid, qauthor, preview) in qrows {
-            quote_map.insert(qid, json!({ "author_username": qauthor, "preview": preview }));
+            quote_map.insert(
+                qid,
+                json!({ "author_username": qauthor, "preview": preview }),
+            );
         }
     }
 
@@ -2410,7 +2754,17 @@ pub async fn topic_detail(
     .await?;
     let mut items: Vec<Value> = Vec::with_capacity(limit as usize + 1);
     for p in posts.into_iter().take(limit as usize) {
-        let (pid, pauthor_id, pauthor_username, pbody, pquote_of, pcreated_at, pedited_at, pdeleted_at, pscore) = p;
+        let (
+            pid,
+            pauthor_id,
+            pauthor_username,
+            pbody,
+            pquote_of,
+            pcreated_at,
+            pedited_at,
+            pdeleted_at,
+            pscore,
+        ) = p;
         let is_op = first_post_id == Some(pid);
         let quote = pquote_of.and_then(|q| quote_map.get(&q).cloned());
         items.push(json!({
@@ -2433,7 +2787,10 @@ pub async fn topic_detail(
     let reactions_map = load_reactions_batch(&state.db, &post_ids, reaction_viewer).await?;
     for item in items.iter_mut() {
         if let Some(pid) = item["id"].as_i64() {
-            item["reactions"] = reactions_map.get(&pid).cloned().unwrap_or(json!({ "counts": {}, "my_reactions": [] }));
+            item["reactions"] = reactions_map
+                .get(&pid)
+                .cloned()
+                .unwrap_or(json!({ "counts": {}, "my_reactions": [] }));
         }
     }
 
@@ -2487,20 +2844,16 @@ pub async fn topic_detail(
             .fetch_one(&state.db)
             .await?
         } else {
-            sqlx::query_scalar(
-                "SELECT view_count FROM forum_topics WHERE id = $1",
-            )
+            sqlx::query_scalar("SELECT view_count FROM forum_topics WHERE id = $1")
+                .bind(topic_id)
+                .fetch_one(&state.db)
+                .await?
+        }
+    } else {
+        sqlx::query_scalar("SELECT view_count FROM forum_topics WHERE id = $1")
             .bind(topic_id)
             .fetch_one(&state.db)
             .await?
-        }
-    } else {
-        sqlx::query_scalar(
-            "SELECT view_count FROM forum_topics WHERE id = $1",
-        )
-        .bind(topic_id)
-        .fetch_one(&state.db)
-        .await?
     };
     // Read-state for auth users
     let mut resp = json!({
@@ -2524,20 +2877,25 @@ pub async fn topic_detail(
         "view_count_before": view_count,
     });
     if !is_anon {
-        let last_post_id: Option<i64> = sqlx::query_scalar("SELECT last_post_id FROM forum_topics WHERE id = $1")
-            .bind(topic_id)
-            .fetch_optional(&state.db)
-            .await
-            .ok()
-            .flatten();
-        let last_read: Option<i64> = sqlx::query_scalar("SELECT last_read_post_id FROM forum_read_state WHERE user_id = $1 AND topic_id = $2")
-            .bind(user_id)
-            .bind(topic_id)
-            .fetch_optional(&state.db)
-            .await
-            .ok()
-            .flatten();
-        let unread = last_post_id.map(|lp| lp > last_read.unwrap_or(0)).unwrap_or(false);
+        let last_post_id: Option<i64> =
+            sqlx::query_scalar("SELECT last_post_id FROM forum_topics WHERE id = $1")
+                .bind(topic_id)
+                .fetch_optional(&state.db)
+                .await
+                .ok()
+                .flatten();
+        let last_read: Option<i64> = sqlx::query_scalar(
+            "SELECT last_read_post_id FROM forum_read_state WHERE user_id = $1 AND topic_id = $2",
+        )
+        .bind(user_id)
+        .bind(topic_id)
+        .fetch_optional(&state.db)
+        .await
+        .ok()
+        .flatten();
+        let unread = last_post_id
+            .map(|lp| lp > last_read.unwrap_or(0))
+            .unwrap_or(false);
         resp["unread"] = json!(unread);
         resp["last_read_post_id"] = json!(last_read);
     }
@@ -2582,7 +2940,9 @@ pub async fn create_topic(
     // Marginalia gate: Level 5+ required
     let is_marginalia = payload.get("type").and_then(|v| v.as_str()) == Some("marginalia");
     if is_marginalia && auth.level < 5 {
-        return Err(AppError::Forbidden("Level 5 required for marginalia".to_string()));
+        return Err(AppError::Forbidden(
+            "Level 5 required for marginalia".to_string(),
+        ));
     }
     // If marginalia, check for existing topic on same passage (one topic per passage)
     if is_marginalia {
@@ -2602,13 +2962,12 @@ pub async fn create_topic(
                 .await
                 .unwrap_or(None);
                 if let Some(existing_topic_id) = existing {
-                    let slug: Option<String> = sqlx::query_scalar(
-                        "SELECT topic_slug FROM forum_topics WHERE id = $1",
-                    )
-                    .bind(existing_topic_id)
-                    .fetch_optional(&state.db)
-                    .await
-                    .unwrap_or(None);
+                    let slug: Option<String> =
+                        sqlx::query_scalar("SELECT topic_slug FROM forum_topics WHERE id = $1")
+                            .bind(existing_topic_id)
+                            .fetch_optional(&state.db)
+                            .await
+                            .unwrap_or(None);
                     return Ok(Json(json!({
                         "err": 0,
                         "id": existing_topic_id,
@@ -2635,13 +2994,12 @@ pub async fn create_topic(
                     .await
                     .unwrap_or(None);
                     if let Some(existing_topic_id) = existing {
-                        let slug: Option<String> = sqlx::query_scalar(
-                            "SELECT topic_slug FROM forum_topics WHERE id = $1",
-                        )
-                        .bind(existing_topic_id)
-                        .fetch_optional(&state.db)
-                        .await
-                        .unwrap_or(None);
+                        let slug: Option<String> =
+                            sqlx::query_scalar("SELECT topic_slug FROM forum_topics WHERE id = $1")
+                                .bind(existing_topic_id)
+                                .fetch_optional(&state.db)
+                                .await
+                                .unwrap_or(None);
                         return Ok(Json(json!({
                             "err": 0,
                             "id": existing_topic_id,
@@ -2698,14 +3056,27 @@ pub async fn create_topic(
 
     // Insert marginalia link if this topic is a marginalia discussion
     if is_marginalia {
-        let passage_hash = payload.get("passage_hash").and_then(|v| v.as_str()).unwrap_or("");
-        let chapter_index = payload.get("chapter_index").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let passage_hash = payload
+            .get("passage_hash")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let chapter_index = payload
+            .get("chapter_index")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0) as i32;
         // Resolve work_id: prefer payload.work_id, else via url_id
-        let work_id_opt: Option<i32> = if let Some(wid) = payload.get("work_id").and_then(|v| v.as_i64()) {
-            Some(wid as i32)
-        } else if let Some(url_id) = payload.get("url_id").and_then(|v| v.as_str()) {
-            queries::get_work_by_source(&state.db, url_id).await.ok().flatten().map(|w| w.id)
-        } else { None };
+        let work_id_opt: Option<i32> =
+            if let Some(wid) = payload.get("work_id").and_then(|v| v.as_i64()) {
+                Some(wid as i32)
+            } else if let Some(url_id) = payload.get("url_id").and_then(|v| v.as_str()) {
+                queries::get_work_by_source(&state.db, url_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|w| w.id)
+            } else {
+                None
+            };
         let passage_text = payload
             .get("passage_text")
             .and_then(|v| v.as_str())
@@ -2735,7 +3106,6 @@ pub async fn create_topic(
         "topic_slug": topic_slug,
         "msg": "Topic created"
     })))
-
 }
 
 /// PATCH /api/forum/topics/{topicId} — authors edit directly; non-authors submit proposals.
@@ -2756,12 +3126,11 @@ pub async fn update_topic(
         return Err(AppError::Forbidden("Not the topic author".to_string()));
     }
 
-    let cur: (String, String, String) = sqlx::query_as(
-        "SELECT title, body, created_at::text FROM forum_topics WHERE id = $1",
-    )
-    .bind(topic_id)
-    .fetch_one(&state.db)
-    .await?;
+    let cur: (String, String, String) =
+        sqlx::query_as("SELECT title, body, created_at::text FROM forum_topics WHERE id = $1")
+            .bind(topic_id)
+            .fetch_one(&state.db)
+            .await?;
 
     let new_title = match &body.title {
         Some(t) => validate_topic_title(t)?,
@@ -2776,7 +3145,9 @@ pub async fn update_topic(
         let snapshot = json!({"title": new_title, "body": new_body});
         let id: i64 = sqlx::query_scalar("INSERT INTO forum_edit_proposals (target_type,target_id,author_id,snapshot) VALUES ('topic',$1,$2,$3) RETURNING id")
             .bind(topic_id).bind(user_id).bind(&snapshot).fetch_one(&state.db).await?;
-        return Ok(Json(json!({"err":0,"id":id,"proposal_id":id,"status":"pending","msg":"Edit proposal submitted"})));
+        return Ok(Json(
+            json!({"err":0,"id":id,"proposal_id":id,"status":"pending","msg":"Edit proposal submitted"}),
+        ));
     }
     sqlx::query(
         "UPDATE forum_topics SET title = $2, body = $3,
@@ -2794,41 +3165,73 @@ pub async fn update_topic(
             .bind(topic_id).bind(user_id).bind(json!({"title": new_title, "body": new_body})).execute(&state.db).await?;
     }
 
-    Ok(Json(json!({ "err": 0, "id": topic_id, "msg": "Topic updated" })))
+    Ok(Json(
+        json!({ "err": 0, "id": topic_id, "msg": "Topic updated" }),
+    ))
 }
 /// Public immutable edit history. Every submitted snapshot is retained.
 pub async fn forum_edit_history(
-    auth: AuthUser, State(state): State<Arc<AppState>>, Path((target_type, target_id)): Path<(String, i64)>,
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path((target_type, target_id)): Path<(String, i64)>,
 ) -> Result<Json<Value>, AppError> {
     let _ = public_reader_id(&auth, &state)?;
     let rows: Vec<(i64, i32, Option<String>, Value, String, Option<String>, Option<String>, String)> = sqlx::query_as(
         "SELECT p.id,p.author_id,u.username,p.snapshot,p.status,r.username,p.review_note,p.created_at::text FROM forum_edit_proposals p LEFT JOIN users u ON u.id=p.author_id LEFT JOIN users r ON r.id=p.reviewed_by WHERE p.target_type=$1 AND p.target_id=$2 ORDER BY p.created_at ASC, p.id ASC")
         .bind(&target_type).bind(target_id).fetch_all(&state.db).await?;
-    Ok(Json(json!({"err":0,"items":rows.into_iter().map(|(id,author_id,author_username,snapshot,status,reviewer,review_note,created_at)| json!({"id":id,"author_id":author_id,"author_username":author_username,"snapshot":snapshot,"status":status,"reviewer_username":reviewer,"review_note":review_note,"created_at":created_at})).collect::<Vec<_>>() })))
+    Ok(Json(
+        json!({"err":0,"items":rows.into_iter().map(|(id,author_id,author_username,snapshot,status,reviewer,review_note,created_at)| json!({"id":id,"author_id":author_id,"author_username":author_username,"snapshot":snapshot,"status":status,"reviewer_username":reviewer,"review_note":review_note,"created_at":created_at})).collect::<Vec<_>>() }),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
-pub struct EditReviewBody { pub decision: String, #[serde(default)] pub note: Option<String> }
-
-/// Curator queue; approving applies exactly the retained snapshot atomically.
-pub async fn forum_edit_queue(auth: AuthUser, State(state): State<Arc<AppState>>) -> Result<Json<Value>, AppError> {
-    require_mod(&auth)?;
-    let rows: Vec<(i64,String,i64,i32,Option<String>,Value,String)> = sqlx::query_as("SELECT p.id,p.target_type,p.target_id,p.author_id,u.username,p.snapshot,p.created_at::text FROM forum_edit_proposals p LEFT JOIN users u ON u.id=p.author_id WHERE p.status='pending' ORDER BY p.created_at,p.id").fetch_all(&state.db).await?;
-    Ok(Json(json!({"err":0,"items":rows.into_iter().map(|(id,target_type,target_id,author_id,username,snapshot,created_at)| json!({"id":id,"target_type":target_type,"target_id":target_id,"author_id":author_id,"author_username":username,"snapshot":snapshot,"created_at":created_at})).collect::<Vec<_>>() })))
+pub struct EditReviewBody {
+    pub decision: String,
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
-pub async fn review_forum_edit(auth: AuthUser, State(state): State<Arc<AppState>>, Path(proposal_id): Path<i64>, Json(body): Json<EditReviewBody>) -> Result<Json<Value>, AppError> {
+/// Curator queue; approving applies exactly the retained snapshot atomically.
+pub async fn forum_edit_queue(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, AppError> {
+    require_mod(&auth)?;
+    let rows: Vec<(i64,String,i64,i32,Option<String>,Value,String)> = sqlx::query_as("SELECT p.id,p.target_type,p.target_id,p.author_id,u.username,p.snapshot,p.created_at::text FROM forum_edit_proposals p LEFT JOIN users u ON u.id=p.author_id WHERE p.status='pending' ORDER BY p.created_at,p.id").fetch_all(&state.db).await?;
+    Ok(Json(
+        json!({"err":0,"items":rows.into_iter().map(|(id,target_type,target_id,author_id,username,snapshot,created_at)| json!({"id":id,"target_type":target_type,"target_id":target_id,"author_id":author_id,"author_username":username,"snapshot":snapshot,"created_at":created_at})).collect::<Vec<_>>() }),
+    ))
+}
+
+pub async fn review_forum_edit(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(proposal_id): Path<i64>,
+    Json(body): Json<EditReviewBody>,
+) -> Result<Json<Value>, AppError> {
     let reviewer = require_mod(&auth)?;
-    if body.decision != "approve" && body.decision != "reject" { return Err(AppError::BadRequest("decision must be approve or reject".into())); }
-    let mut tx=state.db.begin().await?;
-    let row: Option<(String,i64,Value)> = sqlx::query_as("SELECT target_type,target_id,snapshot FROM forum_edit_proposals WHERE id=$1 AND status='pending' FOR UPDATE").bind(proposal_id).fetch_optional(&mut *tx).await?;
-    let Some((kind,target,snap))=row else { return Err(AppError::BadRequest("pending proposal not found".into())); };
-    if body.decision=="approve" {
-      if kind=="topic" { sqlx::query("UPDATE forum_topics SET title=COALESCE($2->>'title',title),body=COALESCE($2->>'body',body),updated_at=NOW(),search_vector=to_tsvector('english',COALESCE($2->>'title',title)||' '||COALESCE($2->>'body',body)) WHERE id=$1").bind(target).bind(&snap).execute(&mut *tx).await?; }
-      else { sqlx::query("UPDATE forum_posts SET body=COALESCE($2->>'body',body),edited_at=NOW(),search_vector=to_tsvector('english',COALESCE($2->>'body',body)) WHERE id=$1").bind(target).bind(&snap).execute(&mut *tx).await?; }
+    if body.decision != "approve" && body.decision != "reject" {
+        return Err(AppError::BadRequest(
+            "decision must be approve or reject".into(),
+        ));
     }
-    sqlx::query("UPDATE forum_edit_proposals SET status=$2,reviewed_by=$3,reviewed_at=NOW(),review_note=$4 WHERE id=$1").bind(proposal_id).bind(&body.decision).bind(reviewer).bind(&body.note).execute(&mut *tx).await?; tx.commit().await?;
-    Ok(Json(json!({"err":0,"id":proposal_id,"status":body.decision})))
+    let mut tx = state.db.begin().await?;
+    let row: Option<(String,i64,Value)> = sqlx::query_as("SELECT target_type,target_id,snapshot FROM forum_edit_proposals WHERE id=$1 AND status='pending' FOR UPDATE").bind(proposal_id).fetch_optional(&mut *tx).await?;
+    let Some((kind, target, snap)) = row else {
+        return Err(AppError::BadRequest("pending proposal not found".into()));
+    };
+    if body.decision == "approve" {
+        if kind == "topic" {
+            sqlx::query("UPDATE forum_topics SET title=COALESCE($2->>'title',title),body=COALESCE($2->>'body',body),updated_at=NOW(),search_vector=to_tsvector('english',COALESCE($2->>'title',title)||' '||COALESCE($2->>'body',body)) WHERE id=$1").bind(target).bind(&snap).execute(&mut *tx).await?;
+        } else {
+            sqlx::query("UPDATE forum_posts SET body=COALESCE($2->>'body',body),edited_at=NOW(),search_vector=to_tsvector('english',COALESCE($2->>'body',body)) WHERE id=$1").bind(target).bind(&snap).execute(&mut *tx).await?;
+        }
+    }
+    sqlx::query("UPDATE forum_edit_proposals SET status=$2,reviewed_by=$3,reviewed_at=NOW(),review_note=$4 WHERE id=$1").bind(proposal_id).bind(&body.decision).bind(reviewer).bind(&body.note).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(Json(
+        json!({"err":0,"id":proposal_id,"status":body.decision}),
+    ))
 }
 
 /// DELETE /api/forum/topics/{topicId} — soft-delete (set deleted_at).
@@ -2869,7 +3272,9 @@ pub async fn delete_topic(
         .await;
     }
 
-    Ok(Json(json!({ "err": 0, "id": topic_id, "msg": "Topic deleted" })))
+    Ok(Json(
+        json!({ "err": 0, "id": topic_id, "msg": "Topic deleted" }),
+    ))
 }
 /// POST /api/forum/topics/{topicId}/posts — reply. Inserts the post, updates
 /// topic last_post_id + last_activity_at, then notifies every follower
@@ -2918,11 +3323,21 @@ pub async fn create_post(
 
     // Notifications (outside the tx — best-effort per contract; each insert
     // is independent and failures must not fail the reply).
-    notify_reply(&state, user_id, topic_id, category_id, &topic_title, &post_body).await;
+    notify_reply(
+        &state,
+        user_id,
+        topic_id,
+        category_id,
+        &topic_title,
+        &post_body,
+    )
+    .await;
 
     award_post_exp(&state.db, user_id, post_id).await;
 
-    Ok(Json(json!({ "err": 0, "id": post_id, "msg": "Post created" })))
+    Ok(Json(
+        json!({ "err": 0, "id": post_id, "msg": "Post created" }),
+    ))
 }
 
 /// Notify followers (forum_reply) + mentioned users (forum_mention) of a new
@@ -2962,7 +3377,11 @@ async fn notify_reply(
     .await
     .unwrap_or_default();
 
-    let reply_title = format!("{} replied to {}", auth_username(&state, author_id).await, topic_title);
+    let reply_title = format!(
+        "{} replied to {}",
+        auth_username(&state, author_id).await,
+        topic_title
+    );
     for follower_id in &followers {
         let _ = queries::create_notification(
             &state.db,
@@ -3059,7 +3478,9 @@ pub async fn update_post(
         let snapshot = json!({"body": new_body});
         let id: i64 = sqlx::query_scalar("INSERT INTO forum_edit_proposals (target_type,target_id,author_id,snapshot) VALUES ('post',$1,$2,$3) RETURNING id")
             .bind(post_id).bind(user_id).bind(&snapshot).fetch_one(&state.db).await?;
-        return Ok(Json(json!({"err":0,"id":id,"proposal_id":id,"status":"pending","msg":"Edit proposal submitted"})));
+        return Ok(Json(
+            json!({"err":0,"id":id,"proposal_id":id,"status":"pending","msg":"Edit proposal submitted"}),
+        ));
     }
 
     sqlx::query(
@@ -3076,7 +3497,9 @@ pub async fn update_post(
             .bind(post_id).bind(user_id).bind(json!({"body": new_body})).execute(&state.db).await?;
     }
 
-    Ok(Json(json!({ "err": 0, "id": post_id, "msg": "Post updated" })))
+    Ok(Json(
+        json!({ "err": 0, "id": post_id, "msg": "Post updated" }),
+    ))
 }
 
 /// DELETE /api/forum/posts/{postId} — soft-delete (author any time or mod).
@@ -3087,12 +3510,11 @@ pub async fn delete_post(
     Path(post_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let row: Option<(i32, Option<String>)> = sqlx::query_as(
-        "SELECT author_id, deleted_at::text FROM forum_posts WHERE id = $1",
-    )
-    .bind(post_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let row: Option<(i32, Option<String>)> =
+        sqlx::query_as("SELECT author_id, deleted_at::text FROM forum_posts WHERE id = $1")
+            .bind(post_id)
+            .fetch_optional(&state.db)
+            .await?;
     let Some((author_id, deleted_at)) = row else {
         return Err(AppError::BadRequest("post not found".to_string()));
     };
@@ -3134,7 +3556,9 @@ pub async fn delete_post(
         .await;
     }
 
-    Ok(Json(json!({ "err": 0, "id": post_id, "msg": "Post deleted" })))
+    Ok(Json(
+        json!({ "err": 0, "id": post_id, "msg": "Post deleted" }),
+    ))
 }
 
 /// POST /api/forum/topics/{topicId}/follow — toggle follow. Returns
@@ -3233,10 +3657,12 @@ pub async fn mark_topic_read(
 
     let target: Option<i64> = match body.last_read_post_id {
         Some(n) => Some(n),
-        None => sqlx::query_scalar("SELECT last_post_id FROM forum_topics WHERE id = $1")
-            .bind(topic_id)
-            .fetch_one(&state.db)
-            .await?,
+        None => {
+            sqlx::query_scalar("SELECT last_post_id FROM forum_topics WHERE id = $1")
+                .bind(topic_id)
+                .fetch_one(&state.db)
+                .await?
+        }
     };
 
     let row: (i64, String) = sqlx::query_as(
@@ -3289,7 +3715,10 @@ pub async fn search_forum(
     let limit = params.limit.unwrap_or(20).clamp(1, 50);
 
     use crate::limiter::Tier;
-    let ip = crate::limiter::client_ip_from_headers(None, std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+    let ip = crate::limiter::client_ip_from_headers(
+        None,
+        std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+    );
     if let crate::limiter::TieredRateLimitResult::Wait(secs) =
         state.rate_limiter.check(ip, None, Tier::Default).await
     {
@@ -3306,7 +3735,9 @@ pub async fn search_forum(
     };
 
     let category_filter = match &params.category {
-        Some(slug) if !slug.trim().is_empty() => Some(category_id_by_slug(&state, slug.trim()).await?),
+        Some(slug) if !slug.trim().is_empty() => {
+            Some(category_id_by_slug(&state, slug.trim()).await?)
+        }
         _ => None,
     };
     // Anonymous searches exclude mod-only categories entirely.
@@ -3388,14 +3819,88 @@ pub async fn search_forum(
 
     // Merge + rank, then take `limit` (deterministic: rank DESC, then post id
     // DESC — topic hits have post_id NULL → -1 — then topic id DESC).
-    let mut merged: Vec<(f32, i64, i64, i64, Option<i64>, i32, String, String, String, Option<String>, String, String, String, String)> =
-        Vec::with_capacity(topic_hits.len() + post_hits.len());
-    for (topic_id, topic_slug, _t, _p, author_id, author_username, title, body, snippet, category_slug, category_title, created_at, rank) in topic_hits {
-        merged.push((rank, topic_id, -1, topic_id, None, author_id, author_username, title, body, topic_slug, snippet, category_slug, category_title, created_at));
+    let mut merged: Vec<(
+        f32,
+        i64,
+        i64,
+        i64,
+        Option<i64>,
+        i32,
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+        String,
+        String,
+        String,
+    )> = Vec::with_capacity(topic_hits.len() + post_hits.len());
+    for (
+        topic_id,
+        topic_slug,
+        _t,
+        _p,
+        author_id,
+        author_username,
+        title,
+        body,
+        snippet,
+        category_slug,
+        category_title,
+        created_at,
+        rank,
+    ) in topic_hits
+    {
+        merged.push((
+            rank,
+            topic_id,
+            -1,
+            topic_id,
+            None,
+            author_id,
+            author_username,
+            title,
+            body,
+            topic_slug,
+            snippet,
+            category_slug,
+            category_title,
+            created_at,
+        ));
     }
-    for (topic_id, topic_slug, _t, post_id, author_id, author_username, title, body, snippet, category_slug, category_title, created_at, rank) in post_hits {
+    for (
+        topic_id,
+        topic_slug,
+        _t,
+        post_id,
+        author_id,
+        author_username,
+        title,
+        body,
+        snippet,
+        category_slug,
+        category_title,
+        created_at,
+        rank,
+    ) in post_hits
+    {
         let pid = post_id.unwrap_or(0);
-        merged.push((rank, topic_id, pid, topic_id, post_id, author_id, author_username, title, body, topic_slug, snippet, category_slug, category_title, created_at));
+        merged.push((
+            rank,
+            topic_id,
+            pid,
+            topic_id,
+            post_id,
+            author_id,
+            author_username,
+            title,
+            body,
+            topic_slug,
+            snippet,
+            category_slug,
+            category_title,
+            created_at,
+        ));
     }
     merged.sort_by(|a, b| {
         b.0.partial_cmp(&a.0)
@@ -3409,7 +3914,22 @@ pub async fn search_forum(
         .into_iter()
         .take(limit as usize)
         .map(
-            |(_rank, _topic_id, _pid, topic_id, post_id, author_id, author_username, title, body, topic_slug, snippet, category_slug, category_title, created_at)| {
+            |(
+                _rank,
+                _topic_id,
+                _pid,
+                topic_id,
+                post_id,
+                author_id,
+                author_username,
+                title,
+                body,
+                topic_slug,
+                snippet,
+                category_slug,
+                category_title,
+                created_at,
+            )| {
                 json!({
                     "type": if post_id.is_some() { "post" } else { "topic" },
                     "topic_id": topic_id,
@@ -3531,12 +4051,14 @@ pub async fn remove_post_reaction(
     if !ALLOWED_REACTIONS.contains(&emoji.as_str()) {
         return Err(AppError::BadRequest("invalid emoji".to_string()));
     }
-    sqlx::query("DELETE FROM forum_post_reactions WHERE post_id = $1 AND user_id = $2 AND emoji = $3")
-        .bind(post_id)
-        .bind(user_id)
-        .bind(&emoji)
-        .execute(&state.db)
-        .await?;
+    sqlx::query(
+        "DELETE FROM forum_post_reactions WHERE post_id = $1 AND user_id = $2 AND emoji = $3",
+    )
+    .bind(post_id)
+    .bind(user_id)
+    .bind(&emoji)
+    .execute(&state.db)
+    .await?;
     let reactions = load_reactions(&state.db, post_id, Some(user_id)).await?;
     Ok(Json(json!({ "err": 0, "reactions": reactions })))
 }
@@ -3621,8 +4143,7 @@ async fn load_reactions_batch(
     } else {
         vec![]
     };
-    let mut my_map: std::collections::HashMap<i64, Vec<String>> =
-        std::collections::HashMap::new();
+    let mut my_map: std::collections::HashMap<i64, Vec<String>> = std::collections::HashMap::new();
     for (pid, emoji) in my_rows {
         my_map.entry(pid).or_default().push(emoji);
     }

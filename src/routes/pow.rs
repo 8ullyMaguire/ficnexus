@@ -8,13 +8,9 @@
 //! Non-shadowbanned clients get `{"err":0, "not_needed":true}` — normal users
 //! never see any friction.
 
-use axum::{
-    extract::State,
-    http::HeaderMap,
-    Json,
-};
+use axum::{Json, extract::State, http::HeaderMap};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;
@@ -63,10 +59,7 @@ pub async fn challenge_handler(
         })));
     }
 
-    let challenge = pow::generate_challenge(
-        state.config.pow_difficulty,
-        state.config.pow_ttl_secs,
-    );
+    let challenge = pow::generate_challenge(state.config.pow_difficulty, state.config.pow_ttl_secs);
     Ok(Json(json!({
         "err": 0,
         "not_needed": false,

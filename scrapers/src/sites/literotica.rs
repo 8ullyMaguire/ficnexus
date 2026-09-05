@@ -28,7 +28,11 @@ impl SiteScraper for LiteroticaScraper {
         url.contains("literotica.com/s/") || url.contains("literotica.com/stories/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
         let doc = Html::parse_document(&html);
 
@@ -69,7 +73,10 @@ impl SiteScraper for LiteroticaScraper {
 
         // Status: embedded JS `state:"..."` (completed / in-progress).
         let mut status = "ongoing".to_string();
-        if let Some(m) = Regex::new(r#"state:"([^"]+)"#).ok().and_then(|re| re.captures(&html)) {
+        if let Some(m) = Regex::new(r#"state:"([^"]+)"#)
+            .ok()
+            .and_then(|re| re.captures(&html))
+        {
             let raw = m.get(1).map(|x| x.as_str()).unwrap_or("");
             if raw.contains("completed") {
                 status = "complete".to_string();
@@ -121,7 +128,9 @@ impl SiteScraper for LiteroticaScraper {
 
         // Description: intro paragraph or info-tab desc.
         let mut desc = String::new();
-        if let Ok(intro_sel) = Selector::parse("div[class^='_content_'] div[class^='_introduction-wrap'] p") {
+        if let Ok(intro_sel) =
+            Selector::parse("div[class^='_content_'] div[class^='_introduction-wrap'] p")
+        {
             desc = doc
                 .select(&intro_sel)
                 .next()
@@ -308,7 +317,8 @@ mod tests {
 
     #[test]
     fn one_shot_fallback_works() {
-        let html = r#"<html><body><div class="aa_ht"><div><p>Legacy body</p></div></div></body></html>"#;
+        let html =
+            r#"<html><body><div class="aa_ht"><div><p>Legacy body</p></div></div></body></html>"#;
         let out = extract_article_body(html);
         assert!(out.contains("Legacy body"));
     }

@@ -11,8 +11,8 @@
 //! * never 500s on missing data — embeddings being unpopulated is a NORMAL
 //!   state of the archive (the training worker fills them over time).
 
-use axum::{extract::State, Json};
-use serde_json::{json, Value};
+use axum::{Json, extract::State};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::routes::auth::AuthUser;
@@ -132,7 +132,10 @@ pub async fn embedding_recommendations_handler(
     // ── Nearest neighbours: avg cosine across seeds ────────────────────
     // One row per candidate work; AVG(1 - distance) over per-seed probes.
     // `$1::int[]` binds the seed works.id list (work_key is works.id::text).
-    let seed_ids: Vec<i64> = seed_keys.iter().filter_map(|k| k.parse::<i64>().ok()).collect();
+    let seed_ids: Vec<i64> = seed_keys
+        .iter()
+        .filter_map(|k| k.parse::<i64>().ok())
+        .collect();
     if seed_ids.is_empty() {
         return empty();
     }
@@ -166,20 +169,22 @@ pub async fn embedding_recommendations_handler(
 
     let recs: Vec<Value> = rows
         .into_iter()
-        .map(|(url_id, title, author, words, chapters, status, source, description, cosine)| {
-            json!({
-                "url_id": url_id,
-                "title": title,
-                "author": author,
-                "words": words.unwrap_or(0),
-                "chapters": chapters.unwrap_or(0),
-                "status": status.unwrap_or_else(|| "Unknown".into()),
-                "site_domain": source,
-                "summary": description.unwrap_or_default(),
-                "score": cosine,
-                "strategy": "embeddings",
-            })
-        })
+        .map(
+            |(url_id, title, author, words, chapters, status, source, description, cosine)| {
+                json!({
+                    "url_id": url_id,
+                    "title": title,
+                    "author": author,
+                    "words": words.unwrap_or(0),
+                    "chapters": chapters.unwrap_or(0),
+                    "status": status.unwrap_or_else(|| "Unknown".into()),
+                    "site_domain": source,
+                    "summary": description.unwrap_or_default(),
+                    "score": cosine,
+                    "strategy": "embeddings",
+                })
+            },
+        )
         .collect();
 
     Json(json!({

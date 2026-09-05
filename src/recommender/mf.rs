@@ -10,7 +10,6 @@
 //! lines. Factors are persisted to disk (params_path) and registered in
 //! `rec_models`; serving is a dot product.
 
-
 use async_trait::async_trait;
 use serde_json::json;
 
@@ -243,14 +242,7 @@ pub struct MfModelRow {
 
 /// Load the latest MF model factors from disk. Returns (user_factors,
 /// item_factors, index maps) or None when no model exists.
-pub fn load_factors(
-    path: &str,
-) -> Option<(
-    Vec<Vec<f64>>,
-    Vec<Vec<f64>>,
-    Vec<String>,
-    Vec<i32>,
-)> {
+pub fn load_factors(path: &str) -> Option<(Vec<Vec<f64>>, Vec<Vec<f64>>, Vec<String>, Vec<i32>)> {
     let data = std::fs::read_to_string(path).ok()?;
     let parsed: serde_json::Value = serde_json::from_str(&data).ok()?;
     let user_factors: Vec<Vec<f64>> =
@@ -307,7 +299,9 @@ impl RecStrategy for MfStrategy {
             return Err(RecError::NotEnoughData("no trained MF model".into()));
         };
         let Some(path) = model.params_path else {
-            return Err(RecError::NotEnoughData("MF model has no factors file".into()));
+            return Err(RecError::NotEnoughData(
+                "MF model has no factors file".into(),
+            ));
         };
         let Some((_uf, item_factors, work_ids, user_ids)) = load_factors(&path) else {
             return Err(RecError::Strategy("MF factors unreadable".into()));
@@ -457,10 +451,18 @@ mod tests {
         let mut matrix = MfMatrix::new(3, 3);
         for u in 0..2 {
             for w in 0..2 {
-                matrix.push(MfObservation { user: u, work: w, confidence: 2.0 });
+                matrix.push(MfObservation {
+                    user: u,
+                    work: w,
+                    confidence: 2.0,
+                });
             }
         }
-        matrix.push(MfObservation { user: 2, work: 2, confidence: 2.0 });
+        matrix.push(MfObservation {
+            user: 2,
+            work: 2,
+            confidence: 2.0,
+        });
         let (uf, wf) = train_als(&matrix, 8, 20, 40.0, 0.1);
         let score = |u: usize, w: usize| dot(&uf[u], &wf[w]);
         // Liked pairs score higher than the user's non-liked pair.

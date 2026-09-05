@@ -1,7 +1,7 @@
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
@@ -9,7 +9,7 @@ use crate::error::AppError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: i32,       // user id
+    pub sub: i32, // user id
     pub username: String,
     pub role: i16, // legacy: 0=regular, 1=trusted, 5=curator, 10=admin (read-only after F7)
     /// F7 site-wide level (0-100). The active gate for forum mod/admin.
@@ -79,8 +79,12 @@ pub fn create_token(user: &User, secret: &str) -> Result<String, AppError> {
         exp: (now + Duration::days(30)).timestamp() as usize,
         iat: now.timestamp() as usize,
     };
-    encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_bytes()))
-        .map_err(|e| AppError::Internal(format!("JWT encode error: {}", e)))
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .map_err(|e| AppError::Internal(format!("JWT encode error: {}", e)))
 }
 
 /// Create a long-lived refresh token (365 days).
@@ -94,24 +98,40 @@ pub fn create_refresh_token(user_id: i32, secret: &str) -> Result<String, AppErr
         exp: (now + Duration::days(365)).timestamp() as usize,
         iat: now.timestamp() as usize,
     };
-    encode(&Header::default(), &claims, &EncodingKey::from_secret(secret.as_bytes()))
-        .map_err(|e| AppError::Internal(format!("JWT encode error: {}", e)))
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .map_err(|e| AppError::Internal(format!("JWT encode error: {}", e)))
 }
 
 /// Verify a JWT token and return claims.
 pub fn verify_token(token: &str, secret: &str) -> Result<Claims, AppError> {
-    decode::<Claims>(token, &DecodingKey::from_secret(secret.as_bytes()), &Validation::default())
-        .map(|data| data.claims)
-        .map_err(|e| AppError::BadRequest(format!("Invalid token: {}", e)))
+    decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &Validation::default(),
+    )
+    .map(|data| data.claims)
+    .map_err(|e| AppError::BadRequest(format!("Invalid token: {}", e)))
 }
 
 /// Register a new user.
-pub async fn register_user(db: &PgPool, req: RegisterRequest, secret: &str) -> Result<AuthResponse, AppError> {
+pub async fn register_user(
+    db: &PgPool,
+    req: RegisterRequest,
+    secret: &str,
+) -> Result<AuthResponse, AppError> {
     if req.username.len() < 2 || req.username.len() > 32 {
-        return Err(AppError::BadRequest("Username must be 2-32 characters".to_string()));
+        return Err(AppError::BadRequest(
+            "Username must be 2-32 characters".to_string(),
+        ));
     }
     if req.password.len() < 6 {
-        return Err(AppError::BadRequest("Password must be at least 6 characters".to_string()));
+        return Err(AppError::BadRequest(
+            "Password must be at least 6 characters".to_string(),
+        ));
     }
 
     let hash = bcrypt::hash(&req.password, bcrypt::DEFAULT_COST)
@@ -147,7 +167,11 @@ pub async fn register_user(db: &PgPool, req: RegisterRequest, secret: &str) -> R
 }
 
 /// Login a user with username + password.
-pub async fn login_user(db: &PgPool, req: LoginRequest, secret: &str) -> Result<AuthResponse, AppError> {
+pub async fn login_user(
+    db: &PgPool,
+    req: LoginRequest,
+    secret: &str,
+) -> Result<AuthResponse, AppError> {
     let row = sqlx::query_as::<_, (i32, String, String, i16, i32, Option<String>, i16, i64)>(
         "SELECT id, username, password_hash, role, reputation, email, level, exp FROM users WHERE username = $1",
     )
@@ -161,10 +185,20 @@ pub async fn login_user(db: &PgPool, req: LoginRequest, secret: &str) -> Result<
     let valid = bcrypt::verify(&req.password, &hash)
         .map_err(|e| AppError::Internal(format!("Verify error: {}", e)))?;
     if !valid {
-        return Err(AppError::Unauthorized("Invalid username or password".to_string()));
+        return Err(AppError::Unauthorized(
+            "Invalid username or password".to_string(),
+        ));
     }
 
-    let user = User { id, username, role, reputation, email, level, exp };
+    let user = User {
+        id,
+        username,
+        role,
+        reputation,
+        email,
+        level,
+        exp,
+    };
     let token = create_token(&user, secret)?;
     Ok(AuthResponse { token, user })
 }
@@ -182,7 +216,12 @@ pub struct AuthUser {
 
 impl Default for AuthUser {
     fn default() -> Self {
-        Self { user_id: None, username: None, role: 0, level: 0 }
+        Self {
+            user_id: None,
+            username: None,
+            role: 0,
+            level: 0,
+        }
     }
 }
 
@@ -194,12 +233,16 @@ where
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         // Try to get the Authorization header
-        let auth_header = parts.headers.get("Authorization").and_then(|v| v.to_str().ok());
+        let auth_header = parts
+            .headers
+            .get("Authorization")
+            .and_then(|v| v.to_str().ok());
 
         if let Some(header_val) = auth_header {
             if let Some(token) = header_val.strip_prefix("Bearer ") {
                 // We need the secret — read from env at request time (cheap, env is cached by OS)
-                let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
+                let secret =
+                    std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
                 if let Ok(claims) = verify_token(token, &secret) {
                     return Ok(AuthUser {
                         user_id: Some(claims.sub),

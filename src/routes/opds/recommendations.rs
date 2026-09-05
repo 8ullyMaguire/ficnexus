@@ -8,9 +8,7 @@ use std::sync::Arc;
 use crate::error::AppError;
 use crate::server::AppState;
 
-use super::{
-    build_feed, fic_entry, html_escape, iso_now, opds_response, FeedKind,
-};
+use super::{FeedKind, build_feed, fic_entry, html_escape, iso_now, opds_response};
 
 /// Query params for recommendation feeds
 #[derive(Debug, Deserialize)]
@@ -53,10 +51,7 @@ pub async fn popular_recommendations(
     let mut entries = String::new();
 
     for row in &rows {
-        let updated = row
-            .fic_updated
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string();
+        let updated = row.fic_updated.format("%Y-%m-%dT%H:%M:%SZ").to_string();
         let acq = acq_map.get(&row.id).map(|v| v.as_slice()).unwrap_or(&[]);
         entries.push_str(&fic_entry(
             &row.id,
@@ -129,12 +124,10 @@ pub async fn fic_recommendations(
     .fetch_all(&state.db)
     .await?;
 
-    let fic_title: Option<String> = sqlx::query_scalar(
-        "SELECT title FROM fic_info WHERE id = $1",
-    )
-    .bind(&url_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let fic_title: Option<String> = sqlx::query_scalar("SELECT title FROM fic_info WHERE id = $1")
+        .bind(&url_id)
+        .fetch_optional(&state.db)
+        .await?;
 
     let feed_title = match fic_title {
         Some(ref t) => format!("FicNexus — Recommendations for: {}", t),
@@ -148,11 +141,11 @@ pub async fn fic_recommendations(
     let mut entries = String::new();
 
     for row in &rows {
-        let updated = row
-            .fic_updated
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string();
-        let acq = acq_map2.get(&row.recommended_url_id).map(|v| v.as_slice()).unwrap_or(&[]);
+        let updated = row.fic_updated.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let acq = acq_map2
+            .get(&row.recommended_url_id)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
         entries.push_str(&fic_entry(
             &row.recommended_url_id,
             &row.title,
@@ -171,7 +164,10 @@ pub async fn fic_recommendations(
         &format!("urn:ficnexus:recommendations:{}", html_escape(&url_id)),
         &entries,
         &now,
-        Some(&format!("/opds/recommendations?url_id={}", html_escape(&url_id))),
+        Some(&format!(
+            "/opds/recommendations?url_id={}",
+            html_escape(&url_id)
+        )),
         FeedKind::Acquisition,
         None,
         state.config.opds_base_url.as_deref(),

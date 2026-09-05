@@ -51,7 +51,6 @@ pub fn popularity_norm(updated: DateTime<Utc>, now: DateTime<Utc>) -> f64 {
     (-days / 30.0).exp()
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecQuery {
     pub url_id: String,
@@ -192,11 +191,7 @@ impl RecommendationEngine {
     }
 
     /// Force-recompute and persist recommendations for a single work.
-    pub async fn compute_and_cache(
-        &self,
-        url_id: &str,
-        config: &Config,
-    ) -> Result<(), AppError> {
+    pub async fn compute_and_cache(&self, url_id: &str, config: &Config) -> Result<(), AppError> {
         let query = RecQuery {
             url_id: url_id.to_string(),
             n: config.rec_max_recommendations,
@@ -384,12 +379,14 @@ async fn compute_live(
     }
 
     for (tag_id, tag_score_val) in &tag_candidates {
-        let entry = scored.entry(tag_id.clone()).or_insert_with(|| CandidateScore {
-            url_id: tag_id.clone(),
-            score: 0.0,
-            tag_score: 0.0,
-            community_score: 0,
-        });
+        let entry = scored
+            .entry(tag_id.clone())
+            .or_insert_with(|| CandidateScore {
+                url_id: tag_id.clone(),
+                score: 0.0,
+                tag_score: 0.0,
+                community_score: 0,
+            });
         // Tag candidates get a base similarity score
         entry.tag_score = *tag_score_val;
     }
@@ -419,7 +416,11 @@ async fn compute_live(
     }
 
     // --- Sort & take top N ---
-    candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let top: Vec<CandidateScore> = candidates.into_iter().take(limit).collect();
 
     // --- Fetch metadata and build results ---
@@ -824,10 +825,16 @@ mod tests {
     fn test_tag_overlap_duplicates_and_identity() {
         // Duplicates within a set don't inflate the score: {1,2} vs {1,2,3} = 2/3.
         let dup = tag_overlap(&[1, 1, 1, 2], &[1, 2, 3]);
-        assert!((dup - 2.0 / 3.0).abs() < 1e-9, "dupes must be deduped: {dup}");
+        assert!(
+            (dup - 2.0 / 3.0).abs() < 1e-9,
+            "dupes must be deduped: {dup}"
+        );
         // A set fully contained in another is 2/3, not 1.0.
         let subset = tag_overlap(&[1, 2], &[1, 2, 3]);
-        assert!((subset - 2.0 / 3.0).abs() < 1e-9, "expected 2/3, got {subset}");
+        assert!(
+            (subset - 2.0 / 3.0).abs() < 1e-9,
+            "expected 2/3, got {subset}"
+        );
     }
 
     #[test]
@@ -851,10 +858,7 @@ mod tests {
         assert!((today - 1.0).abs() < 1e-9, "today's fic must score 1.0");
 
         let old = popularity_norm(now - chrono::Duration::days(60), now);
-        assert!(
-            old < 0.2,
-            "60-day-old fic must be much less popular: {old}"
-        );
+        assert!(old < 0.2, "60-day-old fic must be much less popular: {old}");
         assert!(old >= 0.0 && old <= 1.0);
 
         // Future-dated updates clamp to 1.0 (defensive).
@@ -888,12 +892,18 @@ mod tests {
         // Explicit "false" -> opted out (falls back to generic recs).
         let opt_out: Option<String> = Some("false".to_string());
         let opted_out = opt_out.map(|v| v == "false").unwrap_or(false);
-        assert!(opted_out, "\"false\" MUST opt the user out of personal recs");
+        assert!(
+            opted_out,
+            "\"false\" MUST opt the user out of personal recs"
+        );
 
         // A stray value like "" or "0" must NOT opt the user out (only the
         // exact string "false" does), matching the handler's strict check.
         let stray: Option<String> = Some("".to_string());
         let opted_out = stray.map(|v| v == "false").unwrap_or(false);
-        assert!(!opted_out, "a non-\"false\" value must NOT opt the user out");
+        assert!(
+            !opted_out,
+            "a non-\"false\" value must NOT opt the user out"
+        );
     }
 }

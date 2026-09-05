@@ -161,8 +161,18 @@ mod api_contract_tests {
         });
 
         assert_eq!(resp["err"], 0);
-        assert!(resp["epub_url"].as_str().unwrap().starts_with("/cache/epub/"));
-        assert!(resp["html_url"].as_str().unwrap().starts_with("/cache/html/"));
+        assert!(
+            resp["epub_url"]
+                .as_str()
+                .unwrap()
+                .starts_with("/cache/epub/")
+        );
+        assert!(
+            resp["html_url"]
+                .as_str()
+                .unwrap()
+                .starts_with("/cache/html/")
+        );
         assert!(resp["mobi_url"].is_null());
         assert!(resp["pdf_url"].is_null());
     }

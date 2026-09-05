@@ -3,7 +3,7 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::{RateLimiter, RateLimitResult, TieredRateLimiter, TieredRateLimitResult, Tier};
+use super::{RateLimitResult, RateLimiter, Tier, TieredRateLimitResult, TieredRateLimiter};
 
 /// Redis-backed token bucket rate limiter.
 ///
@@ -15,7 +15,7 @@ use super::{RateLimiter, RateLimitResult, TieredRateLimiter, TieredRateLimitResu
 /// real buckets.
 pub struct RedisBucketLimiter {
     redis: redis::aio::MultiplexedConnection,
-    lua_sha: String,        // SHA of loaded Lua script
+    lua_sha: String, // SHA of loaded Lua script
     dynamic_rate_limit: bool,
     static_delay_base: f64, // seconds
 
@@ -197,7 +197,7 @@ end
             global_capacity: 150.0,
             global_flow: 30.0,
             ip_capacity: 30.0,
-            ip_flow: 0.116,   // ~1/8.6 tokens per second
+            ip_flow: 0.116, // ~1/8.6 tokens per second
             download_capacity,
             download_flow,
             auth_capacity,
@@ -215,13 +215,18 @@ end
     }
 
     /// Check a token bucket and return wait time in seconds
-    async fn check_bucket(&self, key: &str, capacity: f64, flow: f64) -> Result<f64, redis::RedisError> {
+    async fn check_bucket(
+        &self,
+        key: &str,
+        capacity: f64,
+        flow: f64,
+    ) -> Result<f64, redis::RedisError> {
         let mut conn = self.redis.clone();
         let result: f64 = redis::cmd("EVALSHA")
             .arg(&self.lua_sha[..])
             .arg(1)
             .arg(key)
-            .arg(1.0)        // requested tokens
+            .arg(1.0) // requested tokens
             .arg(capacity)
             .arg(flow)
             .query_async(&mut conn)
@@ -236,7 +241,7 @@ end
             .arg(&self.lua_sha[..])
             .arg(1)
             .arg(key)
-            .arg(1.5)        // penalize with 1.5 tokens
+            .arg(1.5) // penalize with 1.5 tokens
             .arg(capacity)
             .arg(flow)
             .query_async(&mut conn)
@@ -399,7 +404,11 @@ end
     /// cheap to probe and self-cleaning. NOTE: blocking, like
     /// `is_shadowbanned`.
     pub fn shadowban(&self, client_id: &str, ttl_seconds: u64) {
-        let ttl = if ttl_seconds > 0 { ttl_seconds } else { self.shadowban_ttl };
+        let ttl = if ttl_seconds > 0 {
+            ttl_seconds
+        } else {
+            self.shadowban_ttl
+        };
         let _ = self.block_on_sadd(client_id, ttl);
     }
 
@@ -424,10 +433,8 @@ impl RedisBucketLimiter {
         let mut cmd = redis::cmd("SISMEMBER");
         cmd.arg(SHADOWBAN_SET).arg(client_id);
         let fut = cmd.query_async::<bool>(&mut conn);
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(fut)
-        })
-        .unwrap_or(false)
+        tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut))
+            .unwrap_or(false)
     }
 
     /// Blocking `SADD` + per-member TTL (fail-open: `()` on error).
@@ -442,9 +449,8 @@ impl RedisBucketLimiter {
             .arg(&member_key)
             .arg((ttl_seconds * 1000) as i64);
         let fut = pipe.query_async::<()>(&mut conn);
-        let _: Result<(), redis::RedisError> = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(fut)
-        });
+        let _: Result<(), redis::RedisError> =
+            tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut));
         Ok(())
     }
 
@@ -454,9 +460,8 @@ impl RedisBucketLimiter {
         let mut cmd = redis::cmd("SREM");
         cmd.arg(SHADOWBAN_SET).arg(client_id);
         let fut = cmd.query_async::<i64>(&mut conn);
-        let _: Result<i64, redis::RedisError> = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(fut)
-        });
+        let _: Result<i64, redis::RedisError> =
+            tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut));
         Ok(())
     }
 }
@@ -477,7 +482,8 @@ impl RateLimiter for RedisBucketLimiter {
         }
 
         // Check global bucket
-        let global_wait = self.check_bucket("rate:global", self.global_capacity, self.global_flow)
+        let global_wait = self
+            .check_bucket("rate:global", self.global_capacity, self.global_flow)
             .await
             .unwrap_or(-1.0);
 
@@ -487,7 +493,8 @@ impl RateLimiter for RedisBucketLimiter {
 
         // Check per-IP bucket
         let ip_key = format!("rate:ip:{}", ip);
-        let ip_wait = self.check_bucket(&ip_key, self.ip_capacity, self.ip_flow)
+        let ip_wait = self
+            .check_bucket(&ip_key, self.ip_capacity, self.ip_flow)
             .await
             .unwrap_or(-1.0);
 
@@ -499,7 +506,9 @@ impl RateLimiter for RedisBucketLimiter {
     }
 
     async fn report_failure(&self, ip: IpAddr) {
-        let _ = self.penalize("rate:global", self.global_capacity, self.global_flow).await;
+        let _ = self
+            .penalize("rate:global", self.global_capacity, self.global_flow)
+            .await;
         let ip_key = format!("rate:ip:{}", ip);
         let _ = self.penalize(&ip_key, self.ip_capacity, self.ip_flow).await;
     }
@@ -509,7 +518,11 @@ impl RateLimiter for RedisBucketLimiter {
         // legacy flat-file set (loaded from IP_TAG_SOURCES).
         is_datacenter_checked(
             self.geoip.as_ref(),
-            &self.datacenter_ips.try_read().map(|s| s.clone()).unwrap_or_default(),
+            &self
+                .datacenter_ips
+                .try_read()
+                .map(|s| s.clone())
+                .unwrap_or_default(),
             ip,
         )
     }
@@ -533,7 +546,12 @@ fn is_datacenter_checked(
 
 #[async_trait::async_trait]
 impl TieredRateLimiter for RedisBucketLimiter {
-    async fn check(&self, ip: IpAddr, client_id: Option<&str>, tier: Tier) -> TieredRateLimitResult {
+    async fn check(
+        &self,
+        ip: IpAddr,
+        client_id: Option<&str>,
+        tier: Tier,
+    ) -> TieredRateLimitResult {
         self.check_tiered(ip, client_id, tier).await
     }
 
@@ -709,7 +727,13 @@ mod tests {
     /// Simulates up to `max_seconds` of 1-request-per-second hammering and
     /// returns the time (in seconds) when the bucket first refuses a request,
     /// or `max_seconds` if the tier survives the whole window.
-    fn tier_exhaustion_time(capacity: f64, flow_per_sec: f64, burst: u64, _limit_per_hour: f64, max_seconds: f64) -> f64 {
+    fn tier_exhaustion_time(
+        capacity: f64,
+        flow_per_sec: f64,
+        burst: u64,
+        _limit_per_hour: f64,
+        max_seconds: f64,
+    ) -> f64 {
         let mut bucket = TokenBucket::new(capacity, flow_per_sec, 0.0);
         let mut now = 0.0;
         for _ in 0..burst {
@@ -741,7 +765,10 @@ mod tests {
             60.0,
             7200.0,
         );
-        assert!(t >= 1.0 && t < 10.0, "exhaustion at {t:.0}s (burst drains the 10-token bucket; next 1/sec request is refused)");
+        assert!(
+            t >= 1.0 && t < 10.0,
+            "exhaustion at {t:.0}s (burst drains the 10-token bucket; next 1/sec request is refused)"
+        );
     }
 
     #[test]
@@ -755,7 +782,10 @@ mod tests {
             600.0,
             7200.0,
         );
-        assert!(t >= 1.0 && t < 10.0, "exhaustion at {t:.0}s (burst drains the 10-token bucket; next 1/sec request is refused)");
+        assert!(
+            t >= 1.0 && t < 10.0,
+            "exhaustion at {t:.0}s (burst drains the 10-token bucket; next 1/sec request is refused)"
+        );
     }
 
     #[test]
@@ -770,7 +800,10 @@ mod tests {
             60000.0,
             7200.0,
         );
-        assert!(t >= 7200.0, "search tier must survive 1/sec hammering for the whole 2h window (got {t:.0}s)");
+        assert!(
+            t >= 7200.0,
+            "search tier must survive 1/sec hammering for the whole 2h window (got {t:.0}s)"
+        );
     }
 
     #[test]
@@ -785,7 +818,10 @@ mod tests {
             5.0,
             7200.0,
         );
-        assert!(t >= 1.0 && t < 10.0, "exhaustion at {t:.0}s (burst drains the 5-token bucket; next 1/sec request is refused)");
+        assert!(
+            t >= 1.0 && t < 10.0,
+            "exhaustion at {t:.0}s (burst drains the 5-token bucket; next 1/sec request is refused)"
+        );
     }
 
     #[test]
@@ -883,15 +919,29 @@ mod tests {
         // bonus tokens, so neither starves the other.
         let nat_ip_cap = super::DEFAULT_DOWNLOAD_CAPACITY * super::DEFAULT_NAT_MULTIPLIER; // 40
         let client_cap = super::DEFAULT_DOWNLOAD_CAPACITY + super::DEFAULT_CLIENT_BONUS_CAPACITY; // 15
-        let mut a = TieredModel::new(nat_ip_cap, super::DEFAULT_DOWNLOAD_FLOW, client_cap, super::DEFAULT_CLIENT_BONUS_FLOW);
-        let mut b = TieredModel::new(nat_ip_cap, super::DEFAULT_DOWNLOAD_FLOW, client_cap, super::DEFAULT_CLIENT_BONUS_FLOW);
+        let mut a = TieredModel::new(
+            nat_ip_cap,
+            super::DEFAULT_DOWNLOAD_FLOW,
+            client_cap,
+            super::DEFAULT_CLIENT_BONUS_FLOW,
+        );
+        let mut b = TieredModel::new(
+            nat_ip_cap,
+            super::DEFAULT_DOWNLOAD_FLOW,
+            client_cap,
+            super::DEFAULT_CLIENT_BONUS_FLOW,
+        );
 
         let mut now = 0.0;
         let mut a_ok = 0;
         let mut b_ok = 0;
         for _ in 0..10 {
-            if a.allow(now) { a_ok += 1; }
-            if b.allow(now) { b_ok += 1; }
+            if a.allow(now) {
+                a_ok += 1;
+            }
+            if b.allow(now) {
+                b_ok += 1;
+            }
             now += 1.0;
         }
         // Each client gets its own 10-burst + 5 bonus; IP ceiling is 40.
@@ -903,25 +953,39 @@ mod tests {
     fn test_shadowbanned_client_gets_strict_bucket() {
         let ip_cap = super::DEFAULT_DOWNLOAD_CAPACITY * super::DEFAULT_NAT_MULTIPLIER;
         let client_cap = super::DEFAULT_DOWNLOAD_CAPACITY + super::DEFAULT_CLIENT_BONUS_CAPACITY;
-        let mut m = TieredModel::new(ip_cap, super::DEFAULT_DOWNLOAD_FLOW, client_cap, super::DEFAULT_CLIENT_BONUS_FLOW);
+        let mut m = TieredModel::new(
+            ip_cap,
+            super::DEFAULT_DOWNLOAD_FLOW,
+            client_cap,
+            super::DEFAULT_CLIENT_BONUS_FLOW,
+        );
 
         let mut now = 0.0;
         let mut normal_ok = 0;
         for _ in 0..10 {
-            if m.allow(now) { normal_ok += 1; }
+            if m.allow(now) {
+                normal_ok += 1;
+            }
             now += 1.0;
         }
         // Reset for the shadowed client: it gets a fresh strict bucket.
         let mut s = TieredModel::new(ip_cap, super::DEFAULT_DOWNLOAD_FLOW, 0.0, 0.0);
         let mut shadow_ok = 0;
         for _ in 0..10 {
-            if s.allow_shadow(now, super::DEFAULT_SHADOWBAN_CAPACITY, super::DEFAULT_SHADOWBAN_FLOW) {
+            if s.allow_shadow(
+                now,
+                super::DEFAULT_SHADOWBAN_CAPACITY,
+                super::DEFAULT_SHADOWBAN_FLOW,
+            ) {
                 shadow_ok += 1;
             }
             now += 1.0;
         }
         // Normal identified client: 10+ burst ok. Shadowbanned: capped at 5.
         assert!(normal_ok >= 10, "normal client burst (got {normal_ok})");
-        assert!(shadow_ok <= 5, "shadowbanned client capped at 5/hr (got {shadow_ok})");
+        assert!(
+            shadow_ok <= 5,
+            "shadowbanned client capped at 5/hr (got {shadow_ok})"
+        );
     }
 }

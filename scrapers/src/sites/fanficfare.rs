@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use std::process::Command;
 
-use crate::{FicMetadata, Chapter, ExtractedTag, SiteScraper, ScrapeError, generate_url_id};
+use crate::{Chapter, ExtractedTag, FicMetadata, ScrapeError, SiteScraper, generate_url_id};
 
 /// FanFicFare fallback scraper — handles any site FanFicFare supports.
 /// Called via CLI when native scrapers can't handle the URL.
@@ -78,7 +78,9 @@ fn parse_fff_dict(output: &str) -> Vec<(String, String)> {
                     while i < chars.len() && chars[i] != quote {
                         i += 1;
                     }
-                    if i < chars.len() { i += 1; }
+                    if i < chars.len() {
+                        i += 1;
+                    }
                 }
                 continue;
             }
@@ -88,13 +90,21 @@ fn parse_fff_dict(output: &str) -> Vec<(String, String)> {
                 i += 1; // skip opening quote
                 let val_start = i;
                 while i < chars.len() {
-                    if chars[i] == '\'' && (i + 1 >= chars.len() || chars[i+1] == ',' || chars[i+1] == ' ' || chars[i+1] == '\n' || chars[i+1] == '}') {
+                    if chars[i] == '\''
+                        && (i + 1 >= chars.len()
+                            || chars[i + 1] == ','
+                            || chars[i + 1] == ' '
+                            || chars[i + 1] == '\n'
+                            || chars[i + 1] == '}')
+                    {
                         break;
                     }
                     i += 1;
                 }
                 let val: String = chars[val_start..i].iter().collect();
-                if i < chars.len() { i += 1; } // skip closing quote
+                if i < chars.len() {
+                    i += 1;
+                } // skip closing quote
                 seen_keys.insert(key.clone());
                 pairs.push((key, val));
             } else if i < chars.len() && chars[i] == '"' {
@@ -102,13 +112,17 @@ fn parse_fff_dict(output: &str) -> Vec<(String, String)> {
                 i += 1; // skip opening quote
                 let val_start = i;
                 while i < chars.len() {
-                    if chars[i] == '"' && (i + 1 >= chars.len() || chars[i+1] == ',' || chars[i+1] == ' ') {
+                    if chars[i] == '"'
+                        && (i + 1 >= chars.len() || chars[i + 1] == ',' || chars[i + 1] == ' ')
+                    {
                         break;
                     }
                     i += 1;
                 }
                 let val: String = chars[val_start..i].iter().collect();
-                if i < chars.len() { i += 1; } // skip closing quote
+                if i < chars.len() {
+                    i += 1;
+                } // skip closing quote
                 seen_keys.insert(key.clone());
                 pairs.push((key, val));
             }
@@ -131,24 +145,25 @@ fn fetch_metadata(url: &str) -> Result<FffMeta, ScrapeError> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(ScrapeError::Network(format!("fanficfare failed: {}", stderr)));
+        return Err(ScrapeError::Network(format!(
+            "fanficfare failed: {}",
+            stderr
+        )));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let pairs = parse_fff_dict(&stdout);
 
     let get = |key: &str| -> String {
-        pairs.iter()
+        pairs
+            .iter()
             .find(|(k, _)| k == key)
             .map(|(_, v)| v.clone())
             .unwrap_or_default()
     };
 
     let num_chapters: i32 = get("numChapters").parse().unwrap_or(1);
-    let num_words: i64 = get("numWords")
-        .replace(',', "")
-        .parse()
-        .unwrap_or(0);
+    let num_words: i64 = get("numWords").replace(',', "").parse().unwrap_or(0);
 
     let status = match get("status").as_str() {
         "Completed" => "complete",
@@ -189,21 +204,24 @@ fn parse_date_to_millis(date_str: &str) -> i64 {
     }
     // Try parsing "YYYY-MM-DD"
     if let Ok(dt) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-        return dt.and_hms_opt(0, 0, 0)
+        return dt
+            .and_hms_opt(0, 0, 0)
             .unwrap_or_default()
             .and_utc()
             .timestamp_millis();
     }
     // Try parsing "YYYY/MM/DD"
     if let Ok(dt) = chrono::NaiveDate::parse_from_str(date_str, "%Y/%m/%d") {
-        return dt.and_hms_opt(0, 0, 0)
+        return dt
+            .and_hms_opt(0, 0, 0)
             .unwrap_or_default()
             .and_utc()
             .timestamp_millis();
     }
     // Try "Month Day, Year" e.g. "September 16, 2008"
     if let Ok(dt) = chrono::NaiveDate::parse_from_str(date_str, "%B %d, %Y") {
-        return dt.and_hms_opt(0, 0, 0)
+        return dt
+            .and_hms_opt(0, 0, 0)
             .unwrap_or_default()
             .and_utc()
             .timestamp_millis();
@@ -220,7 +238,11 @@ impl SiteScraper for FanFicFareScraper {
         true
     }
 
-    async fn lookup(&self, _client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        _client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let meta = fetch_metadata(url)?;
 
         // Generate source_id from site abbreviation
@@ -228,7 +250,7 @@ impl SiteScraper for FanFicFareScraper {
             "ao3" => 1,
             "ffn" => 2,
             "fnac" => 3,
-            "sb" | "sv" => 4,  // SpaceBattles / Sufficient Velocity
+            "sb" | "sv" => 4, // SpaceBattles / Sufficient Velocity
             "Wattpad" => 5,
             "royalroad" => 6,
             _ => 99,
@@ -257,7 +279,11 @@ impl SiteScraper for FanFicFareScraper {
         })
     }
 
-    async fn fetch_chapters(&self, _client: &reqwest::Client, meta: &FicMetadata) -> Result<Vec<Chapter>, ScrapeError> {
+    async fn fetch_chapters(
+        &self,
+        _client: &reqwest::Client,
+        meta: &FicMetadata,
+    ) -> Result<Vec<Chapter>, ScrapeError> {
         // Create a temp directory for FanFicFare downloads
         let tmp_dir = std::env::temp_dir().join("fichub_fff");
         std::fs::create_dir_all(&tmp_dir)
@@ -276,7 +302,10 @@ impl SiteScraper for FanFicFareScraper {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(ScrapeError::Network(format!("fanficfare download failed: {}", stderr)));
+            return Err(ScrapeError::Network(format!(
+                "fanficfare download failed: {}",
+                stderr
+            )));
         }
 
         // Find the most recently created .html file in the temp directory
@@ -284,14 +313,20 @@ impl SiteScraper for FanFicFareScraper {
             .map_err(|e| ScrapeError::Network(format!("failed to read temp dir: {}", e)))?
             .filter_map(|e| e.ok())
             .filter(|e| {
-                e.path().extension().map(|ext| ext == "html").unwrap_or(false)
+                e.path()
+                    .extension()
+                    .map(|ext| ext == "html")
+                    .unwrap_or(false)
             })
             .collect();
 
         // Find the newest HTML file
-        let html_file = html_files.iter()
+        let html_file = html_files
+            .iter()
             .max_by_key(|f| f.metadata().and_then(|m| m.modified()).ok())
-            .ok_or_else(|| ScrapeError::Network("no HTML file found after fanficfare download".to_string()))?;
+            .ok_or_else(|| {
+                ScrapeError::Network("no HTML file found after fanficfare download".to_string())
+            })?;
 
         let html_content = std::fs::read_to_string(html_file.path())
             .map_err(|e| ScrapeError::Network(format!("failed to read HTML file: {}", e)))?;
@@ -330,7 +365,8 @@ impl SiteScraper for FanFicFareScraper {
             // Extract chapters from story divs
             for (i, div) in story_divs.iter().enumerate() {
                 // Try to find the chapter title from the preceding h2
-                let title = div.select(&h2_selector)
+                let title = div
+                    .select(&h2_selector)
                     .next()
                     .map(|h| h.text().collect::<String>())
                     .unwrap_or_else(|| format!("Chapter {}", i + 1));
@@ -347,7 +383,11 @@ impl SiteScraper for FanFicFareScraper {
         Ok(chapters)
     }
 
-    async fn extract_tags(&self, _client: &reqwest::Client, url: &str) -> Result<Vec<ExtractedTag>, ScrapeError> {
+    async fn extract_tags(
+        &self,
+        _client: &reqwest::Client,
+        url: &str,
+    ) -> Result<Vec<ExtractedTag>, ScrapeError> {
         let meta = fetch_metadata(url)?;
         Ok(tags_from_meta(&meta))
     }
@@ -439,7 +479,10 @@ fn split_csv(value: &str) -> Vec<String> {
 
 /// Add a tag unless an identical (name, tag_type_id) pair is already present.
 fn push_tag(tags: &mut Vec<ExtractedTag>, tag: ExtractedTag) {
-    if !tags.iter().any(|t| t.name == tag.name && t.tag_type_id == tag.tag_type_id) {
+    if !tags
+        .iter()
+        .any(|t| t.name == tag.name && t.tag_type_id == tag.tag_type_id)
+    {
         tags.push(tag);
     }
 }
@@ -499,13 +542,7 @@ mod tests {
     #[test]
     fn test_site_abbrev_to_source_id() {
         // Test the mapping logic (extracted for testability)
-        let cases = vec![
-            ("ao3", 1),
-            ("ffn", 2),
-            ("sb", 4),
-            ("sv", 4),
-            ("Wattpad", 5),
-        ];
+        let cases = vec![("ao3", 1), ("ffn", 2), ("sb", 4), ("sv", 4), ("Wattpad", 5)];
         for (abbrev, expected) in cases {
             let source_id: i64 = match abbrev {
                 "ao3" => 1,
@@ -555,7 +592,11 @@ mod tests {
 
     fn meta_with(fields: &[(&str, &str)]) -> FffMeta {
         let get = |key: &str| -> String {
-            fields.iter().find(|(k, _)| *k == key).map(|(_, v)| v.to_string()).unwrap_or_default()
+            fields
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| v.to_string())
+                .unwrap_or_default()
         };
         FffMeta {
             title: get("title"),
@@ -627,15 +668,16 @@ mod tests {
         let tags = tags_from_meta(&meta);
         assert_eq!(tags.len(), 5);
         assert_eq!(
-            tags.iter().filter(|t| t.name == "Adventure" && t.tag_type_id == 4).count(),
+            tags.iter()
+                .filter(|t| t.name == "Adventure" && t.tag_type_id == 4)
+                .count(),
             1
         );
+        assert_eq!(tags.iter().filter(|t| t.name == "Zorian/Xvim").count(), 1);
         assert_eq!(
-            tags.iter().filter(|t| t.name == "Zorian/Xvim").count(),
-            1
-        );
-        assert_eq!(
-            tags.iter().filter(|t| t.name == "Original" && t.tag_type_id == 6).count(),
+            tags.iter()
+                .filter(|t| t.name == "Original" && t.tag_type_id == 6)
+                .count(),
             1
         );
     }

@@ -23,8 +23,7 @@ fn db_guard() -> std::sync::MutexGuard<'static, ()> {
 }
 
 async fn pool() -> sqlx::PgPool {
-    let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set (load .env)");
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (load .env)");
     sqlx::PgPool::connect(&database_url)
         .await
         .expect("failed to connect to test database")
@@ -87,12 +86,14 @@ async fn seed_fic(
 }
 
 async fn seed_tag(pool: &sqlx::PgPool, name: &str, type_id: i16) -> i32 {
-    sqlx::query("INSERT INTO tags (name, tag_type_id) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING")
-        .bind(name)
-        .bind(type_id)
-        .execute(pool)
-        .await
-        .expect("seed_tag failed");
+    sqlx::query(
+        "INSERT INTO tags (name, tag_type_id) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING",
+    )
+    .bind(name)
+    .bind(type_id)
+    .execute(pool)
+    .await
+    .expect("seed_tag failed");
     sqlx::query_scalar("SELECT id FROM tags WHERE name = $1")
         .bind(name)
         .fetch_one(pool)
@@ -130,26 +131,48 @@ async fn cleanup(
     tags: &[&str],
     downloads: &[&str],
 ) {
-    let _ = sqlx::query("DELETE FROM bookmarks WHERE user_id = (SELECT id FROM users WHERE username = $1)")
-        .bind(user)
-        .execute(pool)
-        .await;
+    let _ = sqlx::query(
+        "DELETE FROM bookmarks WHERE user_id = (SELECT id FROM users WHERE username = $1)",
+    )
+    .bind(user)
+    .execute(pool)
+    .await;
     for id in fics {
-        let _ = sqlx::query("DELETE FROM fic_tags WHERE url_id = $1").bind(id).execute(pool).await;
-        let _ = sqlx::query("DELETE FROM rec_user_signals WHERE work_id = $1").bind(id).execute(pool).await;
-        let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1").bind(id).execute(pool).await;
+        let _ = sqlx::query("DELETE FROM fic_tags WHERE url_id = $1")
+            .bind(id)
+            .execute(pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM rec_user_signals WHERE work_id = $1")
+            .bind(id)
+            .execute(pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1")
+            .bind(id)
+            .execute(pool)
+            .await;
     }
     for name in tags {
-        let _ = sqlx::query("DELETE FROM tags WHERE name = $1").bind(name).execute(pool).await;
+        let _ = sqlx::query("DELETE FROM tags WHERE name = $1")
+            .bind(name)
+            .execute(pool)
+            .await;
     }
     for id in downloads {
-        let _ = sqlx::query("DELETE FROM request_log WHERE url_id = $1").bind(id).execute(pool).await;
+        let _ = sqlx::query("DELETE FROM request_log WHERE url_id = $1")
+            .bind(id)
+            .execute(pool)
+            .await;
     }
-    let _ = sqlx::query("DELETE FROM rec_user_signals WHERE user_id = (SELECT id FROM users WHERE username = $1)")
+    let _ = sqlx::query(
+        "DELETE FROM rec_user_signals WHERE user_id = (SELECT id FROM users WHERE username = $1)",
+    )
+    .bind(user)
+    .execute(pool)
+    .await;
+    let _ = sqlx::query("DELETE FROM users WHERE username = $1")
         .bind(user)
         .execute(pool)
         .await;
-    let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(user).execute(pool).await;
 }
 
 /// Seed a user with 3 bookmarks sharing a fandom tag + 1 candidate fic.
@@ -157,10 +180,50 @@ async fn seed_golden_fixture(pool: &sqlx::PgPool) -> (i32, [&'static str; 4]) {
     let user = "rectestit_golden_user";
     let user_id = seed_user(pool, user).await;
     let fics = ["rectestit_a", "rectestit_b", "rectestit_c", "rectestit_d"];
-    seed_fic(pool, "rectestit_a", "Rec Test Alpha", "Dragon story.", 1000, 1, "complete", 1).await;
-    seed_fic(pool, "rectestit_b", "Rec Test Beta", "Another dragon story.", 2000, 2, "complete", 2).await;
-    seed_fic(pool, "rectestit_c", "Rec Test Gamma", "More dragons.", 3000, 3, "ongoing", 3).await;
-    seed_fic(pool, "rectestit_d", "Rec Test Candidate", "The candidate.", 4000, 4, "ongoing", 1).await;
+    seed_fic(
+        pool,
+        "rectestit_a",
+        "Rec Test Alpha",
+        "Dragon story.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        pool,
+        "rectestit_b",
+        "Rec Test Beta",
+        "Another dragon story.",
+        2000,
+        2,
+        "complete",
+        2,
+    )
+    .await;
+    seed_fic(
+        pool,
+        "rectestit_c",
+        "Rec Test Gamma",
+        "More dragons.",
+        3000,
+        3,
+        "ongoing",
+        3,
+    )
+    .await;
+    seed_fic(
+        pool,
+        "rectestit_d",
+        "Rec Test Candidate",
+        "The candidate.",
+        4000,
+        4,
+        "ongoing",
+        1,
+    )
+    .await;
     let tag_fandom = seed_tag(pool, "RecTestIt Fandom", 1).await;
     let tag_free = seed_tag(pool, "RecTestIt Freeform", 4).await;
     for f in &fics[..3] {
@@ -206,25 +269,23 @@ async fn golden_legacy_equals_cooccur_strategy() {
     // Legacy path: the exact computation the legacy handler runs.
     let config = std::sync::Arc::new(fichub::config::Config::from_env());
     let (legacy_recs, _based_on, enough) =
-        fichub::recommender::routes::compute_personal_recommendations(&db, user_id, &config).await
+        fichub::recommender::routes::compute_personal_recommendations(&db, user_id, &config)
+            .await
             .expect("legacy computation");
     assert!(enough, "seeded user must have enough signals");
 
     // Pluggable path: registry with ONLY cooccur.
     let registry = fichub::recommender::registry::StrategyRegistry::new(
-        vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        vec![std::sync::Arc::new(
+            fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+        )],
         "cooccur",
     );
     let ctx = test_ctx(db.clone(), config.clone());
-    let (blended, diagnostics) = fichub::recommender::ranker::blend(
-        &ctx,
-        &registry,
-        None,
-        Some(user_id),
-        20,
-    )
-    .await
-    .expect("pluggable blend");
+    let (blended, diagnostics) =
+        fichub::recommender::ranker::blend(&ctx, &registry, None, Some(user_id), 20)
+            .await
+            .expect("pluggable blend");
 
     assert_eq!(
         blended.len(),
@@ -245,7 +306,14 @@ async fn golden_legacy_equals_cooccur_strategy() {
     assert_eq!(diagnostics.len(), 1);
     assert!(diagnostics[0].contributed, "{diagnostics:?}");
 
-    cleanup(&db, user, &fics, &["RecTestIt Fandom", "RecTestIt Freeform"], &[]).await;
+    cleanup(
+        &db,
+        user,
+        &fics,
+        &["RecTestIt Fandom", "RecTestIt Freeform"],
+        &[],
+    )
+    .await;
 }
 
 // ─── Registry selection ────────────────────────────────────────────────────
@@ -255,10 +323,7 @@ fn registry_selects_weights_from_config() {
     let legacy = fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new();
     let decay = fichub::recommender::decay::DecayCooccurStrategy::new();
     let reg = fichub::recommender::registry::StrategyRegistry::new(
-        vec![
-            std::sync::Arc::new(legacy),
-            std::sync::Arc::new(decay),
-        ],
+        vec![std::sync::Arc::new(legacy), std::sync::Arc::new(decay)],
         "cooccur:0.4,decay:0.3",
     );
     let specs = reg.specs();
@@ -272,7 +337,7 @@ fn registry_selects_weights_from_config() {
 
 #[test]
 fn rrf_blend_ranks_shared_higher() {
-    use fichub::recommender::ranker::{rrf_accumulate, RRF_K};
+    use fichub::recommender::ranker::{RRF_K, rrf_accumulate};
     use std::collections::HashMap;
 
     let mut fused: HashMap<String, (f64, String, String)> = HashMap::new();
@@ -302,5 +367,8 @@ fn curator_prior_pulls_cold_user_toward_curator() {
     let curator = vec![("w2".to_string(), 1.0)];
     let out = apply_curator_prior(&fused, &curator, alpha);
     // w2: 0.8·0 + 1.0·1.0 = 1.0 > w1: 0.9·0 + 0 = 0 → w2 leads.
-    assert_eq!(out[0].0, "w2", "curator-liked work must lead for a cold user: {out:?}");
+    assert_eq!(
+        out[0].0, "w2",
+        "curator-liked work must lead for a cold user: {out:?}"
+    );
 }

@@ -36,7 +36,9 @@ pub async fn create_bounty(
         .await?
         .ok_or_else(|| AppError::NotFound("creator not found".into()))?;
     if rep < MIN_REP_FOR_BOUNTY {
-        return Err(AppError::Forbidden("insufficient reputation to stake a bounty".into()));
+        return Err(AppError::Forbidden(
+            "insufficient reputation to stake a bounty".into(),
+        ));
     }
 
     let pot_id: (i32,) = sqlx::query_as(
@@ -83,16 +85,15 @@ pub async fn claim_bounty_with(
     claimant_id: i32,
     claim_ref: &str,
 ) -> AppResult<()> {
-    let (pot, _amount, status): (i32, i32, String) = match sqlx::query_as(
-        "SELECT id, amount, status FROM bounty_pots WHERE id = $1 FOR UPDATE",
-    )
-    .bind(pot_id)
-    .fetch_optional(pool)
-    .await?
-    {
-        Some(r) => r,
-        None => return Err(AppError::NotFound("bounty not found".into())),
-    };
+    let (pot, _amount, status): (i32, i32, String) =
+        match sqlx::query_as("SELECT id, amount, status FROM bounty_pots WHERE id = $1 FOR UPDATE")
+            .bind(pot_id)
+            .fetch_optional(pool)
+            .await?
+        {
+            Some(r) => r,
+            None => return Err(AppError::NotFound("bounty not found".into())),
+        };
     if status != "open" {
         return Err(AppError::BadRequest("bounty not open".into()));
     }
@@ -149,11 +150,12 @@ pub async fn resolve_bounty(
 
     // Resolved → credit the stored claimant_id; cancelled → creator.
     let recipient = if action == "resolved" {
-        let cid: Option<i32> = sqlx::query_scalar("SELECT claimant_id FROM bounty_pots WHERE id = $1")
-            .bind(pot)
-            .fetch_optional(&mut *tx)
-            .await?
-            .flatten();
+        let cid: Option<i32> =
+            sqlx::query_scalar("SELECT claimant_id FROM bounty_pots WHERE id = $1")
+                .bind(pot)
+                .fetch_optional(&mut *tx)
+                .await?
+                .flatten();
         cid.unwrap_or(creator_id)
     } else {
         creator_id
@@ -317,8 +319,14 @@ mod tests {
     /// Anti-game guard: tiny bounty creators still need min rep to stake.
     #[test]
     fn min_rep_gate_blocks_zero_rep_creator() {
-        assert!(MIN_REP_FOR_BOUNTY > 0, "bounty creation must require baseline rep");
-        assert!(MIN_REP_FOR_BOUNTY >= 10, "minimum should block fresh zero-rep accounts");
+        assert!(
+            MIN_REP_FOR_BOUNTY > 0,
+            "bounty creation must require baseline rep"
+        );
+        assert!(
+            MIN_REP_FOR_BOUNTY >= 10,
+            "minimum should block fresh zero-rep accounts"
+        );
     }
 
     /// The idle-tick hour bucket must truncate to the hour so the engine
@@ -334,7 +342,9 @@ mod tests {
             "hour bucket must not contain ':' separators"
         );
         assert!(
-            bucket.chars().all(|c| c.is_ascii_digit() || c == '-' || c == 'T'),
+            bucket
+                .chars()
+                .all(|c| c.is_ascii_digit() || c == '-' || c == 'T'),
             "hour bucket must only contain digits, '-', and 'T'"
         );
         // The 'T' separator must be at index 10: "YYYY-MM-DD" (10) + "T" + "HH".
@@ -342,7 +352,11 @@ mod tests {
         let _date_part: String = chars.by_ref().take(10).collect();
         let sep = chars.next();
         let hour_part: String = chars.collect();
-        assert_eq!(sep, Some('T'), "separator between date and hour must be 'T'");
+        assert_eq!(
+            sep,
+            Some('T'),
+            "separator between date and hour must be 'T'"
+        );
         assert_eq!(hour_part.len(), 2, "hour part must be 2 digits");
         let hour: u32 = hour_part.parse().expect("hour part must parse as a number");
         assert!(hour < 24, "hour part must be < 24");
@@ -364,6 +378,9 @@ mod tests {
                 all_same = false;
             }
         }
-        assert!(all_same, "hour bucket must be stable within the same hour (engine cooldown key)");
+        assert!(
+            all_same,
+            "hour bucket must be stable within the same hour (engine cooldown key)"
+        );
     }
 }

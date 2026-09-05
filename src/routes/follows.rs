@@ -1,7 +1,7 @@
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::db::queries;
@@ -11,7 +11,7 @@ use crate::server::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct FollowBody {
-    pub target_type: String,  // "user", "work", "author"
+    pub target_type: String, // "user", "work", "author"
     pub target_id: Option<i32>,
     pub author_name: Option<String>,
 }
@@ -22,18 +22,24 @@ pub async fn follow_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<FollowBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     match body.target_type.as_str() {
         "user" => {
-            let target = body.target_id.ok_or_else(|| AppError::BadRequest("target_id required for user follow".to_string()))?;
+            let target = body.target_id.ok_or_else(|| {
+                AppError::BadRequest("target_id required for user follow".to_string())
+            })?;
             if target == user_id {
                 return Err(AppError::BadRequest("Cannot follow yourself".to_string()));
             }
             queries::follow_user(&state.db, user_id, target).await?;
         }
         "work" => {
-            let target = body.target_id.ok_or_else(|| AppError::BadRequest("target_id required for work follow".to_string()))?;
+            let target = body.target_id.ok_or_else(|| {
+                AppError::BadRequest("target_id required for work follow".to_string())
+            })?;
             // Only works that exist can be followed.
             if queries::get_work(&state.db, target).await?.is_none() {
                 return Err(AppError::BadRequest("work not found".to_string()));
@@ -41,19 +47,36 @@ pub async fn follow_handler(
             queries::follow_work(&state.db, user_id, target).await?;
         }
         "author" => {
-            let name = body.author_name.as_deref().ok_or_else(|| AppError::BadRequest("author_name required for author follow".to_string()))?;
+            let name = body.author_name.as_deref().ok_or_else(|| {
+                AppError::BadRequest("author_name required for author follow".to_string())
+            })?;
             if name.trim().is_empty() {
-                return Err(AppError::BadRequest("author_name must not be empty".to_string()));
+                return Err(AppError::BadRequest(
+                    "author_name must not be empty".to_string(),
+                ));
             }
             queries::follow_author(&state.db, user_id, name).await?;
         }
-        _ => return Err(AppError::BadRequest("target_type must be 'user', 'work', or 'author'".to_string())),
+        _ => {
+            return Err(AppError::BadRequest(
+                "target_type must be 'user', 'work', or 'author'".to_string(),
+            ));
+        }
     }
 
     // Return the follow id so the client can unfollow without re-listing.
     let follow_id = match body.target_type.as_str() {
-        "work" => queries::find_follow_for_work(&state.db, user_id, body.target_id.unwrap_or(0)).await?,
-        "author" => queries::find_follow_for_author(&state.db, user_id, body.author_name.as_deref().unwrap_or("")).await?,
+        "work" => {
+            queries::find_follow_for_work(&state.db, user_id, body.target_id.unwrap_or(0)).await?
+        }
+        "author" => {
+            queries::find_follow_for_author(
+                &state.db,
+                user_id,
+                body.author_name.as_deref().unwrap_or(""),
+            )
+            .await?
+        }
         _ => None,
     };
 
@@ -70,7 +93,9 @@ pub async fn unfollow_handler(
     State(state): State<Arc<AppState>>,
     Path(follow_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let removed = queries::unfollow(&state.db, user_id, follow_id).await?;
 
@@ -82,19 +107,24 @@ pub async fn list_follows_handler(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let follows = queries::list_follows(&state.db, user_id).await?;
 
-    let items: Vec<Value> = follows.into_iter().map(|f| {
-        json!({
-            "id": f.id,
-            "followee_id": f.followee_id,
-            "work_id": f.work_id,
-            "author_name": f.author_name,
-            "created_at": f.created_at.to_rfc3339(),
+    let items: Vec<Value> = follows
+        .into_iter()
+        .map(|f| {
+            json!({
+                "id": f.id,
+                "followee_id": f.followee_id,
+                "work_id": f.work_id,
+                "author_name": f.author_name,
+                "created_at": f.created_at.to_rfc3339(),
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({ "err": 0, "follows": items })))
 }
@@ -105,7 +135,9 @@ pub async fn check_follow_handler(
     State(state): State<Arc<AppState>>,
     Path((target_type, target_id)): Path<(String, i32)>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let is_following = match target_type.as_str() {
         "user" => queries::is_following_user(&state.db, user_id, target_id).await?,
@@ -135,14 +167,19 @@ pub async fn get_followers_handler(
 ) -> Result<Json<Value>, AppError> {
     let followers = queries::get_followers(&state.db, user_id).await?;
 
-    let items: Vec<Value> = followers.into_iter().map(|f| {
-        json!({
-            "follower_id": f.follower_id,
-            "created_at": f.created_at.to_rfc3339(),
+    let items: Vec<Value> = followers
+        .into_iter()
+        .map(|f| {
+            json!({
+                "follower_id": f.follower_id,
+                "created_at": f.created_at.to_rfc3339(),
+            })
         })
-    }).collect();
+        .collect();
 
-    Ok(Json(json!({ "err": 0, "followers": items, "count": items.len() })))
+    Ok(Json(
+        json!({ "err": 0, "followers": items, "count": items.len() }),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -190,7 +227,9 @@ pub async fn add_follow_exclusion_handler(
     Path(follow_id): Path<i64>,
     Json(body): Json<FollowExclusionBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let (work_id, series_id, fandom) = validate_exclusion_target(
         &body.exclude_type,
@@ -201,7 +240,13 @@ pub async fn add_follow_exclusion_handler(
     .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let exclusion_id = queries::create_follow_exclusion(
-        &state.db, user_id, follow_id, &body.exclude_type, work_id, series_id, fandom.as_deref(),
+        &state.db,
+        user_id,
+        follow_id,
+        &body.exclude_type,
+        work_id,
+        series_id,
+        fandom.as_deref(),
     )
     .await?
     .ok_or_else(|| AppError::NotFound("follow not found".to_string()))?;
@@ -219,21 +264,26 @@ pub async fn list_follow_exclusions_handler(
     State(state): State<Arc<AppState>>,
     Path(follow_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let exclusions = queries::list_follow_exclusions(&state.db, user_id, follow_id).await?;
 
-    let items: Vec<Value> = exclusions.into_iter().map(|e| {
-        json!({
-            "id": e.id,
-            "follow_id": e.follow_id,
-            "exclude_type": e.exclude_type,
-            "work_id": e.exclude_work_id,
-            "series_id": e.exclude_series_id,
-            "fandom": e.exclude_fandom,
-            "created_at": e.created_at.to_rfc3339(),
+    let items: Vec<Value> = exclusions
+        .into_iter()
+        .map(|e| {
+            json!({
+                "id": e.id,
+                "follow_id": e.follow_id,
+                "exclude_type": e.exclude_type,
+                "work_id": e.exclude_work_id,
+                "series_id": e.exclude_series_id,
+                "fandom": e.exclude_fandom,
+                "created_at": e.created_at.to_rfc3339(),
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({ "err": 0, "exclusions": items })))
 }
@@ -244,9 +294,12 @@ pub async fn delete_follow_exclusion_handler(
     State(state): State<Arc<AppState>>,
     Path((follow_id, exclusion_id)): Path<(i64, i64)>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
-    let removed = queries::delete_follow_exclusion(&state.db, user_id, follow_id, exclusion_id).await?;
+    let removed =
+        queries::delete_follow_exclusion(&state.db, user_id, follow_id, exclusion_id).await?;
 
     Ok(Json(json!({ "err": 0, "removed": removed })))
 }

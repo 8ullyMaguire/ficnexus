@@ -22,25 +22,21 @@
 //! is ALSO saved to Postgres as a write-only archive (the handler never reads
 //! it back).
 
-use axum::{
-    extract::State,
-    http::HeaderMap,
-    Json,
-};
+use axum::{Json, extract::State, http::HeaderMap};
 // `async fn` requires edition 2018+; the crate is edition 2024 but the
 // lint wrapper below runs a bare `rustc` — this import is a no-op that
 // makes the edition explicit for tooling.
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::{AppError, AppResult};
 use crate::search::builder::SearchParams;
 use crate::search::parser::{
-    extract_excluded_terms, extract_field_queries, extract_fielded_terms,
-    extract_text_tsquery, parse_query,
+    extract_excluded_terms, extract_field_queries, extract_fielded_terms, extract_text_tsquery,
+    parse_query,
 };
-use crate::search::routes::{run_search, SearchResponseEnvelope};
+use crate::search::routes::{SearchResponseEnvelope, run_search};
 use crate::server::AppState;
 
 use super::ask_cache::{
@@ -187,15 +183,8 @@ async fn log_ask_analytics(
     } else {
         format!("[ask-plain] {nl_query}")
     };
-    if let Err(e) = crate::db::queries::insert_search_query(
-        db,
-        &marked,
-        total,
-        None,
-        client_id,
-        user_id,
-    )
-    .await
+    if let Err(e) =
+        crate::db::queries::insert_search_query(db, &marked, total, None, client_id, user_id).await
     {
         tracing::warn!(error = %e, "failed to log ask query for analytics");
     }
@@ -299,7 +288,8 @@ pub async fn ask_handler(
             .or_else(|| cached.as_str().map(|s| s.to_string()));
         let v2 = v2.unwrap_or_else(|| nl.clone());
         tracing::debug!("ask translation cache hit (redis) for {nl:?}");
-        let result = run_ask_search(&state, &nl, &v2, true, client_id.as_deref(), auth.user_id).await;
+        let result =
+            run_ask_search(&state, &nl, &v2, true, client_id.as_deref(), auth.user_id).await;
         // Also populate the full response cache on this path (translation hit
         // but response miss — e.g. first request after deploy).
         if let Ok(Json(ref val)) = result {
@@ -327,7 +317,15 @@ pub async fn ask_handler(
         }
     };
 
-    let result = run_ask_search(&state, &nl, &v2, translated, client_id.as_deref(), auth.user_id).await;
+    let result = run_ask_search(
+        &state,
+        &nl,
+        &v2,
+        translated,
+        client_id.as_deref(),
+        auth.user_id,
+    )
+    .await;
     if let Ok(Json(ref val)) = result {
         set_cached_ask_response(&mut redis, &nl, val).await;
     }
@@ -338,7 +336,9 @@ pub async fn ask_handler(
 /// request into a v2 search query string (Ollama, best-effort) — falls back
 /// to the raw NL so callers always get a usable search link. Never fails.
 pub async fn translate_for_request(state: &Arc<AppState>, nl: &str) -> String {
-    translate_with_ollama(state, nl).await.unwrap_or_else(|| nl.to_string())
+    translate_with_ollama(state, nl)
+        .await
+        .unwrap_or_else(|| nl.to_string())
 }
 
 /// Call Ollama and validate the reply. Returns `None` on any failure
@@ -354,7 +354,9 @@ async fn translate_with_ollama(state: &Arc<AppState>, nl: &str) -> Option<String
     // past that.
     let reply = match tokio::time::timeout(
         std::time::Duration::from_secs(25),
-        state.ollama.generate_json(&prompt, &state.config.ollama_chat_model),
+        state
+            .ollama
+            .generate_json(&prompt, &state.config.ollama_chat_model),
     )
     .await
     {
@@ -389,7 +391,15 @@ async fn run_ask_search(
     let envelope: SearchResponseEnvelope = run_search(state, params).await?;
 
     // Best-effort analytics with the NL marker (never fails the request).
-    log_ask_analytics(&state.db, nl, envelope.total, translated, client_id, user_id).await;
+    log_ask_analytics(
+        &state.db,
+        nl,
+        envelope.total,
+        translated,
+        client_id,
+        user_id,
+    )
+    .await;
 
     Ok(Json(json!({
         "total": envelope.total,
@@ -443,15 +453,24 @@ mod tests {
     #[test]
     fn validate_clamps_long_fields() {
         let long = "x".repeat(MAX_ASK_LEN + 10);
-        assert!(validate_llm_params(&long).is_none(), "overlong output rejected");
+        assert!(
+            validate_llm_params(&long).is_none(),
+            "overlong output rejected"
+        );
     }
 
     #[test]
     fn validate_rejects_empty_and_junk() {
         assert!(validate_llm_params("").is_none());
         assert!(validate_llm_params("   ").is_none());
-        assert!(validate_llm_params("::").is_none(), "structural junk rejected");
-        assert!(validate_llm_params("{}").is_none(), "json braces not a query");
+        assert!(
+            validate_llm_params("::").is_none(),
+            "structural junk rejected"
+        );
+        assert!(
+            validate_llm_params("{}").is_none(),
+            "json braces not a query"
+        );
     }
 
     #[test]

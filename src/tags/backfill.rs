@@ -97,10 +97,7 @@ pub async fn backfill_scores(pool: &PgPool) -> Result<Vec<FicScoreSummary>, sqlx
 /// Fetch (url_id, tag_id, name) for tags of `tag_type_id` whose fic has
 /// *no* nonzero score of that type (i.e. all of them are still 0 — the
 /// pre-scoring state). Ordered by url_id, created_at, tag_id.
-async fn fetch_zero_scored(
-    pool: &PgPool,
-    tag_type_id: i16,
-) -> Result<Vec<TagRow>, sqlx::Error> {
+async fn fetch_zero_scored(pool: &PgPool, tag_type_id: i16) -> Result<Vec<TagRow>, sqlx::Error> {
     sqlx::query_as::<_, (String, i32, String)>(
         r#"SELECT ft.url_id, ft.tag_id, t.name
            FROM fic_tags ft
@@ -121,7 +118,11 @@ async fn fetch_zero_scored(
     .await
     .map(|rows| {
         rows.into_iter()
-            .map(|(url_id, tag_id, name)| TagRow { url_id, tag_id, name })
+            .map(|(url_id, tag_id, name)| TagRow {
+                url_id,
+                tag_id,
+                name,
+            })
             .collect()
     })
 }
@@ -160,9 +161,21 @@ mod tests {
     #[test]
     fn group_by_fic_preserves_order() {
         let rows = vec![
-            TagRow { url_id: "a".into(), tag_id: 1, name: "x".into() },
-            TagRow { url_id: "a".into(), tag_id: 2, name: "y".into() },
-            TagRow { url_id: "b".into(), tag_id: 3, name: "z".into() },
+            TagRow {
+                url_id: "a".into(),
+                tag_id: 1,
+                name: "x".into(),
+            },
+            TagRow {
+                url_id: "a".into(),
+                tag_id: 2,
+                name: "y".into(),
+            },
+            TagRow {
+                url_id: "b".into(),
+                tag_id: 3,
+                name: "z".into(),
+            },
         ];
         let groups = group_by_fic(&rows);
         assert_eq!(groups.len(), 2);

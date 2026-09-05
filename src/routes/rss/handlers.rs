@@ -11,8 +11,8 @@ use crate::error::AppError;
 use crate::server::AppState;
 
 use super::build::{
-    atom_feed, atom_response, entry_for_fic, fetch_fic, fetch_followed_updates,
-    fetch_new_arrivals, iso_now, FeedQuery,
+    FeedQuery, atom_feed, atom_response, entry_for_fic, fetch_fic, fetch_followed_updates,
+    fetch_new_arrivals, iso_now,
 };
 
 /// Resolve the authenticated user id from a feed request.
@@ -80,7 +80,10 @@ pub async fn follows_feed(
     let user_id = authed_user_id(&headers, query.token.as_deref())
         .ok_or_else(|| AppError::Unauthorized("Feed token required (login)".to_string()))?;
 
-    let limit = query.limit.unwrap_or(super::MAX_ENTRIES).clamp(1, super::MAX_ENTRIES);
+    let limit = query
+        .limit
+        .unwrap_or(super::MAX_ENTRIES)
+        .clamp(1, super::MAX_ENTRIES);
     let rows = fetch_followed_updates(&state, user_id, limit).await?;
     let now = iso_now();
 

@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use chrono::TimeZone;
 use regex_lite::Regex;
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct WattpadScraper;
 
@@ -30,10 +30,15 @@ impl WattpadScraper {
 #[async_trait]
 impl SiteScraper for WattpadScraper {
     fn can_handle(&self, url: &str) -> bool {
-        url.contains("wattpad.com/story/") || url.contains("wattpad.com/") && url.chars().any(|c| c.is_ascii_digit())
+        url.contains("wattpad.com/story/")
+            || url.contains("wattpad.com/") && url.chars().any(|c| c.is_ascii_digit())
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let story_id = Self::extract_story_id(url)
             .ok_or_else(|| ScrapeError::ParseError("no story id in Wattpad URL".into()))?;
 
@@ -66,7 +71,11 @@ impl SiteScraper for WattpadScraper {
         // Tags → extra_meta (genre list).
         let tags: Vec<String> = v["tags"]
             .as_array()
-            .map(|a| a.iter().filter_map(|t| t.as_str().map(|s| s.to_string())).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
         Ok(FicMetadata {
@@ -85,11 +94,7 @@ impl SiteScraper for WattpadScraper {
             author_url: format!("https://www.wattpad.com/user/{author}"),
             author_local_id: author.clone(),
             content_hash: None,
-            extra_meta: Some(format!(
-                "tags={};mature={};",
-                tags.join(","),
-                mature
-            )),
+            extra_meta: Some(format!("tags={};mature={};", tags.join(","), mature)),
             raw_extended_meta: None,
         })
     }
@@ -99,12 +104,7 @@ impl SiteScraper for WattpadScraper {
         client: &reqwest::Client,
         meta: &FicMetadata,
     ) -> Result<Vec<Chapter>, ScrapeError> {
-        let story_id = meta
-            .source
-            .rsplit('/')
-            .next()
-            .unwrap_or("")
-            .to_string();
+        let story_id = meta.source.rsplit('/').next().unwrap_or("").to_string();
         let api_url = API_STORY.replace("{id}", &story_id);
         let body = http::fetch(client, &api_url).await?;
         let v: serde_json::Value = serde_json::from_str(&body)
@@ -166,8 +166,16 @@ mod tests {
 
     #[test]
     fn extracts_story_id() {
-        assert_eq!(WattpadScraper::extract_story_id("https://www.wattpad.com/story/1234567-title").as_deref(), Some("1234567"));
-        assert_eq!(WattpadScraper::extract_story_id("https://www.wattpad.com/987654-chapter-title").as_deref(), Some("987654"));
+        assert_eq!(
+            WattpadScraper::extract_story_id("https://www.wattpad.com/story/1234567-title")
+                .as_deref(),
+            Some("1234567")
+        );
+        assert_eq!(
+            WattpadScraper::extract_story_id("https://www.wattpad.com/987654-chapter-title")
+                .as_deref(),
+            Some("987654")
+        );
     }
 
     #[test]

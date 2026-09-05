@@ -15,8 +15,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 
 pub struct ASexStoriesScraper {
     adult_ok: AtomicBool,
@@ -56,15 +56,22 @@ impl SiteScraper for ASexStoriesScraper {
             self.adult_ok.store(true, Ordering::Relaxed);
             Ok(())
         } else {
-            Err(ScrapeError::AuthRequired("asexstories: is_adult not set".into()))
+            Err(ScrapeError::AuthRequired(
+                "asexstories: is_adult not set".into(),
+            ))
         }
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         if !self.adult_ok.load(Ordering::Relaxed) {
             return Err(ScrapeError::AuthRequired("asexstories: adult gate".into()));
         }
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("asexstories: bad url".into()))?;
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("asexstories: bad url".into()))?;
         let html = http::fetch(client, url).await?;
 
         if html.contains("Page Not Found.") {
@@ -267,7 +274,12 @@ mod tests {
 
     #[test]
     fn parses_story_id() {
-        assert_eq!(ASexStoriesScraper::story_id("http://www.asexstories.com/Halloween-party-with-the-phantom/"), Some("Halloween-party-with-the-phantom".to_string()));
+        assert_eq!(
+            ASexStoriesScraper::story_id(
+                "http://www.asexstories.com/Halloween-party-with-the-phantom/"
+            ),
+            Some("Halloween-party-with-the-phantom".to_string())
+        );
         assert_eq!(ASexStoriesScraper::story_id("https://x.com/foo"), None);
     }
 
@@ -282,7 +294,11 @@ mod tests {
         let html = r#"<html><body><div class="story-block"><p>Story text.</p></div></body></html>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("div.story-block").unwrap();
-        let s = doc.select(&sel).next().map(|el| el.inner_html()).unwrap_or_default();
+        let s = doc
+            .select(&sel)
+            .next()
+            .map(|el| el.inner_html())
+            .unwrap_or_default();
         assert!(s.contains("Story text."));
     }
 }

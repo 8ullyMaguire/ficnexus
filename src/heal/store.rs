@@ -4,8 +4,8 @@
 //! sqlx gotcha from the fichub-development reference — never `NaiveDateTime`).
 
 use chrono::{DateTime, Utc};
-use sqlx::PgPool;
 use sqlx::FromRow;
+use sqlx::PgPool;
 
 /// A `scrape_failures` row (mirrors migration 029).
 #[derive(Debug, Clone, FromRow)]
@@ -73,7 +73,10 @@ pub struct PendingExportRow {
 }
 
 /// Pending (uncompleted) export requests, oldest first.
-pub async fn list_pending_exports(pool: &PgPool, limit: i64) -> Result<Vec<PendingExportRow>, sqlx::Error> {
+pub async fn list_pending_exports(
+    pool: &PgPool,
+    limit: i64,
+) -> Result<Vec<PendingExportRow>, sqlx::Error> {
     sqlx::query_as::<_, PendingExportRow>(
         r#"SELECT id, url, format, client_ip::text, client_id, status, attempts,
                   error_kind, created_at, completed_at
@@ -107,11 +110,7 @@ pub async fn recent_failures(
 }
 
 /// Mark a failure resolved (used by later milestones; kept for completeness).
-pub async fn mark_resolved(
-    pool: &PgPool,
-    id: i64,
-    resolution: &str,
-) -> Result<bool, sqlx::Error> {
+pub async fn mark_resolved(pool: &PgPool, id: i64, resolution: &str) -> Result<bool, sqlx::Error> {
     let res = sqlx::query(
         "UPDATE scrape_failures SET resolved_at = now(), resolution = $2 WHERE id = $1",
     )

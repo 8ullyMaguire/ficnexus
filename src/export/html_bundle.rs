@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 
 use md5::{Digest, Md5};
 use uuid::Uuid;
-use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 use zip::ZipWriter;
+use zip::write::SimpleFileOptions;
 
 use crate::export::ExportError;
 use crate::scrape::{Chapter, FicMetadata};
@@ -155,8 +155,7 @@ pub async fn create_html_bundle(
 
     // ---- bundle into ZIP ----------------------------------------------------
     let zip_path = work_dir.join("bundle.zip");
-    let zip_file =
-        fs::File::create(&zip_path).map_err(|e| ExportError::IoError(e.to_string()))?;
+    let zip_file = fs::File::create(&zip_path).map_err(|e| ExportError::IoError(e.to_string()))?;
     let mut zip = ZipWriter::new(zip_file);
 
     let options = SimpleFileOptions::default()

@@ -8,11 +8,11 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Query, State},
     Json,
+    extract::{Query, State},
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
@@ -124,10 +124,7 @@ pub async fn search_suggest_handler(
                 .iter()
                 .enumerate()
                 .map(|(i, item)| {
-                    let overlap = crate::recommender::engine::tag_overlap(
-                        &[item.id],
-                        &top_ids,
-                    );
+                    let overlap = crate::recommender::engine::tag_overlap(&[item.id], &top_ids);
                     (overlap, i)
                 })
                 .collect();
@@ -145,7 +142,14 @@ pub async fn search_suggest_handler(
             let n_for_you = reordered
                 .iter()
                 .take(5)
-                .filter(|&&i| overlaps.iter().find(|(_, j)| *j == i).map(|(o, _)| *o).unwrap_or(0.0) > 0.0)
+                .filter(|&&i| {
+                    overlaps
+                        .iter()
+                        .find(|(_, j)| *j == i)
+                        .map(|(o, _)| *o)
+                        .unwrap_or(0.0)
+                        > 0.0
+                })
                 .count();
 
             let mut new_items: Vec<SuggestItem> = Vec::with_capacity(items.len());
@@ -205,7 +209,11 @@ mod tests {
     /// Popular order: higher usage first, ties broken by name.
     #[test]
     fn popular_ranking_higher_usage_first() {
-        let mut items = vec![item(1, "Angst", 3), item(2, "Fluff", 9), item(3, "Adventure", 5)];
+        let mut items = vec![
+            item(1, "Angst", 3),
+            item(2, "Fluff", 9),
+            item(3, "Adventure", 5),
+        ];
         items.sort_by(|a, b| {
             b.usage_count
                 .cmp(&a.usage_count)
@@ -218,7 +226,11 @@ mod tests {
     /// Ties in usage fall back to name order (the SQL ORDER BY contract).
     #[test]
     fn popular_ranking_ties_broken_by_name() {
-        let mut items = vec![item(1, "Zombies", 5), item(2, "Aliens", 5), item(3, "Bots", 5)];
+        let mut items = vec![
+            item(1, "Zombies", 5),
+            item(2, "Aliens", 5),
+            item(3, "Bots", 5),
+        ];
         items.sort_by(|a, b| {
             b.usage_count
                 .cmp(&a.usage_count)
@@ -245,9 +257,18 @@ mod tests {
     #[test]
     fn tag_type_filter_keeps_only_matching_type() {
         let mut items = vec![
-            SuggestItem { tag_type_id: 1, ..item(1, "Harry Potter", 5) },
-            SuggestItem { tag_type_id: 4, ..item(2, "Fluff", 5) },
-            SuggestItem { tag_type_id: 4, ..item(3, "Angst", 5) },
+            SuggestItem {
+                tag_type_id: 1,
+                ..item(1, "Harry Potter", 5)
+            },
+            SuggestItem {
+                tag_type_id: 4,
+                ..item(2, "Fluff", 5)
+            },
+            SuggestItem {
+                tag_type_id: 4,
+                ..item(3, "Angst", 5)
+            },
         ];
         items.retain(|i| i.tag_type_id == 4);
         assert_eq!(items.len(), 2);
@@ -259,14 +280,23 @@ mod tests {
     #[test]
     fn personal_rerank_marks_for_you_and_reorders() {
         // Popular order: Fluff (9), Angst (5), Adventure (3).
-        let items = vec![item(1, "Fluff", 9), item(2, "Angst", 5), item(3, "Adventure", 3)];
+        let items = vec![
+            item(1, "Fluff", 9),
+            item(2, "Angst", 5),
+            item(3, "Adventure", 3),
+        ];
         // User's top tags are exactly { Angst, Adventure }.
         let top_ids = vec![2, 3];
 
         let mut overlaps: Vec<(f64, usize)> = items
             .iter()
             .enumerate()
-            .map(|(i, it)| (crate::recommender::engine::tag_overlap(&[it.id], &top_ids), i))
+            .map(|(i, it)| {
+                (
+                    crate::recommender::engine::tag_overlap(&[it.id], &top_ids),
+                    i,
+                )
+            })
             .collect();
         overlaps.sort_by(|(oa, ia), (ob, ib)| {
             ob.partial_cmp(oa)
@@ -278,7 +308,14 @@ mod tests {
         let n_for_you = reordered
             .iter()
             .take(5)
-            .filter(|&&i| overlaps.iter().find(|(_, j)| *j == i).map(|(o, _)| *o).unwrap_or(0.0) > 0.0)
+            .filter(|&&i| {
+                overlaps
+                    .iter()
+                    .find(|(_, j)| *j == i)
+                    .map(|(o, _)| *o)
+                    .unwrap_or(0.0)
+                    > 0.0
+            })
             .count();
 
         let names: Vec<&str> = reordered.iter().map(|&i| items[i].name.as_str()).collect();
@@ -297,7 +334,12 @@ mod tests {
         let mut overlaps: Vec<(f64, usize)> = items
             .iter()
             .enumerate()
-            .map(|(i, it)| (crate::recommender::engine::tag_overlap(&[it.id], &top_ids), i))
+            .map(|(i, it)| {
+                (
+                    crate::recommender::engine::tag_overlap(&[it.id], &top_ids),
+                    i,
+                )
+            })
             .collect();
         overlaps.sort_by(|(oa, ia), (ob, ib)| {
             ob.partial_cmp(oa)
@@ -309,7 +351,14 @@ mod tests {
         let n_for_you = reordered
             .iter()
             .take(5)
-            .filter(|&&i| overlaps.iter().find(|(_, j)| *j == i).map(|(o, _)| *o).unwrap_or(0.0) > 0.0)
+            .filter(|&&i| {
+                overlaps
+                    .iter()
+                    .find(|(_, j)| *j == i)
+                    .map(|(o, _)| *o)
+                    .unwrap_or(0.0)
+                    > 0.0
+            })
             .count();
 
         let names: Vec<&str> = reordered.iter().map(|&i| items[i].name.as_str()).collect();

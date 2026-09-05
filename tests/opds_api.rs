@@ -14,10 +14,10 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
 // use serde_json::Value;
 use tower::ServiceExt; // oneshot
@@ -55,8 +55,8 @@ async fn app() -> Router {
     let config = test_config();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -77,21 +77,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -102,7 +110,7 @@ async fn app() -> Router {
             test_config(),
             scraper_registry,
         ),
-                suggest_cache: Arc::new(tokio::sync::Mutex::new(None)),
+        suggest_cache: Arc::new(tokio::sync::Mutex::new(None)),
         heal: fichub::heal::HealService::new(db.clone(), config.clone()),
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
@@ -114,10 +122,7 @@ async fn app() -> Router {
             "/opds/shelves",
             get(fichub::routes::opds::shelves::shelf_list),
         )
-        .route(
-            "/opds",
-            get(fichub::routes::opds::feeds::root_catalog),
-        )
+        .route("/opds", get(fichub::routes::opds::feeds::root_catalog))
         .with_state(state)
 }
 
@@ -154,7 +159,10 @@ async fn opds_shelves_unauthenticated_returns_auth_feed() {
         "content-type must be XML/Atom, got: {ct}"
     );
     assert!(body.contains("<feed"), "body must be an Atom feed");
-    assert!(body.contains("rel=\"self\""), "feed must have rel=self link");
+    assert!(
+        body.contains("rel=\"self\""),
+        "feed must have rel=self link"
+    );
     assert!(
         body.contains("Authentication required"),
         "unauthenticated feed should advertise auth required: {body}"

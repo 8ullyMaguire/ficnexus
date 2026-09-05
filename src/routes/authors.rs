@@ -108,20 +108,15 @@ pub async fn get_author_profile(
             .await
             .unwrap_or_default();
 
-            let suggestions: Vec<Value> = suggest_alternatives(
-                &id.to_string(),
-                &recent_names,
-                5,
-                |(_, name)| name.as_str(),
-            )
-            .into_iter()
-            .map(|(sid, name)| {
-                json!({ "id": sid, "canonical_name": name })
-            })
-            .collect();
+            let suggestions: Vec<Value> =
+                suggest_alternatives(&id.to_string(), &recent_names, 5, |(_, name)| name.as_str())
+                    .into_iter()
+                    .map(|(sid, name)| json!({ "id": sid, "canonical_name": name }))
+                    .collect();
 
             return Err(AppError::NotFound(
-                json!({"err": -5, "msg": "Author not found", "suggestions": suggestions}).to_string(),
+                json!({"err": -5, "msg": "Author not found", "suggestions": suggestions})
+                    .to_string(),
             ));
         }
     };

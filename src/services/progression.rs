@@ -5,8 +5,8 @@
 
 use sqlx::PgPool;
 
-use crate::progression::Feature;
 use crate::error::AppError;
+use crate::progression::Feature;
 
 // ── XP Awarding ──────────────────────────────────────────────────────────────
 
@@ -112,7 +112,10 @@ pub async fn award_xp(
         .fetch_one(pool)
         .await?;
         if streak_count >= boost_at {
-            actual_xp = ((base_xp as f64) * mult * (1.0 + (streak_count as f64 - boost_at as f64) / boost_at.max(1) as f64)).round() as i64;
+            actual_xp = ((base_xp as f64)
+                * mult
+                * (1.0 + (streak_count as f64 - boost_at as f64) / boost_at.max(1) as f64))
+                .round() as i64;
         }
     }
 
@@ -138,10 +141,15 @@ pub async fn award_xp(
     // Level-up + residual reset lives in the shared helper so award_xp and
     // award_scaled_xp share exactly one level/rank mutation path.
     if actual_xp > 0 {
-        (level_up, xp_residual) = apply_xp_and_level_up(pool, user_id, event_type, actual_xp as i32, None).await?;
+        (level_up, xp_residual) =
+            apply_xp_and_level_up(pool, user_id, event_type, actual_xp as i32, None).await?;
     }
 
-    Ok(if level_up { xp_residual as i64 } else { actual_xp })
+    Ok(if level_up {
+        xp_residual as i64
+    } else {
+        actual_xp
+    })
 }
 
 /// Like `award_xp` but uses an externally-computed XP amount instead of the
@@ -212,7 +220,8 @@ pub async fn award_scaled_xp(
     // value — the completion bonus is a single large award, not a streak. If streak
     // config is ever needed on a scaled source, handle it in the caller before this fn.
     // Delegate to the shared TX path: insert event + level-up with the resolved amount.
-    let (level_up, xp_residual) = apply_xp_and_level_up(pool, user_id, event_type, actual_xp as i32, source_ref).await?;
+    let (level_up, xp_residual) =
+        apply_xp_and_level_up(pool, user_id, event_type, actual_xp as i32, source_ref).await?;
     let _ = (level_up, xp_residual);
     Ok(actual_xp)
 }
@@ -236,11 +245,20 @@ async fn apply_xp_and_level_up(
     .bind(user_id).bind(event_type).bind(xp).bind(source_ref)
     .execute(&mut *tx).await.map_err(|e| AppError::Database(format!("xp_events insert failed: {e}")))?;
     if xp > 0 {
-        let cur: (i64,) = sqlx::query_as("SELECT COALESCE(xp,0) FROM users WHERE id = $1 FOR UPDATE")
-            .bind(user_id).fetch_one(&mut *tx).await.map_err(|e| AppError::Database(format!("user row lock failed: {e}")))?;
+        let cur: (i64,) =
+            sqlx::query_as("SELECT COALESCE(xp,0) FROM users WHERE id = $1 FOR UPDATE")
+                .bind(user_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| AppError::Database(format!("user row lock failed: {e}")))?;
         let old_level = crate::progression::xp_to_level(cur.0);
-        let new_xp: (i64,) = sqlx::query_as("UPDATE users SET xp = xp + $1 WHERE id = $2 RETURNING xp")
-            .bind(xp).bind(user_id).fetch_one(&mut *tx).await.map_err(|e| AppError::Database(format!("users xp update failed: {e}")))?;
+        let new_xp: (i64,) =
+            sqlx::query_as("UPDATE users SET xp = xp + $1 WHERE id = $2 RETURNING xp")
+                .bind(xp)
+                .bind(user_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| AppError::Database(format!("users xp update failed: {e}")))?;
         let new_level = crate::progression::xp_to_level(new_xp.0);
         if new_level > old_level {
             let threshold = crate::progression::xp_for_level(new_level);
@@ -248,14 +266,23 @@ async fn apply_xp_and_level_up(
             xp_residual = residual as i32;
             level_up = true;
             sqlx::query("UPDATE users SET xp = $1, level = $2, rank = $3 WHERE id = $4")
-                .bind(residual).bind(new_level as i16).bind(crate::progression::xp_to_rank(new_level) as i16).bind(user_id)
-                .execute(&mut *tx).await.map_err(|e| AppError::Database(format!("users level-up reset failed: {e}")))?;
+                .bind(residual)
+                .bind(new_level as i16)
+                .bind(crate::progression::xp_to_rank(new_level) as i16)
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| AppError::Database(format!("users level-up reset failed: {e}")))?;
             sqlx::query("INSERT INTO xp_events (user_id, event_type, xp, source_ref, level_up, xp_residual) VALUES ($1, 'level_up', 0, NULL, true, $2)")
                 .bind(user_id).bind(xp_residual).execute(&mut *tx).await.map_err(|e| AppError::Database(format!("level_up event insert failed: {e}")))?;
         } else {
             sqlx::query("UPDATE users SET level = $1, rank = $2 WHERE id = $3")
-                .bind(new_level as i16).bind(crate::progression::xp_to_rank(new_level) as i16).bind(user_id)
-                .execute(&mut *tx).await.map_err(|e| AppError::Database(format!("users level/rank update failed: {e}")))?;
+                .bind(new_level as i16)
+                .bind(crate::progression::xp_to_rank(new_level) as i16)
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| AppError::Database(format!("users level/rank update failed: {e}")))?;
         }
     }
     tx.commit().await?;
@@ -333,11 +360,7 @@ pub async fn recompute_unlocks(pool: &PgPool, user_id: i32) -> Result<Vec<String
 /// - The user has a user_features row with `enabled = true`
 /// - The gate condition is met (rank/trust/xp/none)
 /// - If `requires_feature` is set, that prerequisite feature is also enabled
-pub async fn can_access(
-    pool: &PgPool,
-    user_id: i32,
-    feature_slug: &str,
-) -> Result<bool, AppError> {
+pub async fn can_access(pool: &PgPool, user_id: i32, feature_slug: &str) -> Result<bool, AppError> {
     // Fetch the feature and user's relationship
     let row = sqlx::query_as::<_, (i16, i16, i64, Option<bool>, String, i32, Option<String>)>(
         "SELECT u.rank, u.trust, u.xp, uf.enabled, f.gate_type, f.gate_value, f.requires_feature
@@ -420,9 +443,12 @@ mod tests {
         let l100 = xp_for_level(100);
         assert!(l2 > l1, "L2 cumulative must exceed L1 cumulative");
         assert!(l2 - l1 < 500, "early level-up should be fast (<500 XP)");
-        assert!(l100 - l99 > (l2 - l1) * 100,
+        assert!(
+            l100 - l99 > (l2 - l1) * 100,
             "late level-up (L99->L100 = {}) must be >100x early (L1->L2 = {})",
-            l100 - l99, l2 - l1);
+            l100 - l99,
+            l2 - l1
+        );
     }
 
     #[test]
@@ -441,7 +467,9 @@ mod tests {
         let total_after = xp_at_l2_boundary + 50;
         let new_level = xp_to_level(total_after);
         assert!(new_level >= 2);
-        assert!(total_after > xp_for_level(new_level),
-            "residual XP above new level floor must remain for the next level-up");
+        assert!(
+            total_after > xp_for_level(new_level),
+            "residual XP above new level floor must remain for the next level-up"
+        );
     }
 }

@@ -9,19 +9,28 @@
 //!
 //! AppState construction is copied EXACTLY from tests/admin_api.rs.
 
-use std::sync::{Mutex, OnceLock};
-use axum::{body::Body, http::{Request, StatusCode}, routing::get, Router};
+use axum::{
+    Router,
+    body::Body,
+    http::{Request, StatusCode},
+    routing::get,
+};
 use serde_json::Value;
 use sqlx::Row;
+use std::sync::{Mutex, OnceLock};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
-    DB_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+    DB_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
 }
 
 async fn pool() -> sqlx::PgPool {
-    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
+    let url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
     sqlx::PgPool::connect(&url).await.expect("connect pool")
 }
 
@@ -32,8 +41,14 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
     let redis_client = redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL");
-    let redis = redis_client.get_multiplexed_async_connection().await.expect("redis conn");
-    let http_client = reqwest::Client::builder().user_agent("fichub-test/0.1.0").build().expect("reqwest");
+    let redis = redis_client
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis conn");
+    let http_client = reqwest::Client::builder()
+        .user_agent("fichub-test/0.1.0")
+        .build()
+        .expect("reqwest");
     let scraper_registry = Arc::new(fichub::scrape::registry::ScraperRegistry::new());
 
     let ollama_client = fichub::services::ollama::OllamaClient::new(
@@ -45,20 +60,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         rate_limiter: Box::new(
             fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-                redis_client.get_multiplexed_async_connection().await.expect("redis"),
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
                 false,
             )
             .await
             .expect("rate limiter"),
         ),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -69,7 +93,7 @@ async fn app() -> Router {
             fichub::config::Config::from_env(),
             scraper_registry,
         ),
-                suggest_cache: Arc::new(tokio::sync::Mutex::new(None)),
+        suggest_cache: Arc::new(tokio::sync::Mutex::new(None)),
         heal: fichub::heal::HealService::new(db.clone(), config.clone()),
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
@@ -77,7 +101,10 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/admin/search-analytics", get(fichub::routes::admin::admin_search_analytics))
+        .route(
+            "/api/admin/search-analytics",
+            get(fichub::routes::admin::admin_search_analytics),
+        )
         .route("/api/search", get(fichub::search::routes::search_handler))
         .with_state(state)
 }
@@ -108,7 +135,14 @@ fn auth_header(user_id: i32, username: &str, role: i16) -> String {
 }
 
 /// Seed a search_queries row at an offset relative to now (negative = past).
-async fn seed_search_query(db: &sqlx::PgPool, query: &str, total_results: i32, main_char_attr: Option<&str>, client_id: &str, hours_ago: i64) {
+async fn seed_search_query(
+    db: &sqlx::PgPool,
+    query: &str,
+    total_results: i32,
+    main_char_attr: Option<&str>,
+    client_id: &str,
+    hours_ago: i64,
+) {
     sqlx::query(
         r#"INSERT INTO search_queries (query, ts, total_results, main_char_attr, client_id)
            VALUES ($1, now() - ($2 * interval '1 hour'), $3, $4, $5)"#,
@@ -127,7 +161,10 @@ async fn seed_search_query(db: &sqlx::PgPool, query: &str, total_results: i32, m
 /// tests are re-runnable and never touch pre-existing analytics data.
 async fn cleanup(db: &sqlx::PgPool, users: &[&str], query_prefixes: &[&str]) {
     for u in users {
-        let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(db).await;
+        let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+            .bind(u)
+            .execute(db)
+            .await;
     }
     for p in query_prefixes {
         let _ = sqlx::query("DELETE FROM search_queries WHERE query LIKE $1")
@@ -147,11 +184,13 @@ async fn search_analytics_requires_role_10() {
 
     let low_role = seed_admin_user(&db, "searchan_low", 5).await;
     let res = app
-        .oneshot(Request::builder()
-            .uri("/api/admin/search-analytics")
-            .header("authorization", auth_header(low_role, "searchan_low", 5))
-            .body(Body::empty())
-            .unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/admin/search-analytics")
+                .header("authorization", auth_header(low_role, "searchan_low", 5))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::FORBIDDEN);
@@ -171,7 +210,17 @@ async fn search_analytics_returns_aggregates() {
 
     // Clean fixture rows up front (a previous failed run may have left rows
     // behind, since cleanup only runs on success) — keeps tests re-runnable.
-    cleanup(&db, &[], &["searchan_nomatch", "searchan_harry", "searchan_draco", "searchan_stale"]).await;
+    cleanup(
+        &db,
+        &[],
+        &[
+            "searchan_nomatch",
+            "searchan_harry",
+            "searchan_draco",
+            "searchan_stale",
+        ],
+    )
+    .await;
     // Also clear rows the sibling search_api suite inserted through the real
     // search flow (e.g. q=zzzznomatchzzz zero-result rows) — the top
     // zero-result assertion must only see our fixture.
@@ -182,36 +231,73 @@ async fn search_analytics_returns_aggregates() {
     seed_search_query(&db, "searchan_nomatch", 0, None, "client-a", 1).await;
     seed_search_query(&db, "searchan_nomatch", 0, None, "client-b", 2).await;
     // A result-bearing query, with a main_char_attr trope combo.
-    seed_search_query(&db, "searchan_harry", 5, Some("Harry Potter|Dark Harry Potter"), "client-a", 3).await;
-    seed_search_query(&db, "searchan_harry", 8, Some("Harry Potter|Dark Harry Potter"), "client-b", 4).await;
+    seed_search_query(
+        &db,
+        "searchan_harry",
+        5,
+        Some("Harry Potter|Dark Harry Potter"),
+        "client-a",
+        3,
+    )
+    .await;
+    seed_search_query(
+        &db,
+        "searchan_harry",
+        8,
+        Some("Harry Potter|Dark Harry Potter"),
+        "client-b",
+        4,
+    )
+    .await;
     // A different trope combo, single hit.
-    seed_search_query(&db, "searchan_draco", 2, Some("Draco Malfoy|Creature Fic"), "client-a", 5).await;
+    seed_search_query(
+        &db,
+        "searchan_draco",
+        2,
+        Some("Draco Malfoy|Creature Fic"),
+        "client-a",
+        5,
+    )
+    .await;
     // Old zero-result (outside 7-day window) — must NOT appear.
     seed_search_query(&db, "searchan_stale", 0, None, "client-a", 24 * 30).await;
 
     let res = app
-        .oneshot(Request::builder()
-            .uri("/api/admin/search-analytics")
-            .header("authorization", auth_header(admin, "searchan_admin", 10))
-            .body(Body::empty())
-            .unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/admin/search-analytics")
+                .header("authorization", auth_header(admin, "searchan_admin", 10))
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let body: Value = serde_json::from_slice(&axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body["err"], 0);
 
     // zero_result_queries: top 50 by frequency. Our fixture query (count 2)
     // must be the top entry; other zero-result rows from concurrent suites
     // (e.g. search_api) may also appear below it.
     let zeros = body["zero_result_queries"].as_array().unwrap();
-    assert_eq!(zeros[0]["query"], "searchan_nomatch", "fixture query is top zero-result: {body}");
+    assert_eq!(
+        zeros[0]["query"], "searchan_nomatch",
+        "fixture query is top zero-result: {body}"
+    );
     assert_eq!(zeros[0]["count"], 2);
 
     // trope_popularity: top combo first (2 hits), then the single-hit combo.
     let tropes = body["trope_popularity"].as_array().unwrap();
-    assert_eq!(tropes[0]["main_char_attr"], "Harry Potter|Dark Harry Potter");
+    assert_eq!(
+        tropes[0]["main_char_attr"],
+        "Harry Potter|Dark Harry Potter"
+    );
     assert_eq!(tropes[0]["count"], 2);
     assert_eq!(tropes[1]["main_char_attr"], "Draco Malfoy|Creature Fic");
     assert_eq!(tropes[1]["count"], 1);
@@ -225,9 +311,22 @@ async fn search_analytics_returns_aggregates() {
 
     // Zero-PII: no client_id anywhere in the payload.
     let raw = body.to_string();
-    assert!(!raw.contains("client-a") && !raw.contains("client-b"), "must not expose client ids: {raw}");
+    assert!(
+        !raw.contains("client-a") && !raw.contains("client-b"),
+        "must not expose client ids: {raw}"
+    );
 
-    cleanup(&db, &["searchan_admin"], &["searchan_nomatch", "searchan_harry", "searchan_draco", "searchan_stale"]).await;
+    cleanup(
+        &db,
+        &["searchan_admin"],
+        &[
+            "searchan_nomatch",
+            "searchan_harry",
+            "searchan_draco",
+            "searchan_stale",
+        ],
+    )
+    .await;
 }
 
 /// A real search through the router logs a search_queries row with the
@@ -255,7 +354,12 @@ async fn search_flow_logs_search_query_row() {
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
 
-    let body: Value = serde_json::from_slice(&axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(body["total"], 0);
 
     // The search must have been logged: query + total_results + main_char_attr + client_id.
@@ -268,8 +372,16 @@ async fn search_flow_logs_search_query_row() {
 
     assert_eq!(row.0, "searchan_flow_nomatch");
     assert_eq!(row.1, 0, "zero-result flag recorded");
-    assert_eq!(row.2.as_deref(), Some("Harry Potter|Dark Harry Potter"), "main_char_attr recorded raw");
-    assert_eq!(row.3.as_deref(), Some("searchan_flow_client"), "client_id from header recorded");
+    assert_eq!(
+        row.2.as_deref(),
+        Some("Harry Potter|Dark Harry Potter"),
+        "main_char_attr recorded raw"
+    );
+    assert_eq!(
+        row.3.as_deref(),
+        Some("searchan_flow_client"),
+        "client_id from header recorded"
+    );
 
     cleanup(&db, &[], &["searchan_flow"]).await;
 }

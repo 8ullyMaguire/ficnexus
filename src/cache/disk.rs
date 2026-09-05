@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use crate::cache::EType;
 use crate::error::AppResult;
@@ -67,7 +67,7 @@ pub fn clear_stale_cache(
 
 /// Compute MD5 hash of a file
 pub fn file_md5(path: &Path) -> AppResult<String> {
-    use md5::{Md5, Digest};
+    use md5::{Digest, Md5};
     let data = fs::read(path)?;
     let hash = Md5::digest(&data);
     Ok(hex::encode(hash))

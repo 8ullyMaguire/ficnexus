@@ -2,8 +2,11 @@
 //! One keypair per (actor_type, actor_id) — actor_type in {"instance","user","category"}.
 //! Stored PEM in ap_keys (private_pem, public_pem). Public fetched by keyId URI.
 
-use rsa::{RsaPrivateKey, RsaPublicKey, pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey, EncodeRsaPublicKey, LineEnding}};
 use rand::rngs::OsRng;
+use rsa::{
+    RsaPrivateKey, RsaPublicKey,
+    pkcs1::{DecodeRsaPrivateKey, EncodeRsaPrivateKey, EncodeRsaPublicKey, LineEnding},
+};
 
 /// Generate a fresh 2048-bit RSA keypair, return (private_pem PKCS#1, public_pem PKCS#1).
 pub fn generate_keypair() -> anyhow::Result<(String, String)> {
@@ -24,10 +27,19 @@ pub fn public_pem_from_private(private_pem: &str) -> anyhow::Result<String> {
 
 /// Ensure a keypair exists for (actor_type, actor_id); return (private_pem, public_pem).
 /// Uses INSERT ... ON CONFLICT DO NOTHING + SELECT so concurrent callers don't race.
-pub async fn ensure_keypair(db: &sqlx::PgPool, actor_type: &str, actor_id: i64) -> anyhow::Result<(String, String)> {
+pub async fn ensure_keypair(
+    db: &sqlx::PgPool,
+    actor_type: &str,
+    actor_id: i64,
+) -> anyhow::Result<(String, String)> {
     if let Some(row) = sqlx::query_as::<_, (String, String)>(
-        "SELECT private_pem, public_pem FROM ap_keys WHERE actor_type = $1 AND actor_id = $2"
-    ).bind(actor_type).bind(actor_id).fetch_optional(db).await? {
+        "SELECT private_pem, public_pem FROM ap_keys WHERE actor_type = $1 AND actor_id = $2",
+    )
+    .bind(actor_type)
+    .bind(actor_id)
+    .fetch_optional(db)
+    .await?
+    {
         return Ok(row);
     }
     let (priv_pem, pub_pem) = generate_keypair()?;
@@ -35,33 +47,59 @@ pub async fn ensure_keypair(db: &sqlx::PgPool, actor_type: &str, actor_id: i64) 
     let _ = sqlx::query("INSERT INTO ap_keys (actor_type, actor_id, private_pem, public_pem) VALUES ($1,$2,$3,$4) ON CONFLICT (actor_type, actor_id) DO NOTHING")
         .bind(actor_type).bind(actor_id).bind(&priv_pem).bind(&pub_pem).execute(db).await;
     if let Some(row) = sqlx::query_as::<_, (String, String)>(
-        "SELECT private_pem, public_pem FROM ap_keys WHERE actor_type = $1 AND actor_id = $2"
-    ).bind(actor_type).bind(actor_id).fetch_optional(db).await? {
+        "SELECT private_pem, public_pem FROM ap_keys WHERE actor_type = $1 AND actor_id = $2",
+    )
+    .bind(actor_type)
+    .bind(actor_id)
+    .fetch_optional(db)
+    .await?
+    {
         return Ok(row);
     }
     Ok((priv_pem, pub_pem))
 }
 
 /// Fetch the public PEM for an actor (or generate one if missing — self-healing).
-pub async fn public_pem(db: &sqlx::PgPool, actor_type: &str, actor_id: i64) -> anyhow::Result<String> {
+pub async fn public_pem(
+    db: &sqlx::PgPool,
+    actor_type: &str,
+    actor_id: i64,
+) -> anyhow::Result<String> {
     let (_, pub_pem) = ensure_keypair(db, actor_type, actor_id).await?;
     Ok(pub_pem)
 }
 
 /// Public key for a keyId URI like https://example.com/actor#key or /actor/0#key.
 /// Returns None when the key doesn't exist yet.
-pub async fn public_pem_by_key_id(db: &sqlx::PgPool, key_id: &str, canonical_origin: &str) -> Option<String> {
+pub async fn public_pem_by_key_id(
+    db: &sqlx::PgPool,
+    key_id: &str,
+    canonical_origin: &str,
+) -> Option<String> {
     // keyId is origin + path + "#key" — strip fragment and origin.
-    let base = key_id.split('#').next().unwrap_or(key_id).trim_end_matches('/');
+    let base = key_id
+        .split('#')
+        .next()
+        .unwrap_or(key_id)
+        .trim_end_matches('/');
     let origin = canonical_origin.trim_end_matches('/');
     let path = base.strip_prefix(origin).unwrap_or(base);
     let (actor_type, actor_id) = match path {
         "/actor" | "/actor/0" | "/.well-known/ap-actor" => ("instance", 0i64),
         p if p.starts_with("/actor/") => ("user", p.trim_start_matches("/actor/").parse().ok()?),
         p if p.starts_with("/uid/") => ("user", p.trim_start_matches("/uid/").parse().ok()?),
-        p if p.starts_with("/category/") => ("category", p.trim_start_matches("/category/").parse().ok()?),
+        p if p.starts_with("/category/") => {
+            ("category", p.trim_start_matches("/category/").parse().ok()?)
+        }
         _ => return None,
     };
-    sqlx::query_scalar::<_, String>("SELECT public_pem FROM ap_keys WHERE actor_type = $1 AND actor_id = $2")
-        .bind(actor_type).bind(actor_id).fetch_optional(db).await.ok().flatten()
+    sqlx::query_scalar::<_, String>(
+        "SELECT public_pem FROM ap_keys WHERE actor_type = $1 AND actor_id = $2",
+    )
+    .bind(actor_type)
+    .bind(actor_id)
+    .fetch_optional(db)
+    .await
+    .ok()
+    .flatten()
 }

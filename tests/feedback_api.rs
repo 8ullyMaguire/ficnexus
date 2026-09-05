@@ -12,12 +12,12 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
-    body::Body,
-    http::{header, Request, StatusCode},
-    routing::{delete, get, post},
     Router,
+    body::Body,
+    http::{Request, StatusCode, header},
+    routing::{delete, get, post},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -44,8 +44,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -66,21 +66,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -99,13 +107,34 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/ratings", post(fichub::routes::social::rate_work_handler))
-        .route("/api/ratings/{work_id}", get(fichub::routes::social::get_ratings_handler))
-        .route("/api/reviews", post(fichub::routes::reviews::upsert_review_handler))
-        .route("/api/reviews/{id}", delete(fichub::routes::reviews::delete_review_handler))
-        .route("/api/works/{id}/reviews", get(fichub::routes::reviews::list_reviews_handler))
-        .route("/api/comments", post(fichub::routes::social::add_comment_handler))
-        .route("/api/comments/{work_id}", get(fichub::routes::social::list_comments_handler))
+        .route(
+            "/api/ratings",
+            post(fichub::routes::social::rate_work_handler),
+        )
+        .route(
+            "/api/ratings/{work_id}",
+            get(fichub::routes::social::get_ratings_handler),
+        )
+        .route(
+            "/api/reviews",
+            post(fichub::routes::reviews::upsert_review_handler),
+        )
+        .route(
+            "/api/reviews/{id}",
+            delete(fichub::routes::reviews::delete_review_handler),
+        )
+        .route(
+            "/api/works/{id}/reviews",
+            get(fichub::routes::reviews::list_reviews_handler),
+        )
+        .route(
+            "/api/comments",
+            post(fichub::routes::social::add_comment_handler),
+        )
+        .route(
+            "/api/comments/{work_id}",
+            get(fichub::routes::social::list_comments_handler),
+        )
         .with_state(state)
 }
 
@@ -254,16 +283,26 @@ async fn post_json(
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 async fn get_json(app: &Router, uri: &str) -> (StatusCode, Value) {
     let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────
@@ -293,14 +332,23 @@ async fn five_star_rating_roundtrip() {
     assert_eq!(body["avg_rating"], 4.0);
     assert_eq!(body["rating_count"], 1);
     assert_eq!(body["rating_distribution"]["4"], 1);
-    assert!(body.get("dislikes").is_none(), "dislikes must not be exposed: {body}");
-    assert!(body.get("negative_votes").is_none(), "internal signals must not leak: {body}");
+    assert!(
+        body.get("dislikes").is_none(),
+        "dislikes must not be exposed: {body}"
+    );
+    assert!(
+        body.get("negative_votes").is_none(),
+        "internal signals must not leak: {body}"
+    );
 
     let (_, got) = get_json(&app, &format!("/api/ratings/{wid}")).await;
     assert_eq!(got["err"], 0);
     assert_eq!(got["avg_rating"], 4.0);
     assert_eq!(got["rating_distribution"]["4"], 1);
-    assert!(got.get("dislikes").is_none(), "GET must not expose dislikes: {got}");
+    assert!(
+        got.get("dislikes").is_none(),
+        "GET must not expose dislikes: {got}"
+    );
 
     cleanup(&db, username).await;
 }
@@ -345,7 +393,10 @@ async fn legacy_binary_ratings_compat() {
     assert_eq!(body["rating_count"], 1, "only 5-star rows count: {body}");
     assert_eq!(body["avg_rating"], 5.0);
     assert_eq!(body["rating_distribution"]["5"], 1);
-    assert!(body.get("dislikes").is_none(), "legacy -1 must stay hidden: {body}");
+    assert!(
+        body.get("dislikes").is_none(),
+        "legacy -1 must stay hidden: {body}"
+    );
 
     // The rec-engine helper still sees the internal -1 signal.
     let signals = fichub::db::reviews::work_feedback_signals(&db, wid)
@@ -378,7 +429,11 @@ async fn invalid_star_values_rejected() {
             Some(&auth_header(uid)),
         )
         .await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "rating {bad} must 400: {body}");
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "rating {bad} must 400: {body}"
+        );
     }
 
     cleanup(&db, username).await;
@@ -418,9 +473,15 @@ async fn review_crud_and_upsert() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "upsert review: {body2}");
-    assert_eq!(body2["review"]["id"], review_id, "upsert must keep the same row");
+    assert_eq!(
+        body2["review"]["id"], review_id,
+        "upsert must keep the same row"
+    );
     assert_eq!(body2["review"]["rating"], 4);
-    assert!(body2["review"]["updated_at"].is_string(), "updated_at set on upsert");
+    assert!(
+        body2["review"]["updated_at"].is_string(),
+        "updated_at set on upsert"
+    );
 
     // Public list: 1 review with username, correct fields.
     let (_, list) = get_json(&app, &format!("/api/works/{wid}/reviews")).await;
@@ -460,8 +521,13 @@ async fn delete_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCod
     let req = builder.body(Body::empty()).unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 /// One review per user per work: a second user can review the same work.
@@ -497,7 +563,10 @@ async fn review_unique_per_user_work() {
     assert_eq!(s2, StatusCode::OK, "{b2}");
 
     let (_, list) = get_json(&app, &format!("/api/works/{wid}/reviews")).await;
-    assert_eq!(list["total"], 2, "two different users → two reviews: {list}");
+    assert_eq!(
+        list["total"], 2,
+        "two different users → two reviews: {list}"
+    );
 
     cleanup(&db, u1).await;
     cleanup(&db, u2).await;
@@ -524,25 +593,35 @@ async fn negative_review_hidden_from_public() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["review"]["constructive"], false, "negative review flagged");
+    assert_eq!(
+        body["review"]["constructive"], false,
+        "negative review flagged"
+    );
 
     let (_, list) = get_json(&app, &format!("/api/works/{wid}/reviews")).await;
     assert_eq!(list["total"], 0, "non-constructive review hidden: {list}");
 
     // Still in the DB for the rec engine, and still counts toward the stars.
-    let in_db: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM reviews WHERE work_id = $1 AND deleted_at IS NULL")
-            .bind(wid)
-            .fetch_one(&db)
-            .await
-            .expect("db count");
+    let in_db: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM reviews WHERE work_id = $1 AND deleted_at IS NULL",
+    )
+    .bind(wid)
+    .fetch_one(&db)
+    .await
+    .expect("db count");
     assert_eq!(in_db, 1, "data kept for rec engine");
     let (_, ratings) = get_json(&app, &format!("/api/ratings/{wid}")).await;
     // Reviews are separate from star ratings (reviews carry their own rating);
     // a non-constructive review contributes to neither the public stars nor
     // the public review count.
-    assert_eq!(ratings["rating_count"], 0, "reviews do not create star rows");
-    assert_eq!(ratings["review_count"], 0, "hidden review not in public review count");
+    assert_eq!(
+        ratings["rating_count"], 0,
+        "reviews do not create star rows"
+    );
+    assert_eq!(
+        ratings["review_count"], 0,
+        "hidden review not in public review count"
+    );
 
     cleanup(&db, username).await;
 }
@@ -573,8 +652,14 @@ async fn downvote_never_exposed() {
     let (_, got) = get_json(&app, &format!("/api/ratings/{wid}")).await;
     assert_eq!(got["rating_count"], 0, "dislike is not a star rating");
     assert_eq!(got["likes"], 0);
-    assert!(got.get("dislikes").is_none(), "dislikes key must not exist: {got}");
-    assert!(got.get("negative_votes").is_none(), "internal signal must not leak: {got}");
+    assert!(
+        got.get("dislikes").is_none(),
+        "dislikes key must not exist: {got}"
+    );
+    assert!(
+        got.get("negative_votes").is_none(),
+        "internal signal must not leak: {got}"
+    );
 
     // Rec-engine signal still sees it.
     let signals = fichub::db::reviews::work_feedback_signals(&db, wid)
@@ -623,7 +708,11 @@ async fn negative_comment_hidden_positive_shown() {
     assert_eq!(s2, StatusCode::OK);
 
     let (_, list) = get_json(&app, &format!("/api/comments/{wid}")).await;
-    assert_eq!(list["comments"].as_array().unwrap().len(), 1, "only constructive shown: {list}");
+    assert_eq!(
+        list["comments"].as_array().unwrap().len(),
+        1,
+        "only constructive shown: {list}"
+    );
     assert_eq!(list["comments"][0]["body"], "Really enjoyed the slow burn!");
 
     // Data kept in DB for moderation/rec purposes.
@@ -686,12 +775,20 @@ async fn rec_signals_distribution_across_users() {
         .await
         .expect("signals");
     assert_eq!(signals.rating_count, 3);
-    assert!((signals.avg_rating - 3.6667).abs() < 0.01, "avg {}", signals.avg_rating);
+    assert!(
+        (signals.avg_rating - 3.6667).abs() < 0.01,
+        "avg {}",
+        signals.avg_rating
+    );
     assert_eq!(signals.rating_distribution, [1, 0, 0, 0, 2]);
     assert_eq!(signals.review_count, 1);
     assert_eq!(signals.titled_review_count, 1);
     assert_eq!(signals.negative_votes, 0);
-    assert!(signals.sentiment > 0.4, "positive sentiment {}", signals.sentiment);
+    assert!(
+        signals.sentiment > 0.4,
+        "positive sentiment {}",
+        signals.sentiment
+    );
 
     for u in [u1, u2, u3] {
         cleanup(&db, u).await;

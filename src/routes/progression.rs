@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
     Json,
+    extract::{Path, State},
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::progression::{rank_title, xp_for_next_level};
@@ -256,7 +256,10 @@ pub async fn create_user_view(
         .cloned()
         .ok_or_else(|| AppError::BadRequest("Missing 'query' field".into()))?;
 
-    let pinned = body.get("pinned").and_then(|v| v.as_bool()).unwrap_or(false);
+    let pinned = body
+        .get("pinned")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let row = sqlx::query_as::<_, (i32,)>(
         "INSERT INTO user_views (user_id, name, query, pinned)

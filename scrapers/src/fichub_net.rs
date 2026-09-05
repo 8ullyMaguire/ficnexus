@@ -88,7 +88,10 @@ struct Meta {
 }
 
 /// Fetch metadata for `url` from the fichub.net v0 API.
-pub async fn fetch_metadata(client: &reqwest::Client, url: &str) -> Result<FallbackMeta, ScrapeError> {
+pub async fn fetch_metadata(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<FallbackMeta, ScrapeError> {
     let resp = client
         .get(FICHUB_NET_API)
         .query(&[("q", url)])
@@ -190,7 +193,10 @@ mod tests {
         let meta = parsed.meta.expect("meta present");
         assert_eq!(meta.words, 711600);
         assert_eq!(meta.chapters, 69);
-        assert_eq!(meta.title, "Dodging Prison and Stealing Witches - Revenge is Best Served Raw");
+        assert_eq!(
+            meta.title,
+            "Dodging Prison and Stealing Witches - Revenge is Best Served Raw"
+        );
         assert_eq!(meta.author, "LeadVonE");
         let raw = meta.raw_extended_meta.expect("raw meta");
         assert_eq!(raw.rated.as_deref(), Some("M"));

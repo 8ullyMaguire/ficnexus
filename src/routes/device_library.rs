@@ -6,13 +6,13 @@
 //! to `/api/v1/device/merge`, which verifies the signature and folds the
 //! anonymous library into the user's account.
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::header::{HeaderMap, HeaderValue, SET_COOKIE};
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
@@ -53,8 +53,12 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
     }
     let mut ipad = key_padded;
     let mut opad = key_padded;
-    for b in &mut ipad { *b ^= 0x36; }
-    for b in &mut opad { *b ^= 0x5c; }
+    for b in &mut ipad {
+        *b ^= 0x36;
+    }
+    for b in &mut opad {
+        *b ^= 0x5c;
+    }
     let mut inner = Sha256::new();
     inner.update(&ipad);
     inner.update(data);
@@ -78,10 +82,16 @@ fn sign_json(value: &Value, secret: &str) -> Result<String, AppError> {
 fn verify_cookie(signed: &str, secret: &str) -> Option<DeviceLibrary> {
     let (b64_json, b64_sig) = signed.split_once('.')?;
     let expected = hmac_sha256(secret.as_bytes(), b64_json.as_bytes());
-    let provided_bytes = base64::engine::general_purpose::STANDARD.decode(b64_sig).ok()?;
+    let provided_bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64_sig)
+        .ok()?;
     let provided: [u8; 32] = provided_bytes.try_into().ok()?;
-    if expected != provided { return None; }
-    let json = base64::engine::general_purpose::STANDARD.decode(b64_json).ok()?;
+    if expected != provided {
+        return None;
+    }
+    let json = base64::engine::general_purpose::STANDARD
+        .decode(b64_json)
+        .ok()?;
     serde_json::from_slice::<DeviceLibrary>(&json).ok()
 }
 
@@ -97,7 +107,6 @@ fn read_device_cookie(headers: &HeaderMap) -> Option<DeviceLibrary> {
     }
     None
 }
-
 
 // ── Public handlers ─────────────────────────────────────────────────────────
 //
@@ -117,9 +126,8 @@ fn make_set_cookie(library: &DeviceLibrary) -> Result<HeaderValue, AppError> {
     let value = serde_json::to_value(library).map_err(|e| AppError::Internal(e.to_string()))?;
     let signed = sign_json(&value, &secret)?;
     // urlencoded to be safe for `;` and other reserved chars
-    let header = format!(
-        "{COOKIE_NAME}={signed}; Max-Age={COOKIE_MAX_AGE_SECS}; Path=/; SameSite=Lax"
-    );
+    let header =
+        format!("{COOKIE_NAME}={signed}; Max-Age={COOKIE_MAX_AGE_SECS}; Path=/; SameSite=Lax");
     HeaderValue::from_str(&header).map_err(|e| AppError::Internal(format!("bad cookie: {e}")))
 }
 
@@ -132,9 +140,7 @@ fn read_or_init(headers: &HeaderMap) -> DeviceLibrary {
 }
 
 /// `GET /api/v1/device/library` — return the anonymous library from the cookie.
-pub async fn get_device_library(
-    headers: HeaderMap,
-) -> Result<Json<Value>, AppError> {
+pub async fn get_device_library(headers: HeaderMap) -> Result<Json<Value>, AppError> {
     let library = read_device_cookie(&headers).unwrap_or_default();
     Ok(Json(json!({ "err": 0, "library": library })))
 }
@@ -151,7 +157,10 @@ pub async fn add_device_bookmark(
     Json(body): Json<DeviceBookmarkBody>,
 ) -> Result<Response, AppError> {
     if queries::get_work(&state.db, body.work_id).await?.is_none() {
-        return Err(AppError::NotFound(format!("Work {} not found", body.work_id)));
+        return Err(AppError::NotFound(format!(
+            "Work {} not found",
+            body.work_id
+        )));
     }
 
     let mut library = read_or_init(&headers);
@@ -314,7 +323,10 @@ pub async fn merge_device_library(
             }
             "author" => {
                 if let Some(ref name) = follow.author_name {
-                    if queries::find_follow_for_author(&state.db, user_id, name).await?.is_none() {
+                    if queries::find_follow_for_author(&state.db, user_id, name)
+                        .await?
+                        .is_none()
+                    {
                         queries::follow_author(&state.db, user_id, name).await?;
                         merged_follows += 1;
                     }
@@ -324,7 +336,9 @@ pub async fn merge_device_library(
         }
     }
 
-    Ok(Json(json!({ "err": 0, "merged_bookmarks": merged_bookmarks, "merged_follows": merged_follows })))
+    Ok(Json(
+        json!({ "err": 0, "merged_bookmarks": merged_bookmarks, "merged_follows": merged_follows }),
+    ))
 }
 
 #[cfg(test)]
@@ -357,7 +371,7 @@ mod tests {
     fn verify_rejects_tampered_cookie() {
         let value = serde_json::to_value(&DeviceLibrary::default()).unwrap();
         let signed = sign_json(&value, TEST_SECRET).unwrap();
-                let tampered = signed.replace('A', "B");
+        let tampered = signed.replace('A', "B");
         assert!(verify_cookie(&tampered, TEST_SECRET).is_none());
     }
 
@@ -377,7 +391,9 @@ mod tests {
 
     #[test]
     fn set_cookie_roundtrips_through_verifier() {
-        unsafe { std::env::set_var("JWT_SECRET", TEST_SECRET); }
+        unsafe {
+            std::env::set_var("JWT_SECRET", TEST_SECRET);
+        }
         let library = DeviceLibrary {
             device_id: "cookie-roundtrip".into(),
             bookmarks: vec![42, 99],
@@ -404,7 +420,9 @@ mod tests {
 
     #[test]
     fn set_cookie_rejects_tampering() {
-        unsafe { std::env::set_var("JWT_SECRET", TEST_SECRET); }
+        unsafe {
+            std::env::set_var("JWT_SECRET", TEST_SECRET);
+        }
         let library = DeviceLibrary {
             device_id: "tamper-test".into(),
             bookmarks: vec![1],
@@ -431,4 +449,3 @@ mod tests {
         assert!(verify_cookie(&tampered, TEST_SECRET).is_none());
     }
 }
-

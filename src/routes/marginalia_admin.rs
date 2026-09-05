@@ -6,10 +6,10 @@
 //! without digging through the forum.
 
 use axum::{
-    extract::{Query, State},
     Json,
+    extract::{Query, State},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;

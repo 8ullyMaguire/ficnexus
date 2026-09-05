@@ -11,11 +11,11 @@
 
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
-use axum::Json;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 
 use crate::error::AppError;
@@ -23,7 +23,7 @@ use crate::routes::auth::AuthUser;
 use crate::server::AppState;
 
 // Consensus math from the extracted crate.
-use fichub_consensus::{maxdiff_elo_updates, ConsensusConfig, VoterRef};
+use fichub_consensus::{ConsensusConfig, VoterRef, maxdiff_elo_updates};
 use std::collections::HashMap;
 
 /// Resolve the effective user id for ownership/anti-spam (anonymous clients
@@ -78,7 +78,14 @@ pub struct MoveFeatureRequest {
 }
 
 const VALID_STATUSES: &[&str] = &[
-    "idea", "long_term", "medium_term", "up_next", "in_progress", "finished", "shipped", "rejected"
+    "idea",
+    "long_term",
+    "medium_term",
+    "up_next",
+    "in_progress",
+    "finished",
+    "shipped",
+    "rejected",
 ];
 
 fn is_valid_status(s: &str) -> bool {
@@ -94,10 +101,14 @@ pub async fn suggest_handler(
 ) -> Result<Json<Value>, AppError> {
     let text = req.text.trim().to_string();
     if text.is_empty() {
-        return Err(AppError::BadRequest("suggestion text is required".to_string()));
+        return Err(AppError::BadRequest(
+            "suggestion text is required".to_string(),
+        ));
     }
     if text.len() > 1000 {
-        return Err(AppError::BadRequest("suggestion too long (max 1000 chars)".to_string()));
+        return Err(AppError::BadRequest(
+            "suggestion too long (max 1000 chars)".to_string(),
+        ));
     }
 
     let client_id = headers
@@ -116,7 +127,9 @@ pub async fn suggest_handler(
     .fetch_one(&state.db)
     .await?;
     if recent >= MAX_SUGGESTIONS_PER_DAY {
-        return Err(AppError::BadRequest("too many suggestions today (max 3)".to_string()));
+        return Err(AppError::BadRequest(
+            "too many suggestions today (max 3)".to_string(),
+        ));
     }
 
     // Embed via Ollama (best-effort — on failure store unclustered).
@@ -128,7 +141,13 @@ pub async fn suggest_handler(
         .ok();
 
     let cluster_id: i32 = if let Some(emb) = embedding {
-        let emb_sql = format!("[{}]", emb.iter().map(|f| format!("{f:.6}")).collect::<Vec<_>>().join(","));
+        let emb_sql = format!(
+            "[{}]",
+            emb.iter()
+                .map(|f| format!("{f:.6}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
         // Nearest existing open cluster (now using 'idea' status post-Kanban)
         let nearest: Option<(i32, f64)> = sqlx::query_as(
             "SELECT id, (embedding <=> $1::vector) AS dist FROM feature_clusters WHERE status = 'idea' ORDER BY embedding <=> $1::vector LIMIT 1",
@@ -140,10 +159,12 @@ pub async fn suggest_handler(
         match nearest {
             Some((cid, dist)) if dist < CLUSTER_DISTANCE_THRESHOLD => {
                 // Join the existing cluster (representative text unchanged)
-                sqlx::query("UPDATE feature_clusters SET matches_played = matches_played WHERE id = $1")
-                    .bind(cid)
-                    .execute(&state.db)
-                    .await?;
+                sqlx::query(
+                    "UPDATE feature_clusters SET matches_played = matches_played WHERE id = $1",
+                )
+                .bind(cid)
+                .execute(&state.db)
+                .await?;
                 cid
             }
             _ => {
@@ -195,38 +216,49 @@ pub async fn arena_handler(
     // Build the IN-list as a const string — eligible stages are bounded (max 8 strings).
     // Since FichHub allows all stages (allow_voting_on_non_idea_stages=true), this is all stages
     // except 'rejected' (frozen unconditionally in default_stages).
-    let status_filter: String = eligible.iter().map(|s| format!("'{}'", s)).collect::<Vec<_>>().join(",");
+    let status_filter: String = eligible
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(",");
 
     // Use query with leaked SQL (bounded, small, no user input).
-    let sql: &'static str = Box::leak(format!(
-        r#"
+    let sql: &'static str = Box::leak(
+        format!(
+            r#"
         SELECT id, representative_text, matches_played, elo_rating::float8
         FROM feature_clusters
         WHERE status IN ({status_filter})
         ORDER BY matches_played ASC, random()
         LIMIT 4
         "#
-    ).into_boxed_str());
-    let rows: Vec<(i32, String, i32, f64)> = sqlx::query_as(sql)
-        .fetch_all(&state.db)
-        .await?;
+        )
+        .into_boxed_str(),
+    );
+    let rows: Vec<(i32, String, i32, f64)> = sqlx::query_as(sql).fetch_all(&state.db).await?;
 
     if rows.is_empty() {
-        return Ok(Json(json!({ "err": 0, "clusters": [], "message": "No features yet — be the first to suggest one!" })));
+        return Ok(Json(
+            json!({ "err": 0, "clusters": [], "message": "No features yet — be the first to suggest one!" }),
+        ));
     }
 
     // Exclude sets the user already voted on (per-user uniqueness).
     let clusters = rows
         .into_iter()
-        .map(|(id, text, played, elo)| json!({
-            "id": id,
-            "text": text,
-            "matches_played": played,
-            "elo_rating": elo,
-        }))
+        .map(|(id, text, played, elo)| {
+            json!({
+                "id": id,
+                "text": text,
+                "matches_played": played,
+                "elo_rating": elo,
+            })
+        })
         .collect::<Vec<_>>();
 
-    Ok(Json(json!({ "err": 0, "clusters": clusters, "user_id": user_id_or(&user).unwrap_or(0) })))
+    Ok(Json(
+        json!({ "err": 0, "clusters": clusters, "user_id": user_id_or(&user).unwrap_or(0) }),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -244,13 +276,21 @@ pub async fn vote_handler(
     Json(req): Json<VoteRequest>,
 ) -> Result<Json<Value>, AppError> {
     if req.cluster_ids.len() != 4 {
-        return Err(AppError::BadRequest("arena must present exactly 4 clusters".to_string()));
+        return Err(AppError::BadRequest(
+            "arena must present exactly 4 clusters".to_string(),
+        ));
     }
-    if !req.cluster_ids.contains(&req.best_cluster_id) || !req.cluster_ids.contains(&req.worst_cluster_id) {
-        return Err(AppError::BadRequest("best/worst must be among the presented clusters".to_string()));
+    if !req.cluster_ids.contains(&req.best_cluster_id)
+        || !req.cluster_ids.contains(&req.worst_cluster_id)
+    {
+        return Err(AppError::BadRequest(
+            "best/worst must be among the presented clusters".to_string(),
+        ));
     }
     if req.best_cluster_id == req.worst_cluster_id {
-        return Err(AppError::BadRequest("best and worst must differ".to_string()));
+        return Err(AppError::BadRequest(
+            "best and worst must differ".to_string(),
+        ));
     }
 
     // Trust gate: FichHub preset requires level >= 2 (min_trust_level_for_voting).
@@ -294,20 +334,29 @@ pub async fn vote_handler(
         }
     };
     if exists {
-        return Err(AppError::BadRequest("you already voted on this set".to_string()));
+        return Err(AppError::BadRequest(
+            "you already voted on this set".to_string(),
+        ));
     }
 
     // Load current ratings for the 4 clusters (unknown -> 1500).
     let mut ratings_map: HashMap<i32, f64> = HashMap::new();
     for id in &req.cluster_ids {
-        let rating: Option<f64> = sqlx::query_scalar("SELECT elo_rating::float8 FROM feature_clusters WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&state.db)
-            .await?;
+        let rating: Option<f64> =
+            sqlx::query_scalar("SELECT elo_rating::float8 FROM feature_clusters WHERE id = $1")
+                .bind(id)
+                .fetch_optional(&state.db)
+                .await?;
         ratings_map.insert(*id, rating.unwrap_or(1500.0));
     }
 
-    let new_ratings = maxdiff_elo_updates(&req.cluster_ids, &ratings_map, req.best_cluster_id, req.worst_cluster_id, 32.0);
+    let new_ratings = maxdiff_elo_updates(
+        &req.cluster_ids,
+        &ratings_map,
+        req.best_cluster_id,
+        req.worst_cluster_id,
+        32.0,
+    );
 
     // Persist the vote + apply Elo + bump counters atomically.
     let mut tx = state.db.begin().await?;
@@ -369,7 +418,7 @@ pub async fn consensus_handler(
         GROUP BY c.id
         ORDER BY c.elo_rating DESC
         LIMIT 100
-        "#
+        "#,
     )
     .fetch_all(&state.db)
     .await?;
@@ -487,13 +536,15 @@ pub async fn features_list_handler(
 
     let items: Vec<Value> = rows
         .into_iter()
-        .map(|(id, text, elo, played, best, worst, status, category, sugg)| {
-            json!({
-                "id": id, "text": text, "elo_rating": elo, "matches_played": played,
-                "times_picked_best": best, "times_picked_worst": worst,
-                "status": status, "category": category, "suggestions": sugg,
-            })
-        })
+        .map(
+            |(id, text, elo, played, best, worst, status, category, sugg)| {
+                json!({
+                    "id": id, "text": text, "elo_rating": elo, "matches_played": played,
+                    "times_picked_best": best, "times_picked_worst": worst,
+                    "status": status, "category": category, "suggestions": sugg,
+                })
+            },
+        )
         .collect();
 
     Ok(Json(json!({
@@ -516,19 +567,20 @@ pub async fn feature_move_handler(
     }
 
     if !is_valid_status(&req.status) {
-        return Err(AppError::BadRequest(format!("invalid status: '{}'", req.status)));
+        return Err(AppError::BadRequest(format!(
+            "invalid status: '{}'",
+            req.status
+        )));
     }
 
     let category = req.category.unwrap_or_else(|| "general".to_string());
 
-    sqlx::query(
-        r#"UPDATE feature_clusters SET status = $1, category = $2 WHERE id = $3"#,
-    )
-    .bind(&req.status)
-    .bind(&category)
-    .bind(id)
-    .execute(&state.db)
-    .await?;
+    sqlx::query(r#"UPDATE feature_clusters SET status = $1, category = $2 WHERE id = $3"#)
+        .bind(&req.status)
+        .bind(&category)
+        .bind(id)
+        .execute(&state.db)
+        .await?;
 
     Ok(Json(json!({
         "err": 0,
@@ -541,7 +593,7 @@ pub async fn feature_move_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fichub_consensus::{expected_score, elo_update};
+    use fichub_consensus::{elo_update, expected_score};
 
     #[test]
     fn expected_score_midpoint_is_half() {
@@ -562,7 +614,8 @@ mod tests {
     #[test]
     fn maxdiff_best_soars_worst_tanks_neutrals_shift_little() {
         let ids = vec![1, 2, 3, 4];
-        let ratings: HashMap<i32, f64> = [(1, 1500.0), (2, 1500.0), (3, 1500.0), (4, 1500.0)].into();
+        let ratings: HashMap<i32, f64> =
+            [(1, 1500.0), (2, 1500.0), (3, 1500.0), (4, 1500.0)].into();
         let out = maxdiff_elo_updates(&ids, &ratings, 1, 4, 32.0);
 
         let r1 = out.iter().find(|(i, _)| *i == 1).unwrap().1;
@@ -581,7 +634,8 @@ mod tests {
         // A 1800-rated best vs a 1200-rated worst: the win transfers less Elo
         // than an even match would.
         let ids = vec![1, 2, 3, 4];
-        let ratings: HashMap<i32, f64> = [(1, 1800.0), (2, 1500.0), (3, 1500.0), (4, 1200.0)].into();
+        let ratings: HashMap<i32, f64> =
+            [(1, 1800.0), (2, 1500.0), (3, 1500.0), (4, 1200.0)].into();
         let out = maxdiff_elo_updates(&ids, &ratings, 1, 4, 32.0);
         let r1 = out.iter().find(|(i, _)| *i == 1).unwrap().1;
         assert!(r1 > 1800.0, "still gains");
@@ -593,7 +647,7 @@ mod tests {
 
 #[derive(Debug, Deserialize)]
 pub struct ChangelogQuery {
-    pub kind: Option<String>,     // new | improved | fixed
+    pub kind: Option<String>, // new | improved | fixed
     pub feature_id: Option<i32>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
@@ -623,7 +677,15 @@ pub async fn changelog_list_handler(
     let limit = params.limit.unwrap_or(50).min(200);
     let offset = params.offset.unwrap_or(0);
 
-    type Row = (i64, Option<i32>, String, String, String, i32, chrono::DateTime<chrono::Utc>);
+    type Row = (
+        i64,
+        Option<i32>,
+        String,
+        String,
+        String,
+        i32,
+        chrono::DateTime<chrono::Utc>,
+    );
 
     const SQL_ALL: &str = r#"
         SELECT id, feature_id, title, body, kind, author_id, published_at
@@ -694,13 +756,15 @@ pub async fn changelog_list_handler(
 
     let items: Vec<Value> = rows
         .into_iter()
-        .map(|(id, feature_id, title, body, kind, author_id, published_at)| {
-            json!({
-                "id": id, "feature_id": feature_id, "title": title, "body": body,
-                "kind": kind, "author_id": author_id,
-                "published_at": published_at.to_rfc3339(),
-            })
-        })
+        .map(
+            |(id, feature_id, title, body, kind, author_id, published_at)| {
+                json!({
+                    "id": id, "feature_id": feature_id, "title": title, "body": body,
+                    "kind": kind, "author_id": author_id,
+                    "published_at": published_at.to_rfc3339(),
+                })
+            },
+        )
         .collect();
 
     Ok(Json(json!({
@@ -719,10 +783,15 @@ pub async fn changelog_create_handler(
         return Err(AppError::Forbidden("curator role required".to_string()));
     }
     if !is_valid_changelog_kind(&req.kind) {
-        return Err(AppError::BadRequest(format!("invalid kind: '{}'", req.kind)));
+        return Err(AppError::BadRequest(format!(
+            "invalid kind: '{}'",
+            req.kind
+        )));
     }
 
-    let author_id = auth.user_id.ok_or_else(|| AppError::Forbidden("Not authenticated".to_string()))?;
+    let author_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Forbidden("Not authenticated".to_string()))?;
 
     let id: i64 = sqlx::query_scalar(
         r#"

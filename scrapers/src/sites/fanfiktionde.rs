@@ -16,19 +16,15 @@ use async_trait::async_trait;
 use chrono::TimeZone;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct FanfiktionDeScraper;
 
 impl FanfiktionDeScraper {
     fn story_id(url: &str) -> Option<String> {
         let id = url.split("/s/").nth(1)?.split('/').next()?.to_string();
-        if !id.is_empty() {
-            Some(id)
-        } else {
-            None
-        }
+        if !id.is_empty() { Some(id) } else { None }
     }
 }
 
@@ -38,8 +34,13 @@ impl SiteScraper for FanfiktionDeScraper {
         url.contains("fanfiktion.de/s/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("fanfiktion.de: bad url".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("fanfiktion.de: bad url".into()))?;
         let page_url = format!("https://www.fanfiktion.de/s/{story_id}/1");
         let html = http::fetch(client, &page_url).await?;
 
@@ -123,11 +124,23 @@ impl SiteScraper for FanfiktionDeScraper {
                     }
                 }
                 // Status
-                if head.select(&Selector::parse("span[title='fertiggestellt']").unwrap()).next().is_some() {
+                if head
+                    .select(&Selector::parse("span[title='fertiggestellt']").unwrap())
+                    .next()
+                    .is_some()
+                {
                     status = "complete".to_string();
-                } else if head.select(&Selector::parse("span[title='pausiert']").unwrap()).next().is_some() {
+                } else if head
+                    .select(&Selector::parse("span[title='pausiert']").unwrap())
+                    .next()
+                    .is_some()
+                {
                     status = "paused".to_string();
-                } else if head.select(&Selector::parse("span[title='abgebrochen']").unwrap()).next().is_some() {
+                } else if head
+                    .select(&Selector::parse("span[title='abgebrochen']").unwrap())
+                    .next()
+                    .is_some()
+                {
                     status = "cancelled".to_string();
                 }
             }
@@ -138,7 +151,14 @@ impl SiteScraper for FanfiktionDeScraper {
             if let Some(el) = doc.select(&w_sel).next() {
                 if let Some(p) = el.parent() {
                     if let Some(pe) = scraper::ElementRef::wrap(p) {
-                        words = pe.text().collect::<String>().chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap_or(0);
+                        words = pe
+                            .text()
+                            .collect::<String>()
+                            .chars()
+                            .filter(|c| c.is_ascii_digit())
+                            .collect::<String>()
+                            .parse()
+                            .unwrap_or(0);
                     }
                 }
             }
@@ -188,7 +208,8 @@ impl SiteScraper for FanfiktionDeScraper {
         client: &reqwest::Client,
         meta: &FicMetadata,
     ) -> Result<Vec<Chapter>, ScrapeError> {
-        let story_id = Self::story_id(&meta.source).ok_or_else(|| ScrapeError::ParseError("fanfiktion.de: bad url".into()))?;
+        let story_id = Self::story_id(&meta.source)
+            .ok_or_else(|| ScrapeError::ParseError("fanfiktion.de: bad url".into()))?;
         let page_url = format!("https://www.fanfiktion.de/s/{story_id}/1");
         let html = http::fetch(client, &page_url).await?;
 

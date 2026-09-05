@@ -4,15 +4,22 @@
 //! customization types.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 
 use crate::error::{AppError, AppResult};
 
 /// Valid top-level extension kinds.
 pub const KINDS: [&str; 9] = [
-    "theme", "skin", "recipe", "layout", "view", "saved_search", "profile",
-    "rec_strategy", "search",
+    "theme",
+    "skin",
+    "recipe",
+    "layout",
+    "view",
+    "saved_search",
+    "profile",
+    "rec_strategy",
+    "search",
 ];
 
 pub fn is_known_kind(k: &str) -> bool {
@@ -69,7 +76,7 @@ pub fn validate_slug(slug: &str) -> AppResult<()> {
         .chars()
         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
     {
-        return     Err(AppError::BadRequest(
+        return Err(AppError::BadRequest(
             "slug must be lowercase alphanumerics, '-' or '_'".into(),
         ));
     }
@@ -95,7 +102,11 @@ pub async fn publish(
     if body.name.trim().is_empty() {
         return Err(AppError::BadRequest("name required".into()));
     }
-    let tier = if body.tier.is_empty() { "config" } else { &body.tier };
+    let tier = if body.tier.is_empty() {
+        "config"
+    } else {
+        &body.tier
+    };
 
     if upsert {
         let row = sqlx::query_as::<_, ExtensionRow>(
@@ -144,20 +155,18 @@ pub async fn publish(
         .execute(db)
         .await;
         match res {
-            Ok(_) => {
-                sqlx::query_as::<_, ExtensionRow>(
-                    r#"SELECT id, kind, slug, name, description, author_id, version, tier,
+            Ok(_) => sqlx::query_as::<_, ExtensionRow>(
+                r#"SELECT id, kind, slug, name, description, author_id, version, tier,
                               payload, meta, is_public, is_verified, installs, rating,
                               created_at, updated_at
                          FROM extensions WHERE kind = $1 AND slug = $2 AND author_id = $3"#,
-                )
-                .bind(&body.kind)
-                .bind(&body.slug)
-                .bind(author_id)
-                .fetch_optional(db)
-                .await?
-                .ok_or_else(|| AppError::Database("inserted extension vanished".into()))
-            }
+            )
+            .bind(&body.kind)
+            .bind(&body.slug)
+            .bind(author_id)
+            .fetch_optional(db)
+            .await?
+            .ok_or_else(|| AppError::Database("inserted extension vanished".into())),
             Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
                 Err(AppError::Conflict(
                     "That slug is already published in this category. Remix it instead.".into(),
@@ -377,7 +386,7 @@ pub async fn install(db: &PgPool, user_id: i32, ext_id: i32) -> AppResult<()> {
     .await?
     .rows_affected();
 
-        if inserted > 0 {
+    if inserted > 0 {
         sqlx::query("UPDATE extensions SET installs = installs + 1 WHERE id = $1")
             .bind(ext_id)
             .execute(db)
@@ -415,11 +424,12 @@ pub async fn rate(db: &PgPool, user_id: i32, ext_id: i32, rating: i16) -> AppRes
     .execute(db)
     .await?;
 
-    let avg: Option<f64> =
-        sqlx::query_scalar("SELECT AVG(rating)::float8 FROM extension_ratings WHERE extension_id = $1")
-            .bind(ext_id)
-            .fetch_optional(db)
-            .await?;
+    let avg: Option<f64> = sqlx::query_scalar(
+        "SELECT AVG(rating)::float8 FROM extension_ratings WHERE extension_id = $1",
+    )
+    .bind(ext_id)
+    .fetch_optional(db)
+    .await?;
     let avg = avg.unwrap_or(0.0);
     sqlx::query("UPDATE extensions SET rating = $1 WHERE id = $2")
         .bind(avg)
@@ -473,7 +483,7 @@ pub async fn remix(
                   created_at, updated_at
              FROM extensions WHERE kind = $1 AND slug = $2 AND author_id = $3"#,
     )
-        .bind(&src.kind)
+    .bind(&src.kind)
     .bind(new_slug)
     .bind(author_id)
     .fetch_one(db)
@@ -504,12 +514,12 @@ mod tests {
     #[test]
     fn slug_validation_rejects_bad_slugs() {
         for s in [
-            "",                                   // empty
-            "Has-Upper",                          // uppercase
-            "has space",                          // whitespace
-            "has/slash",                          // path-ish
-            "has.dot",                            // dot
-            "emoji-🎨",                           // non-ascii
+            "",          // empty
+            "Has-Upper", // uppercase
+            "has space", // whitespace
+            "has/slash", // path-ish
+            "has.dot",   // dot
+            "emoji-🎨",  // non-ascii
         ] {
             assert!(validate_slug(s).is_err(), "{s} should be rejected");
         }

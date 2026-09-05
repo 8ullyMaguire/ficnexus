@@ -17,10 +17,8 @@ use crate::server::AppState;
 
 /// The 36 shards: 0-9 then a-z (case-insensitive on url_id's first char).
 const SHARDS: &[char] = &[
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
-    'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
-    'u', 'v', 'w', 'x', 'y', 'z',
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
+    'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
 ];
 
 /// Map a url_id's first character to its shard: 0-9 stay as-is, letters go
@@ -50,10 +48,7 @@ pub async fn sitemap_index_handler(State(state): State<Arc<AppState>>) -> impl I
         ));
     }
     xml.push_str("</sitemapindex>\n");
-    (
-        [(axum::http::header::CONTENT_TYPE, "application/xml")],
-        xml,
-    )
+    ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml)
 }
 
 /// One row: the url_id plus the last meaningful update timestamp.
@@ -109,9 +104,7 @@ pub async fn sitemap_works_handler(
                 "  <url>\n    <loc>{loc}</loc>\n    <lastmod>{}</lastmod>\n  </url>\n",
                 ts.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
             )),
-            None => xml.push_str(&format!(
-                "  <url>\n    <loc>{loc}</loc>\n  </url>\n"
-            )),
+            None => xml.push_str(&format!("  <url>\n    <loc>{loc}</loc>\n  </url>\n")),
         }
     }
     xml.push_str("</urlset>\n");

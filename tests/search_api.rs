@@ -24,10 +24,10 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
 use serde_json::Value;
 use tower::ServiceExt; // oneshot
@@ -77,8 +77,8 @@ async fn app() -> Router {
     let config = test_config();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -99,21 +99,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false, // dynamic rate limiting off in tests
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false, // dynamic rate limiting off in tests
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -124,7 +132,7 @@ async fn app() -> Router {
             test_config(),
             scraper_registry,
         ),
-                suggest_cache: Arc::new(tokio::sync::Mutex::new(None)),
+        suggest_cache: Arc::new(tokio::sync::Mutex::new(None)),
         heal: fichub::heal::HealService::new(db.clone(), config.clone()),
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
@@ -152,7 +160,10 @@ async fn get_search(uri: &str) -> Value {
         .await
         .unwrap();
     if status != StatusCode::OK {
-        eprintln!("DEBUG non-200 for {uri}: status={status} body={}", String::from_utf8_lossy(&body));
+        eprintln!(
+            "DEBUG non-200 for {uri}: status={status} body={}",
+            String::from_utf8_lossy(&body)
+        );
     }
     assert_eq!(
         status,
@@ -165,7 +176,16 @@ async fn get_search(uri: &str) -> Value {
 
 /// Seed a fic_info row. `ON CONFLICT (id) DO NOTHING` keeps this idempotent
 /// so tests are re-runnable without explicit pre-cleanup.
-async fn seed_fic(pool: &sqlx::PgPool, id: &str, title: &str, description: &str, words: i64, chapters: i32, status: &str, updated_days_ago: i64) {
+async fn seed_fic(
+    pool: &sqlx::PgPool,
+    id: &str,
+    title: &str,
+    description: &str,
+    words: i64,
+    chapters: i32,
+    status: &str,
+    updated_days_ago: i64,
+) {
     sqlx::query(
         r#"INSERT INTO fic_info (
             id, title, author, author_url, author_local_id,
@@ -256,12 +276,40 @@ async fn cleanup(pool: &sqlx::PgPool, fics: &[&str], tags: &[&str]) {
 /// appear in tag-filtered / empty-shape searches.
 async fn clean_all_test_fixtures(pool: &sqlx::PgPool) {
     let prefixes = [
-        "searchit_", "honeypot", "auto_tag", "reqt-", "fu-refresh", "lists-",
-        "triage-", "meta-test", "readertest", "bodytest", "curatort", "tagapi",
-        "blindtest", "fs_", "modlog", "ratings", "bookmark", "credapi",
-        "kindle", "askarch", "workprop", "transreview", "reporttest", "listtest",
-        "followtest", "commtest", "feedback", "quickwin", "opds", "seriestest",
-        "leadt", "content_scan", "rec_", "socialt",
+        "searchit_",
+        "honeypot",
+        "auto_tag",
+        "reqt-",
+        "fu-refresh",
+        "lists-",
+        "triage-",
+        "meta-test",
+        "readertest",
+        "bodytest",
+        "curatort",
+        "tagapi",
+        "blindtest",
+        "fs_",
+        "modlog",
+        "ratings",
+        "bookmark",
+        "credapi",
+        "kindle",
+        "askarch",
+        "workprop",
+        "transreview",
+        "reporttest",
+        "listtest",
+        "followtest",
+        "commtest",
+        "feedback",
+        "quickwin",
+        "opds",
+        "seriestest",
+        "leadt",
+        "content_scan",
+        "rec_",
+        "socialt",
     ];
     for p in prefixes {
         let _ = sqlx::query(
@@ -324,8 +372,28 @@ async fn search_plain_q_matches_title_and_description() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_plain_a", "searchit_plain_b"];
-    seed_fic(&db, "searchit_plain_a", "The Sunken Lighthouse", "A tale of stormy seas.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_plain_b", "Baking with Dragons", "In which dragons learn pastry.", 2000, 3, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_plain_a",
+        "The Sunken Lighthouse",
+        "A tale of stormy seas.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_plain_b",
+        "Baking with Dragons",
+        "In which dragons learn pastry.",
+        2000,
+        3,
+        "ongoing",
+        2,
+    )
+    .await;
 
     // Title match
     let body = get_search("/api/search?q=lighthouse").await;
@@ -362,20 +430,49 @@ async fn search_typo_falls_back_to_fuzzy_title_author() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_fuzzy_a", "searchit_fuzzy_b"];
-    seed_fic(&db, "searchit_fuzzy_a", "Harry Potter and the Fuzzy Test", "Unit testing at Hogwarts.", 10000, 8, "complete", 1).await;
-    seed_fic(&db, "searchit_fuzzy_b", "Unrelated Baking Fic", "In which dragons learn pastry.", 2000, 3, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_fuzzy_a",
+        "Harry Potter and the Fuzzy Test",
+        "Unit testing at Hogwarts.",
+        10000,
+        8,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_fuzzy_b",
+        "Unrelated Baking Fic",
+        "In which dragons learn pastry.",
+        2000,
+        3,
+        "ongoing",
+        2,
+    )
+    .await;
 
     // Full misspelling: neither word is a real token, tsquery matches
     // nothing → fuzzy fallback finds the Harry Potter fic.
     let body = get_search("/api/search?q=Hary%20Pottr").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_fuzzy_a".to_string()), "full typo fallback: {body}");
-    assert!(!ids.contains(&"searchit_fuzzy_b".to_string()), "typo fallback must not leak unrelated fic: {body}");
+    assert!(
+        ids.contains(&"searchit_fuzzy_a".to_string()),
+        "full typo fallback: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_fuzzy_b".to_string()),
+        "typo fallback must not leak unrelated fic: {body}"
+    );
 
     // Partial typo: 'Hary Potter' — 'potter' matches the tsvector, 'hary'
     // does not, so the fuzzy OR branch still pulls the fic in.
     let body = get_search("/api/search?q=Hary%20Potter").await;
-    assert!(result_ids(&body).contains(&"searchit_fuzzy_a".to_string()), "partial typo fallback: {body}");
+    assert!(
+        result_ids(&body).contains(&"searchit_fuzzy_a".to_string()),
+        "partial typo fallback: {body}"
+    );
 
     cleanup(&db, &fics, &[]).await;
 }
@@ -387,24 +484,56 @@ async fn search_boolean_and_or() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_bool_a", "searchit_bool_b"];
-    seed_fic(&db, "searchit_bool_a", "The Dragon Rider", "A dragon and a rider save the realm.", 5000, 5, "complete", 1).await;
-    seed_fic(&db, "searchit_bool_b", "The Tea Shop", "A quiet shop with excellent tea.", 3000, 2, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_bool_a",
+        "The Dragon Rider",
+        "A dragon and a rider save the realm.",
+        5000,
+        5,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_bool_b",
+        "The Tea Shop",
+        "A quiet shop with excellent tea.",
+        3000,
+        2,
+        "ongoing",
+        2,
+    )
+    .await;
 
     // Implicit AND (plainto_tsquery): both words in description
     let body = get_search("/api/search?q=dragon%20rider").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_bool_a".to_string()), "implicit AND: {body}");
+    assert!(
+        ids.contains(&"searchit_bool_a".to_string()),
+        "implicit AND: {body}"
+    );
 
     // Explicit AND (parsed tsquery path)
     let body = get_search("/api/search?q=dragon%20AND%20realm").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_bool_a".to_string()), "explicit AND: {body}");
+    assert!(
+        ids.contains(&"searchit_bool_a".to_string()),
+        "explicit AND: {body}"
+    );
 
     // OR (parsed tsquery path) — both seeded fics match
     let body = get_search("/api/search?q=dragon%20OR%20tea").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_bool_a".to_string()), "OR matches A: {body}");
-    assert!(ids.contains(&"searchit_bool_b".to_string()), "OR matches B: {body}");
+    assert!(
+        ids.contains(&"searchit_bool_a".to_string()),
+        "OR matches A: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_bool_b".to_string()),
+        "OR matches B: {body}"
+    );
 
     // AND that matches nothing
     let body = get_search("/api/search?q=dragon%20AND%20tea").await;
@@ -421,21 +550,53 @@ async fn search_fielded_title() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_field_a", "searchit_field_b"];
-    seed_fic(&db, "searchit_field_a", "Harry Potter and the Test Case", "Unit testing at Hogwarts.", 10000, 8, "complete", 1).await;
-    seed_fic(&db, "searchit_field_b", "The Test Kitchen", "Cooking experiments.", 4000, 4, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_field_a",
+        "Harry Potter and the Test Case",
+        "Unit testing at Hogwarts.",
+        10000,
+        8,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_field_b",
+        "The Test Kitchen",
+        "Cooking experiments.",
+        4000,
+        4,
+        "ongoing",
+        2,
+    )
+    .await;
 
     // title:harry → fic A (title ILIKE '%harry%') is present; other tests'
     // fics may also match (shared DB), so assert presence, not total.
     let body = get_search("/api/search?q=title%3Aharry").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_field_a".to_string()), "title:harry: {body}");
-    assert!(!ids.contains(&"searchit_field_b".to_string()), "title:harry must not match B: {body}");
+    assert!(
+        ids.contains(&"searchit_field_a".to_string()),
+        "title:harry: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_field_b".to_string()),
+        "title:harry must not match B: {body}"
+    );
 
     // title:test matches BOTH (both titles contain "Test")
     let body = get_search("/api/search?q=title%3Atest").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_field_a".to_string()), "title:test A: {body}");
-    assert!(ids.contains(&"searchit_field_b".to_string()), "title:test B: {body}");
+    assert!(
+        ids.contains(&"searchit_field_a".to_string()),
+        "title:test A: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_field_b".to_string()),
+        "title:test B: {body}"
+    );
 
     // description mention alone must NOT match a title: query
     let body = get_search("/api/search?q=title%3Ahogwarts").await;
@@ -443,7 +604,10 @@ async fn search_fielded_title() {
 
     // Fielded-only query must not leak the raw "title:harry" text tsquery
     let body = get_search("/api/search?q=title%3Aharry").await;
-    assert!(result_ids(&body).contains(&"searchit_field_a".to_string()), "regression: fielded-only q must not become text tsquery");
+    assert!(
+        result_ids(&body).contains(&"searchit_field_a".to_string()),
+        "regression: fielded-only q must not become text tsquery"
+    );
 
     cleanup(&db, &fics, &[]).await;
 }
@@ -456,13 +620,39 @@ async fn search_exclusion_tsquery_and_tag_paths() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_excl_a", "searchit_excl_b"];
-    seed_fic(&db, "searchit_excl_a", "Midnight in the Garden", "A garden full of roses.", 2000, 2, "complete", 1).await;
-    seed_fic(&db, "searchit_excl_b", "Midnight in the Attic", "An attic full of boxes.", 1500, 1, "complete", 2).await;
+    seed_fic(
+        &db,
+        "searchit_excl_a",
+        "Midnight in the Garden",
+        "A garden full of roses.",
+        2000,
+        2,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_excl_b",
+        "Midnight in the Attic",
+        "An attic full of boxes.",
+        1500,
+        1,
+        "complete",
+        2,
+    )
+    .await;
 
     // tsquery path: -roses excludes fic A by TEXT
     let body = get_search("/api/search?q=midnight%20-roses").await;
-    assert!(result_ids(&body).contains(&"searchit_excl_b".to_string()), "text exclusion: {body}");
-    assert!(!result_ids(&body).contains(&"searchit_excl_a".to_string()), "text exclusion leak (A has roses): {body}");
+    assert!(
+        result_ids(&body).contains(&"searchit_excl_b".to_string()),
+        "text exclusion: {body}"
+    );
+    assert!(
+        !result_ids(&body).contains(&"searchit_excl_a".to_string()),
+        "text exclusion leak (A has roses): {body}"
+    );
 
     // Tag-based path: fic A gets the "Fluff" freeform tag; -fluff must
     // exclude it via tag matching, not text. The tag name must EXACTLY match
@@ -471,14 +661,26 @@ async fn search_exclusion_tsquery_and_tag_paths() {
     seed_fic_tag(&db, "searchit_excl_a", tag_fluff, 5).await;
 
     let body = get_search("/api/search?q=midnight%20-fluff").await;
-    assert!(result_ids(&body).contains(&"searchit_excl_b".to_string()), "tag-based exclusion: {body}");
-    assert!(!result_ids(&body).contains(&"searchit_excl_a".to_string()), "fic A has tag Fluff, must be excluded: {body}");
+    assert!(
+        result_ids(&body).contains(&"searchit_excl_b".to_string()),
+        "tag-based exclusion: {body}"
+    );
+    assert!(
+        !result_ids(&body).contains(&"searchit_excl_a".to_string()),
+        "fic A has tag Fluff, must be excluded: {body}"
+    );
 
     // And the tag-based exclusion works even when the tag name never
     // appears in the text (proves it's the tag path).
     let body = get_search("/api/search?q=midnight%20-roses%20-fluff").await;
-    assert!(result_ids(&body).contains(&"searchit_excl_b".to_string()), "combined exclusion: {body}");
-    assert!(!result_ids(&body).contains(&"searchit_excl_a".to_string()), "combined exclusion leak: {body}");
+    assert!(
+        result_ids(&body).contains(&"searchit_excl_b".to_string()),
+        "combined exclusion: {body}"
+    );
+    assert!(
+        !result_ids(&body).contains(&"searchit_excl_a".to_string()),
+        "combined exclusion leak: {body}"
+    );
 
     cleanup(&db, &fics, &["Fluff"]).await;
 }
@@ -491,8 +693,28 @@ async fn search_tag_filters() {
     let db = pool().await;
     clean_all_test_fixtures(&db).await;
     let fics = ["searchit_tags_a", "searchit_tags_b"];
-    seed_fic(&db, "searchit_tags_a", "Gryffindor Rising", "Lions and bravery.", 3000, 3, "complete", 1).await;
-    seed_fic(&db, "searchit_tags_b", "Slytherin Schemes", "Snakes and cunning.", 2500, 2, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_tags_a",
+        "Gryffindor Rising",
+        "Lions and bravery.",
+        3000,
+        3,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_tags_b",
+        "Slytherin Schemes",
+        "Snakes and cunning.",
+        2500,
+        2,
+        "ongoing",
+        2,
+    )
+    .await;
 
     let tag_gryf = seed_tag(&db, "SearchTest Gryffindor", 1).await; // fandom
     let tag_slyth = seed_tag(&db, "SearchTest Slytherin", 1).await;
@@ -505,35 +727,88 @@ async fn search_tag_filters() {
     // Note: the shared fichub DB may contain real fics, so we assert on the
     // seeded result ids being present/absent rather than absolute totals.
     let body = get_search("/api/search?include_tags=1%3ASearchTest%20Gryffindor").await;
-    assert!(result_ids(&body).contains(&"searchit_tags_a".to_string()), "include_tags fandom: {body}");
-    assert!(!result_ids(&body).contains(&"searchit_tags_b".to_string()), "include_tags fandom leak: {body}");
+    assert!(
+        result_ids(&body).contains(&"searchit_tags_a".to_string()),
+        "include_tags fandom: {body}"
+    );
+    assert!(
+        !result_ids(&body).contains(&"searchit_tags_b".to_string()),
+        "include_tags fandom leak: {body}"
+    );
 
     // include_tags with TWO tags (AND): Gryffindor + Angst → still only fic A
-    let body = get_search("/api/search?include_tags=1%3ASearchTest%20Gryffindor%2C4%3ASearchTest%20Angst").await;
-    assert!(result_ids(&body).contains(&"searchit_tags_a".to_string()), "include_tags AND: {body}");
-    assert!(!result_ids(&body).contains(&"searchit_tags_b".to_string()), "include_tags AND leak: {body}");
+    let body =
+        get_search("/api/search?include_tags=1%3ASearchTest%20Gryffindor%2C4%3ASearchTest%20Angst")
+            .await;
+    assert!(
+        result_ids(&body).contains(&"searchit_tags_a".to_string()),
+        "include_tags AND: {body}"
+    );
+    assert!(
+        !result_ids(&body).contains(&"searchit_tags_b".to_string()),
+        "include_tags AND leak: {body}"
+    );
 
     // include_tags with two tags where fic B lacks one → only fic A
-    let body = get_search("/api/search?include_tags=1%3ASearchTest%20Gryffindor%2C1%3ASearchTest%20Slytherin").await;
-    assert!(!result_ids(&body).contains(&"searchit_tags_a".to_string()), "include_tags disjoint leak: {body}");
-    assert!(!result_ids(&body).contains(&"searchit_tags_b".to_string()), "include_tags disjoint leak: {body}");
+    let body = get_search(
+        "/api/search?include_tags=1%3ASearchTest%20Gryffindor%2C1%3ASearchTest%20Slytherin",
+    )
+    .await;
+    assert!(
+        !result_ids(&body).contains(&"searchit_tags_a".to_string()),
+        "include_tags disjoint leak: {body}"
+    );
+    assert!(
+        !result_ids(&body).contains(&"searchit_tags_b".to_string()),
+        "include_tags disjoint leak: {body}"
+    );
 
     // exclude_tags — NOT Slytherin → fic A present, fic B absent
     let body = get_search("/api/search?exclude_tags=1%3ASearchTest%20Slytherin").await;
-    assert!(result_ids(&body).contains(&"searchit_tags_a".to_string()), "exclude_tags: {body}");
-    assert!(!result_ids(&body).contains(&"searchit_tags_b".to_string()), "exclude_tags leak: {body}");
+    assert!(
+        result_ids(&body).contains(&"searchit_tags_a".to_string()),
+        "exclude_tags: {body}"
+    );
+    assert!(
+        !result_ids(&body).contains(&"searchit_tags_b".to_string()),
+        "exclude_tags leak: {body}"
+    );
 
     // include_any_tags — Gryffindor OR Slytherin → both seeded fics
-    let body = get_search("/api/search?include_any_tags=1%3ASearchTest%20Gryffindor%2C1%3ASearchTest%20Slytherin").await;
-    assert!(result_ids(&body).contains(&"searchit_tags_a".to_string()), "include_any_tags OR: {body}");
-    assert!(result_ids(&body).contains(&"searchit_tags_b".to_string()), "include_any_tags OR: {body}");
+    let body = get_search(
+        "/api/search?include_any_tags=1%3ASearchTest%20Gryffindor%2C1%3ASearchTest%20Slytherin",
+    )
+    .await;
+    assert!(
+        result_ids(&body).contains(&"searchit_tags_a".to_string()),
+        "include_any_tags OR: {body}"
+    );
+    assert!(
+        result_ids(&body).contains(&"searchit_tags_b".to_string()),
+        "include_any_tags OR: {body}"
+    );
 
     // include_any_tags with a single tag that only fic A has
     let body = get_search("/api/search?include_any_tags=4%3ASearchTest%20Angst").await;
-    assert!(result_ids(&body).contains(&"searchit_tags_a".to_string()), "include_any_tags single: {body}");
-    assert!(!result_ids(&body).contains(&"searchit_tags_b".to_string()), "include_any_tags single leak: {body}");
+    assert!(
+        result_ids(&body).contains(&"searchit_tags_a".to_string()),
+        "include_any_tags single: {body}"
+    );
+    assert!(
+        !result_ids(&body).contains(&"searchit_tags_b".to_string()),
+        "include_any_tags single leak: {body}"
+    );
 
-    cleanup(&db, &fics, &["SearchTest Gryffindor", "SearchTest Slytherin", "SearchTest Angst"]).await;
+    cleanup(
+        &db,
+        &fics,
+        &[
+            "SearchTest Gryffindor",
+            "SearchTest Slytherin",
+            "SearchTest Angst",
+        ],
+    )
+    .await;
 }
 
 /// (6) Facet counts reflect the ACTIVE filters: seed two fics in different
@@ -545,8 +820,28 @@ async fn search_facets_reflect_active_filters() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_facet_a", "searchit_facet_b"];
-    seed_fic(&db, "searchit_facet_a", "Fandom A Story", "Adventures in fandom A, lionheart.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_facet_b", "Fandom B Story", "Adventures in fandom B.", 2000, 2, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_facet_a",
+        "Fandom A Story",
+        "Adventures in fandom A, lionheart.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_facet_b",
+        "Fandom B Story",
+        "Adventures in fandom B.",
+        2000,
+        2,
+        "ongoing",
+        2,
+    )
+    .await;
 
     let tag_fa = seed_tag(&db, "SearchTest Fandom Alpha", 1).await;
     let tag_fb = seed_tag(&db, "SearchTest Fandom Beta", 1).await;
@@ -560,24 +855,58 @@ async fn search_facets_reflect_active_filters() {
         .iter()
         .map(|f| (f["name"].as_str().unwrap(), f["count"].as_i64().unwrap()))
         .collect();
-    assert!(names.contains(&("SearchTest Fandom Alpha", 1)), "alpha facet: {body}");
-    assert!(names.contains(&("SearchTest Fandom Beta", 1)), "beta facet: {body}");
+    assert!(
+        names.contains(&("SearchTest Fandom Alpha", 1)),
+        "alpha facet: {body}"
+    );
+    assert!(
+        names.contains(&("SearchTest Fandom Beta", 1)),
+        "beta facet: {body}"
+    );
 
     // Filter to fandom A via a term unique to fic A's text ("lionheart")
     // → facets must shrink to only fandom A.
     let body = get_search("/api/search?q=lionheart").await;
     let fandoms = body["facets"]["fandoms"].as_array().unwrap();
-    assert!(fandoms.iter().any(|f| f["name"] == "SearchTest Fandom Alpha"), "filtered facets: {body}");
-    assert!(!fandoms.iter().any(|f| f["name"] == "SearchTest Fandom Beta"), "filtered facets leak: {body}");
+    assert!(
+        fandoms
+            .iter()
+            .any(|f| f["name"] == "SearchTest Fandom Alpha"),
+        "filtered facets: {body}"
+    );
+    assert!(
+        !fandoms
+            .iter()
+            .any(|f| f["name"] == "SearchTest Fandom Beta"),
+        "filtered facets leak: {body}"
+    );
 
     // Filter to fandom A via include_tags → facets reflect the active filter.
     let body = get_search("/api/search?include_tags=1%3ASearchTest%20Fandom%20Alpha").await;
     let fandoms = body["facets"]["fandoms"].as_array().unwrap();
-    assert!(fandoms.iter().any(|f| f["name"] == "SearchTest Fandom Alpha"), "include_tags-filtered facets: {body}");
-    assert!(!fandoms.iter().any(|f| f["name"] == "SearchTest Fandom Beta"), "include_tags-filtered facets leak: {body}");
-    assert!(result_ids(&body).contains(&"searchit_facet_a".to_string()), "include_tags filter result: {body}");
+    assert!(
+        fandoms
+            .iter()
+            .any(|f| f["name"] == "SearchTest Fandom Alpha"),
+        "include_tags-filtered facets: {body}"
+    );
+    assert!(
+        !fandoms
+            .iter()
+            .any(|f| f["name"] == "SearchTest Fandom Beta"),
+        "include_tags-filtered facets leak: {body}"
+    );
+    assert!(
+        result_ids(&body).contains(&"searchit_facet_a".to_string()),
+        "include_tags filter result: {body}"
+    );
 
-    cleanup(&db, &fics, &["SearchTest Fandom Alpha", "SearchTest Fandom Beta"]).await;
+    cleanup(
+        &db,
+        &fics,
+        &["SearchTest Fandom Alpha", "SearchTest Fandom Beta"],
+    )
+    .await;
 }
 
 /// (7) relationship_characters — matches relationship tags (type 3) whose
@@ -589,20 +918,49 @@ async fn search_relationship_characters() {
     let db = pool().await;
     clean_all_test_fixtures(&db).await;
     let fics = ["searchit_rel_a", "searchit_rel_b"];
-    seed_fic(&db, "searchit_rel_a", "The Ship Fic", "A relationship story.", 5000, 5, "complete", 1).await;
-    seed_fic(&db, "searchit_rel_b", "The Other Fic", "No romance here.", 1000, 1, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_rel_a",
+        "The Ship Fic",
+        "A relationship story.",
+        5000,
+        5,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_rel_b",
+        "The Other Fic",
+        "No romance here.",
+        1000,
+        1,
+        "ongoing",
+        2,
+    )
+    .await;
 
     let tag_rel = seed_tag(&db, "SearchTest Draco Malfoy/Hermione Granger", 3).await;
     seed_fic_tag(&db, "searchit_rel_a", tag_rel, 5).await;
 
     let body = get_search("/api/search?relationship_characters=Hermione%20Granger").await;
-    assert!(result_ids(&body).contains(&"searchit_rel_a".to_string()), "relationship_characters: {body}");
-    assert!(!result_ids(&body).contains(&"searchit_rel_b".to_string()), "relationship_characters leak: {body}");
+    assert!(
+        result_ids(&body).contains(&"searchit_rel_a".to_string()),
+        "relationship_characters: {body}"
+    );
+    assert!(
+        !result_ids(&body).contains(&"searchit_rel_b".to_string()),
+        "relationship_characters leak: {body}"
+    );
 
     // A character with no matching relationship tags → the filter adds no
     // constraint (empty include_any), so the seeded fic is still present.
     let body = get_search("/api/search?relationship_characters=NoSuchChar").await;
-    assert!(result_ids(&body).contains(&"searchit_rel_a".to_string()), "no matching relationship is unfiltered: {body}");
+    assert!(
+        result_ids(&body).contains(&"searchit_rel_a".to_string()),
+        "no matching relationship is unfiltered: {body}"
+    );
 
     cleanup(&db, &fics, &["SearchTest Draco Malfoy/Hermione Granger"]).await;
 }
@@ -615,26 +973,68 @@ async fn search_pagination_and_sort() {
     let db = pool().await;
     let fics = ["searchit_page_a", "searchit_page_b", "searchit_page_c"];
     // fic_updated: a=now-1d (newest), b=now-2d, c=now-3d (oldest)
-    seed_fic(&db, "searchit_page_a", "Page Story Alpha", "Shared topic quux.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_page_b", "Page Story Beta", "Shared topic quux.", 9000, 9, "ongoing", 2).await;
-    seed_fic(&db, "searchit_page_c", "Page Story Gamma", "Shared topic quux.", 500, 3, "complete", 3).await;
+    seed_fic(
+        &db,
+        "searchit_page_a",
+        "Page Story Alpha",
+        "Shared topic quux.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_page_b",
+        "Page Story Beta",
+        "Shared topic quux.",
+        9000,
+        9,
+        "ongoing",
+        2,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_page_c",
+        "Page Story Gamma",
+        "Shared topic quux.",
+        500,
+        3,
+        "complete",
+        3,
+    )
+    .await;
 
     // Default sort (-date): newest first → a, b, c
     let body = get_search("/api/search?q=quux").await;
     assert_eq!(total(&body), 3);
-    assert_eq!(result_ids(&body), vec!["searchit_page_a", "searchit_page_b", "searchit_page_c"]);
+    assert_eq!(
+        result_ids(&body),
+        vec!["searchit_page_a", "searchit_page_b", "searchit_page_c"]
+    );
 
     // -words: descending → b (9000), a (1000), c (500)
     let body = get_search("/api/search?q=quux&sort=-words").await;
-    assert_eq!(result_ids(&body), vec!["searchit_page_b", "searchit_page_a", "searchit_page_c"]);
+    assert_eq!(
+        result_ids(&body),
+        vec!["searchit_page_b", "searchit_page_a", "searchit_page_c"]
+    );
 
     // -chapters: descending → b (9), c (3), a (1)
     let body = get_search("/api/search?q=quux&sort=-chapters").await;
-    assert_eq!(result_ids(&body), vec!["searchit_page_b", "searchit_page_c", "searchit_page_a"]);
+    assert_eq!(
+        result_ids(&body),
+        vec!["searchit_page_b", "searchit_page_c", "searchit_page_a"]
+    );
 
     // -title: ascending → a, b, c
     let body = get_search("/api/search?q=quux&sort=-title").await;
-    assert_eq!(result_ids(&body), vec!["searchit_page_a", "searchit_page_b", "searchit_page_c"]);
+    assert_eq!(
+        result_ids(&body),
+        vec!["searchit_page_a", "searchit_page_b", "searchit_page_c"]
+    );
 
     // Pagination: per_page=1, page=2 → second item under -date sort (b)
     let body = get_search("/api/search?q=quux&per_page=1&page=2").await;
@@ -669,8 +1069,19 @@ async fn search_empty_database_shape() {
     assert_eq!(body["page"], 1);
     assert!(body["results"].as_array().unwrap().is_empty());
     // Facets are all present and empty.
-    for key in ["fandoms", "characters", "relationships", "warnings", "categories", "freeforms", "statuses"] {
-        assert!(body["facets"][key].is_array(), "facets.{key} missing: {body}");
+    for key in [
+        "fandoms",
+        "characters",
+        "relationships",
+        "warnings",
+        "categories",
+        "freeforms",
+        "statuses",
+    ] {
+        assert!(
+            body["facets"][key].is_array(),
+            "facets.{key} missing: {body}"
+        );
     }
 }
 
@@ -765,7 +1176,17 @@ async fn seed_suggest_fic(
     url_id: &str,
     tag_names: &[(&str, i16)],
 ) -> Vec<i32> {
-    seed_fic(pool, url_id, &format!("Suggest {url_id}"), "Suggestions test fic.", 1000, 1, "complete", 1).await;
+    seed_fic(
+        pool,
+        url_id,
+        &format!("Suggest {url_id}"),
+        "Suggestions test fic.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
     let mut ids = Vec::new();
     for (name, type_id) in tag_names {
         let id = seed_tag(pool, name, *type_id).await;
@@ -782,9 +1203,24 @@ async fn seed_suggest_fic(
 async fn suggest_popular_ranking_prefix_and_type_filter() {
     let _guard = db_guard();
     let db = pool().await;
-    let fics = ["suggestit_pop_a", "suggestit_pop_b", "suggestit_pop_c", "suggestit_pop_d"];
+    let fics = [
+        "suggestit_pop_a",
+        "suggestit_pop_b",
+        "suggestit_pop_c",
+        "suggestit_pop_d",
+    ];
     for f in fics {
-        seed_fic(&db, f, &format!("Suggest {f}"), "Suggestions test fic.", 1000, 1, "complete", 1).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("Suggest {f}"),
+            "Suggestions test fic.",
+            1000,
+            1,
+            "complete",
+            1,
+        )
+        .await;
     }
     // Prefix `SuggestItZZ` sorts after all earlier `SuggestIt*` seeds so the
     // seeded tags own the top-usage slots among themselves. The Adventure
@@ -806,7 +1242,10 @@ async fn suggest_popular_ranking_prefix_and_type_filter() {
     let body = get_suggest_auth("/api/search/suggest", None).await;
     assert_eq!(body["err"], 0, "{body}");
     let names = suggest_names(&body);
-    assert_eq!(names[0], "SuggestItZZ Adventure", "usage 2 must rank first: {body}");
+    assert_eq!(
+        names[0], "SuggestItZZ Adventure",
+        "usage 2 must rank first: {body}"
+    );
     assert!(names.contains(&"SuggestItZZ Angst".to_string()), "{body}");
     assert!(names.contains(&"SuggestItZZ Fluff".to_string()), "{body}");
     assert!(names.contains(&"SuggestItZZ Fandom".to_string()), "{body}");
@@ -821,19 +1260,30 @@ async fn suggest_popular_ranking_prefix_and_type_filter() {
     let body = get_suggest_auth("/api/search/suggest?tag_type_id=4", None).await;
     let names = suggest_names(&body);
     assert!(!names.contains(&"SuggestItZZ Fandom".to_string()), "{body}");
-    assert!(names.contains(&"SuggestItZZ Adventure".to_string()), "{body}");
+    assert!(
+        names.contains(&"SuggestItZZ Adventure".to_string()),
+        "{body}"
+    );
 
     // Prefix filter (case-insensitive ILIKE prefix).
     let body = get_suggest_auth("/api/search/suggest?q=suggestitzz%20a", None).await;
     let names = suggest_names(&body);
-    assert!(names.contains(&"SuggestItZZ Adventure".to_string()), "{body}");
+    assert!(
+        names.contains(&"SuggestItZZ Adventure".to_string()),
+        "{body}"
+    );
     assert!(names.contains(&"SuggestItZZ Angst".to_string()), "{body}");
     assert!(!names.contains(&"SuggestItZZ Fluff".to_string()), "{body}");
 
     cleanup(
         &db,
         &fics,
-        &["SuggestItZZ Adventure", "SuggestItZZ Angst", "SuggestItZZ Fluff", "SuggestItZZ Fandom"],
+        &[
+            "SuggestItZZ Adventure",
+            "SuggestItZZ Angst",
+            "SuggestItZZ Fluff",
+            "SuggestItZZ Fandom",
+        ],
     )
     .await;
 }
@@ -849,7 +1299,17 @@ async fn suggest_personal_marks_for_you_for_authenticated_user() {
     let user_id = seed_suggest_user(&db, user).await;
     let fics = ["suggestit_per_a", "suggestit_per_b", "suggestit_per_c"];
     for f in fics {
-        seed_fic(&db, f, &format!("Suggest {f}"), "Suggestions test fic.", 1000, 1, "complete", 1).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("Suggest {f}"),
+            "Suggestions test fic.",
+            1000,
+            1,
+            "complete",
+            1,
+        )
+        .await;
     }
     // Two popular tags; the user bookmarks ONLY fic B, which carries ONLY
     // the Angst tag → Angst is the user's top tag. Adventure is attached to
@@ -871,12 +1331,18 @@ async fn suggest_personal_marks_for_you_for_authenticated_user() {
         .iter()
         .find(|s| s["name"] == "SuggestItZZ Per Angst")
         .expect("Angst must be suggested");
-    assert_eq!(angst["reason"], "for_you", "bookmarked tag must be for_you: {body}");
+    assert_eq!(
+        angst["reason"], "for_you",
+        "bookmarked tag must be for_you: {body}"
+    );
     let adv = suggestions
         .iter()
         .find(|s| s["name"] == "SuggestItZZ Per Adventure")
         .expect("Adventure must be suggested");
-    assert_eq!(adv["reason"], "popular", "unbookmarked tag stays popular: {body}");
+    assert_eq!(
+        adv["reason"], "popular",
+        "unbookmarked tag stays popular: {body}"
+    );
     // for_you comes first (re-ranked by overlap).
     assert_eq!(
         suggestions[0]["reason"], "for_you",
@@ -887,7 +1353,10 @@ async fn suggest_personal_marks_for_you_for_authenticated_user() {
     let body = get_suggest_auth("/api/search/suggest?personal=1", None).await;
     assert_eq!(body["err"], 0, "{body}");
     for s in body["suggestions"].as_array().unwrap() {
-        assert_eq!(s["reason"], "popular", "anonymous must never get for_you: {body}");
+        assert_eq!(
+            s["reason"], "popular",
+            "anonymous must never get for_you: {body}"
+        );
     }
 
     cleanup(
@@ -913,20 +1382,38 @@ async fn search_main_char_attr_finds_attribute_on_main_character() {
     let _guard = db_guard();
     let db = pool().await;
 
-    let fics = ["searchit_mca_main", "searchit_mca_side", "searchit_mca_nochar"];
-    let tags = ["SearchTest Harry Potter", "SearchTest Ron Weasley", "SearchTest Dark Harry Potter"];
+    let fics = [
+        "searchit_mca_main",
+        "searchit_mca_side",
+        "searchit_mca_nochar",
+    ];
+    let tags = [
+        "SearchTest Harry Potter",
+        "SearchTest Ron Weasley",
+        "SearchTest Dark Harry Potter",
+    ];
     for f in fics {
-        seed_fic(&db, f, &format!("MCA {f}"), "Main character attribute test.", 10000, 10, "complete", 1).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("MCA {f}"),
+            "Main character attribute test.",
+            10000,
+            10,
+            "complete",
+            1,
+        )
+        .await;
     }
     // Fic A: Harry is MAIN (score 10) + Dark tag -> should match
     let harry = seed_tag(&db, "SearchTest Harry Potter", 2).await;
     let ron = seed_tag(&db, "SearchTest Ron Weasley", 2).await;
     let dark = seed_tag(&db, "SearchTest Dark Harry Potter", 4).await;
-    seed_fic_tag(&db, "searchit_mca_main", harry, 10).await;  // Harry = main
+    seed_fic_tag(&db, "searchit_mca_main", harry, 10).await; // Harry = main
     seed_fic_tag(&db, "searchit_mca_main", dark, 5).await;
     // Fic B: Harry is SECONDARY (score 1, Ron is main at 10) + Dark tag -> must NOT match
-    seed_fic_tag(&db, "searchit_mca_side", ron, 10).await;    // Ron = main
-    seed_fic_tag(&db, "searchit_mca_side", harry, 1).await;   // Harry = secondary
+    seed_fic_tag(&db, "searchit_mca_side", ron, 10).await; // Ron = main
+    seed_fic_tag(&db, "searchit_mca_side", harry, 1).await; // Harry = secondary
     seed_fic_tag(&db, "searchit_mca_side", dark, 5).await;
     // Fic C: Dark tag but no Harry char tag -> must NOT match
     seed_fic_tag(&db, "searchit_mca_nochar", dark, 5).await;
@@ -934,7 +1421,12 @@ async fn search_main_char_attr_finds_attribute_on_main_character() {
     // Search: main character = Harry Potter, attribute = Dark Harry Potter
     let uri = "/api/search?main_char_attr=SearchTest%20Harry%20Potter%7CSearchTest%20Dark%20Harry%20Potter";
     let body = get_search(uri).await;
-    let ids: Vec<&str> = body["results"].as_array().unwrap().iter().map(|r| r["url_id"].as_str().unwrap()).collect();
+    let ids: Vec<&str> = body["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["url_id"].as_str().unwrap())
+        .collect();
     assert!(
         ids.contains(&"searchit_mca_main"),
         "main-character fic should match: {body}"
@@ -963,9 +1455,23 @@ async fn search_main_char_attr_any_character() {
     let db = pool().await;
 
     let fics = ["searchit_mca_a_main", "searchit_mca_a_side"];
-    let tags = ["SearchTest Character A", "SearchTest Character B", "SearchTest Attribute A"];
+    let tags = [
+        "SearchTest Character A",
+        "SearchTest Character B",
+        "SearchTest Attribute A",
+    ];
     for f in fics {
-        seed_fic(&db, f, &format!("MCA {f}"), "Main character attribute any-char test.", 10000, 10, "complete", 1).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("MCA {f}"),
+            "Main character attribute any-char test.",
+            10000,
+            10,
+            "complete",
+            1,
+        )
+        .await;
     }
     let char_a = seed_tag(&db, "SearchTest Character A", 2).await;
     let char_b = seed_tag(&db, "SearchTest Character B", 2).await;
@@ -982,7 +1488,12 @@ async fn search_main_char_attr_any_character() {
 
     let uri = "/api/search?main_char_attr=SearchTest%20Character%20A%7CSearchTest%20Attribute%20A";
     let body = get_search(uri).await;
-    let ids: Vec<&str> = body["results"].as_array().unwrap().iter().map(|r| r["url_id"].as_str().unwrap()).collect();
+    let ids: Vec<&str> = body["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["url_id"].as_str().unwrap())
+        .collect();
     assert!(
         ids.contains(&"searchit_mca_a_main"),
         "Character-A-as-main fic should match: {body}"
@@ -1019,7 +1530,17 @@ async fn search_relationship_characters_finds_any_relationship_with_character() 
     let db = pool().await;
     let fics = ["searchit_relc_a", "searchit_relc_b", "searchit_relc_c"];
     for f in fics {
-        seed_fic(&db, f, &format!("RelChar {f}"), "Relationship character test.", 1000, 1, "complete", 1).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("RelChar {f}"),
+            "Relationship character test.",
+            1000,
+            1,
+            "complete",
+            1,
+        )
+        .await;
     }
     let hp_gw = seed_tag(&db, "SearchTest Harry Potter/Ginny Weasley", 3).await;
     let dm_hp = seed_tag(&db, "SearchTest Draco Malfoy/Harry Potter", 3).await;
@@ -1030,17 +1551,42 @@ async fn search_relationship_characters_finds_any_relationship_with_character() 
 
     let body = get_search("/api/search?relationship_characters=Harry%20Potter").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_relc_a".to_string()), "A (Harry/Ginny) must match: {body}");
-    assert!(ids.contains(&"searchit_relc_b".to_string()), "B (Draco/Harry) must match: {body}");
-    assert!(!ids.contains(&"searchit_relc_c".to_string()), "C (Ron/Hermione) must NOT match: {body}");
+    assert!(
+        ids.contains(&"searchit_relc_a".to_string()),
+        "A (Harry/Ginny) must match: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_relc_b".to_string()),
+        "B (Draco/Harry) must match: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_relc_c".to_string()),
+        "C (Ron/Hermione) must NOT match: {body}"
+    );
 
     // Multiple characters are OR-ed together.
-    let body = get_search("/api/search?relationship_characters=Ron%20Weasley%2CHermione%20Granger").await;
+    let body =
+        get_search("/api/search?relationship_characters=Ron%20Weasley%2CHermione%20Granger").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_relc_c".to_string()), "C has Ron/Hermione: {body}");
-    assert!(!ids.contains(&"searchit_relc_a".to_string()), "A must not match: {body}");
+    assert!(
+        ids.contains(&"searchit_relc_c".to_string()),
+        "C has Ron/Hermione: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_relc_a".to_string()),
+        "A must not match: {body}"
+    );
 
-    cleanup(&db, &fics, &["SearchTest Harry Potter/Ginny Weasley", "SearchTest Draco Malfoy/Harry Potter", "SearchTest Ron Weasley/Hermione Granger"]).await;
+    cleanup(
+        &db,
+        &fics,
+        &[
+            "SearchTest Harry Potter/Ginny Weasley",
+            "SearchTest Draco Malfoy/Harry Potter",
+            "SearchTest Ron Weasley/Hermione Granger",
+        ],
+    )
+    .await;
 }
 
 /// (10) Main-character search: `include_tags=2:Harry Potter` matches fics
@@ -1053,8 +1599,28 @@ async fn search_main_character_tag_type2_not_relationship() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_mc_a", "searchit_mc_b"];
-    seed_fic(&db, "searchit_mc_a", "Main Char A", "Harry as a character tag.", 2000, 2, "complete", 1).await;
-    seed_fic(&db, "searchit_mc_b", "Main Char B", "Harry only in a relationship tag.", 3000, 3, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_mc_a",
+        "Main Char A",
+        "Harry as a character tag.",
+        2000,
+        2,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_mc_b",
+        "Main Char B",
+        "Harry only in a relationship tag.",
+        3000,
+        3,
+        "ongoing",
+        2,
+    )
+    .await;
 
     let harry_char = seed_tag(&db, "SearchTest Harry Potter", 2).await;
     let harry_rel = seed_tag(&db, "SearchTest Harry Potter/Ginny Weasley", 3).await;
@@ -1063,16 +1629,38 @@ async fn search_main_character_tag_type2_not_relationship() {
 
     let body = get_search("/api/search?include_tags=2%3ASearchTest%20Harry%20Potter").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_mc_a".to_string()), "fic A has Harry as character tag: {body}");
-    assert!(!ids.contains(&"searchit_mc_b".to_string()), "fic B only has Harry in a relationship tag: {body}");
+    assert!(
+        ids.contains(&"searchit_mc_a".to_string()),
+        "fic A has Harry as character tag: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_mc_b".to_string()),
+        "fic B only has Harry in a relationship tag: {body}"
+    );
 
     // The same name as a RELATIONSHIP filter (type 3) matches only fic B.
-    let body = get_search("/api/search?include_tags=3%3ASearchTest%20Harry%20Potter%2FGinny%20Weasley").await;
+    let body =
+        get_search("/api/search?include_tags=3%3ASearchTest%20Harry%20Potter%2FGinny%20Weasley")
+            .await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_mc_b".to_string()), "fic B has the relationship tag: {body}");
-    assert!(!ids.contains(&"searchit_mc_a".to_string()), "fic A lacks the relationship tag: {body}");
+    assert!(
+        ids.contains(&"searchit_mc_b".to_string()),
+        "fic B has the relationship tag: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_mc_a".to_string()),
+        "fic A lacks the relationship tag: {body}"
+    );
 
-    cleanup(&db, &fics, &["SearchTest Harry Potter", "SearchTest Harry Potter/Ginny Weasley"]).await;
+    cleanup(
+        &db,
+        &fics,
+        &[
+            "SearchTest Harry Potter",
+            "SearchTest Harry Potter/Ginny Weasley",
+        ],
+    )
+    .await;
 }
 
 /// (11) main_char_attr with a character that is NOT the main character in any
@@ -1084,7 +1672,17 @@ async fn search_main_char_attr_unknown_main_character_empty() {
     let db = pool().await;
     let fics = ["searchit_mcx_a", "searchit_mcx_b"];
     for f in fics {
-        seed_fic(&db, f, &format!("MCX {f}"), "Main char attr negative test.", 5000, 5, "complete", 1).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("MCX {f}"),
+            "Main char attr negative test.",
+            5000,
+            5,
+            "complete",
+            1,
+        )
+        .await;
     }
     let hermione = seed_tag(&db, "SearchTest Hermione Granger", 2).await;
     let dark = seed_tag(&db, "SearchTest Dark Hermione Granger", 4).await;
@@ -1102,7 +1700,16 @@ async fn search_main_char_attr_unknown_main_character_empty() {
         "Hermione is main in no fic carrying the Dark tag: {body}"
     );
 
-    cleanup(&db, &fics, &["SearchTest Hermione Granger", "SearchTest Dark Hermione Granger", "SearchTest Harry Potter"]).await;
+    cleanup(
+        &db,
+        &fics,
+        &[
+            "SearchTest Hermione Granger",
+            "SearchTest Dark Hermione Granger",
+            "SearchTest Harry Potter",
+        ],
+    )
+    .await;
 }
 
 /// (12) Cross-type tag AND: fandom AND character — both must be present.
@@ -1114,7 +1721,17 @@ async fn search_cross_type_include_tags_and() {
     let db = pool().await;
     let fics = ["searchit_cross_a", "searchit_cross_b", "searchit_cross_c"];
     for f in fics {
-        seed_fic(&db, f, &format!("Cross {f}"), "Cross-type AND test.", 1500, 2, "complete", 1).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("Cross {f}"),
+            "Cross-type AND test.",
+            1500,
+            2,
+            "complete",
+            1,
+        )
+        .await;
     }
     let fandom = seed_tag(&db, "SearchTest Fandom HP", 1).await;
     let char_harry = seed_tag(&db, "SearchTest Harry Potter", 2).await;
@@ -1123,14 +1740,29 @@ async fn search_cross_type_include_tags_and() {
     seed_fic_tag(&db, "searchit_cross_b", fandom, 5).await; // fandom only
     seed_fic_tag(&db, "searchit_cross_c", char_harry, 5).await; // character only
 
-    let uri = "/api/search?include_tags=1%3ASearchTest%20Fandom%20HP%2C2%3ASearchTest%20Harry%20Potter";
+    let uri =
+        "/api/search?include_tags=1%3ASearchTest%20Fandom%20HP%2C2%3ASearchTest%20Harry%20Potter";
     let body = get_search(uri).await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_cross_a".to_string()), "fic A has both: {body}");
-    assert!(!ids.contains(&"searchit_cross_b".to_string()), "fic B lacks the character: {body}");
-    assert!(!ids.contains(&"searchit_cross_c".to_string()), "fic C lacks the fandom: {body}");
+    assert!(
+        ids.contains(&"searchit_cross_a".to_string()),
+        "fic A has both: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_cross_b".to_string()),
+        "fic B lacks the character: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_cross_c".to_string()),
+        "fic C lacks the fandom: {body}"
+    );
 
-    cleanup(&db, &fics, &["SearchTest Fandom HP", "SearchTest Harry Potter"]).await;
+    cleanup(
+        &db,
+        &fics,
+        &["SearchTest Fandom HP", "SearchTest Harry Potter"],
+    )
+    .await;
 }
 
 /// (13) include_any_tags — OR semantics: fic with EITHER tag matches.
@@ -1141,7 +1773,17 @@ async fn search_include_any_tags_or_semantics() {
     let db = pool().await;
     let fics = ["searchit_any_a", "searchit_any_b", "searchit_any_c"];
     for f in fics {
-        seed_fic(&db, f, &format!("Any {f}"), "include_any OR test.", 1200, 1, "ongoing", 1).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("Any {f}"),
+            "include_any OR test.",
+            1200,
+            1,
+            "ongoing",
+            1,
+        )
+        .await;
     }
     let harry = seed_tag(&db, "SearchTest Harry Potter", 2).await;
     let ron = seed_tag(&db, "SearchTest Ron Weasley", 2).await;
@@ -1153,11 +1795,25 @@ async fn search_include_any_tags_or_semantics() {
     let uri = "/api/search?include_any_tags=2%3ASearchTest%20Harry%20Potter%2C2%3ASearchTest%20Ron%20Weasley";
     let body = get_search(uri).await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_any_a".to_string()), "A has Harry: {body}");
-    assert!(ids.contains(&"searchit_any_b".to_string()), "B has Ron: {body}");
-    assert!(ids.contains(&"searchit_any_c".to_string()), "C has both: {body}");
+    assert!(
+        ids.contains(&"searchit_any_a".to_string()),
+        "A has Harry: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_any_b".to_string()),
+        "B has Ron: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_any_c".to_string()),
+        "C has both: {body}"
+    );
 
-    cleanup(&db, &fics, &["SearchTest Harry Potter", "SearchTest Ron Weasley"]).await;
+    cleanup(
+        &db,
+        &fics,
+        &["SearchTest Harry Potter", "SearchTest Ron Weasley"],
+    )
+    .await;
 }
 
 /// (14) exclude_tags — exclude a specific character.
@@ -1169,7 +1825,17 @@ async fn search_exclude_tags_character() {
     clean_all_test_fixtures(&db).await;
     let fics = ["searchit_exc_a", "searchit_exc_b"];
     for f in fics {
-        seed_fic(&db, f, &format!("Exc {f}"), "Exclude character test.", 800, 1, "complete", 1).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("Exc {f}"),
+            "Exclude character test.",
+            800,
+            1,
+            "complete",
+            1,
+        )
+        .await;
     }
     let harry = seed_tag(&db, "SearchTest Harry Potter", 2).await;
     let ron = seed_tag(&db, "SearchTest Ron Weasley", 2).await;
@@ -1179,10 +1845,21 @@ async fn search_exclude_tags_character() {
     let uri = "/api/search?exclude_tags=2%3ASearchTest%20Harry%20Potter";
     let body = get_search(uri).await;
     let ids = result_ids(&body);
-    assert!(!ids.contains(&"searchit_exc_a".to_string()), "fic A has Harry, must be excluded: {body}");
-    assert!(ids.contains(&"searchit_exc_b".to_string()), "fic B (Ron only) stays: {body}");
+    assert!(
+        !ids.contains(&"searchit_exc_a".to_string()),
+        "fic A has Harry, must be excluded: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_exc_b".to_string()),
+        "fic B (Ron only) stays: {body}"
+    );
 
-    cleanup(&db, &fics, &["SearchTest Harry Potter", "SearchTest Ron Weasley"]).await;
+    cleanup(
+        &db,
+        &fics,
+        &["SearchTest Harry Potter", "SearchTest Ron Weasley"],
+    )
+    .await;
 }
 
 /// (15) primary_tag — fic must have the tag as its HIGHEST-scored fic_tag
@@ -1194,7 +1871,17 @@ async fn search_primary_tag_requires_highest_score() {
     let db = pool().await;
     let fics = ["searchit_prim_a", "searchit_prim_b"];
     for f in fics {
-        seed_fic(&db, f, &format!("Prim {f}"), "Primary tag test.", 2000, 2, "complete", 1).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("Prim {f}"),
+            "Primary tag test.",
+            2000,
+            2,
+            "complete",
+            1,
+        )
+        .await;
     }
     let fandom_adv = seed_tag(&db, "SearchTest Adventure", 1).await;
     let fandom_fan = seed_tag(&db, "SearchTest Fantasy", 1).await;
@@ -1207,8 +1894,14 @@ async fn search_primary_tag_requires_highest_score() {
 
     let body = get_search("/api/search?primary_tag=1%3ASearchTest%20Adventure").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_prim_a".to_string()), "A has Adventure as primary: {body}");
-    assert!(!ids.contains(&"searchit_prim_b".to_string()), "B has Adventure only as secondary: {body}");
+    assert!(
+        ids.contains(&"searchit_prim_a".to_string()),
+        "A has Adventure as primary: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_prim_b".to_string()),
+        "B has Adventure only as secondary: {body}"
+    );
 
     cleanup(&db, &fics, &["SearchTest Adventure", "SearchTest Fantasy"]).await;
 }
@@ -1220,8 +1913,28 @@ async fn search_fielded_title_phrase_and_author() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_fld_a", "searchit_fld_b"];
-    seed_fic(&db, "searchit_fld_a", "The Slow Burn of Stars", "A slow burn romance.", 4000, 4, "complete", 1).await;
-    seed_fic(&db, "searchit_fld_b", "Instant Coffee", "No burn here.", 1000, 1, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_fld_a",
+        "The Slow Burn of Stars",
+        "A slow burn romance.",
+        4000,
+        4,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_fld_b",
+        "Instant Coffee",
+        "No burn here.",
+        1000,
+        1,
+        "ongoing",
+        2,
+    )
+    .await;
     // Give fic A a distinct author so author:partial distinguishes the two.
     sqlx::query("UPDATE fic_info SET author = $2 WHERE id = $1")
         .bind("searchit_fld_a")
@@ -1233,14 +1946,26 @@ async fn search_fielded_title_phrase_and_author() {
     // title:"exact phrase" — the whole quoted phrase must appear in the title.
     let body = get_search("/api/search?q=title%3A%22slow%20burn%22").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_fld_a".to_string()), "title phrase match: {body}");
-    assert!(!ids.contains(&"searchit_fld_b".to_string()), "title phrase leak: {body}");
+    assert!(
+        ids.contains(&"searchit_fld_a".to_string()),
+        "title phrase match: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_fld_b".to_string()),
+        "title phrase leak: {body}"
+    );
 
     // author:partial — ILIKE '%aurora%' (case-insensitive substring).
     let body = get_search("/api/search?q=author%3Aaurora").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_fld_a".to_string()), "author match: {body}");
-    assert!(!ids.contains(&"searchit_fld_b".to_string()), "author leak: {body}");
+    assert!(
+        ids.contains(&"searchit_fld_a".to_string()),
+        "author match: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_fld_b".to_string()),
+        "author leak: {body}"
+    );
 
     // author:partial with a value that matches nobody.
     let body = get_search("/api/search?q=author%3Azzz_no_author").await;
@@ -1257,23 +1982,71 @@ async fn search_boolean_exclusion_and_or() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_boo_a", "searchit_boo_b", "searchit_boo_c"];
-    seed_fic(&db, "searchit_boo_a", "Harry and Draco", "Harry Potter meets Draco Malfoy.", 3000, 3, "complete", 1).await;
-    seed_fic(&db, "searchit_boo_b", "Harry Alone", "Harry Potter goes solo.", 2000, 2, "complete", 2).await;
-    seed_fic(&db, "searchit_boo_c", "Snape's Story", "Severus Snape teaches.", 2500, 2, "complete", 3).await;
+    seed_fic(
+        &db,
+        "searchit_boo_a",
+        "Harry and Draco",
+        "Harry Potter meets Draco Malfoy.",
+        3000,
+        3,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_boo_b",
+        "Harry Alone",
+        "Harry Potter goes solo.",
+        2000,
+        2,
+        "complete",
+        2,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_boo_c",
+        "Snape's Story",
+        "Severus Snape teaches.",
+        2500,
+        2,
+        "complete",
+        3,
+    )
+    .await;
 
     // harry -snape → fics mentioning harry but not snape
     let body = get_search("/api/search?q=harry%20-snape").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_boo_a".to_string()), "A has harry, no snape: {body}");
-    assert!(ids.contains(&"searchit_boo_b".to_string()), "B has harry, no snape: {body}");
-    assert!(!ids.contains(&"searchit_boo_c".to_string()), "C has snape: {body}");
+    assert!(
+        ids.contains(&"searchit_boo_a".to_string()),
+        "A has harry, no snape: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_boo_b".to_string()),
+        "B has harry, no snape: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_boo_c".to_string()),
+        "C has snape: {body}"
+    );
 
     // harry AND draco → both words in one fic
     let body = get_search("/api/search?q=harry%20AND%20draco").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_boo_a".to_string()), "A has harry AND draco: {body}");
-    assert!(!ids.contains(&"searchit_boo_b".to_string()), "B lacks draco: {body}");
-    assert!(!ids.contains(&"searchit_boo_c".to_string()), "C lacks harry: {body}");
+    assert!(
+        ids.contains(&"searchit_boo_a".to_string()),
+        "A has harry AND draco: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_boo_b".to_string()),
+        "B lacks draco: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_boo_c".to_string()),
+        "C lacks harry: {body}"
+    );
 
     // harry OR draco → A and B (harry) + nothing extra; snape-fic C stays out
     let body = get_search("/api/search?q=harry%20OR%20draco").await;
@@ -1294,23 +2067,71 @@ async fn search_native_boolean_or_exclusion_and_snippet() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_wb_a", "searchit_wb_b", "searchit_wb_c"];
-    seed_fic(&db, "searchit_wb_a", "Harry's Story", "Harry Potter meets Draco Malfoy in a quiet corridor.", 3000, 3, "complete", 1).await;
-    seed_fic(&db, "searchit_wb_b", "Ron's Story", "Ron Weasley brews tea alone.", 2000, 2, "complete", 2).await;
-    seed_fic(&db, "searchit_wb_c", "Snape's Story", "Severus Snape teaches potions to nobody in particular.", 2500, 2, "complete", 3).await;
+    seed_fic(
+        &db,
+        "searchit_wb_a",
+        "Harry's Story",
+        "Harry Potter meets Draco Malfoy in a quiet corridor.",
+        3000,
+        3,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_wb_b",
+        "Ron's Story",
+        "Ron Weasley brews tea alone.",
+        2000,
+        2,
+        "complete",
+        2,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_wb_c",
+        "Snape's Story",
+        "Severus Snape teaches potions to nobody in particular.",
+        2500,
+        2,
+        "complete",
+        3,
+    )
+    .await;
 
     // OR — matches fics mentioning either term (A has harry, B has ron).
     let body = get_search("/api/search?q=harry%20OR%20ron").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_wb_a".to_string()), "A has harry: {body}");
-    assert!(ids.contains(&"searchit_wb_b".to_string()), "B has ron: {body}");
-    assert!(!ids.contains(&"searchit_wb_c".to_string()), "C has neither: {body}");
+    assert!(
+        ids.contains(&"searchit_wb_a".to_string()),
+        "A has harry: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_wb_b".to_string()),
+        "B has ron: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_wb_c".to_string()),
+        "C has neither: {body}"
+    );
 
     // -draco exclusion — removes the fic mentioning draco.
     let body = get_search("/api/search?q=harry%20-draco").await;
     let ids = result_ids(&body);
-    assert!(!ids.contains(&"searchit_wb_a".to_string()), "A mentions draco, excluded: {body}");
-    assert!(!ids.contains(&"searchit_wb_b".to_string()), "B has no harry: {body}");
-    assert!(!ids.contains(&"searchit_wb_c".to_string()), "C has no harry: {body}");
+    assert!(
+        !ids.contains(&"searchit_wb_a".to_string()),
+        "A mentions draco, excluded: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_wb_b".to_string()),
+        "B has no harry: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_wb_c".to_string()),
+        "C has no harry: {body}"
+    );
 
     // Snippet: non-empty and highlights the matched term with <b>.
     let body = get_search("/api/search?q=tea").await;
@@ -1321,15 +2142,30 @@ async fn search_native_boolean_or_exclusion_and_snippet() {
         .find(|r| r["url_id"] == "searchit_wb_b")
         .expect("fic B must be in results");
     let snippet = b["snippet"].as_str().unwrap_or("");
-    assert!(!snippet.is_empty(), "snippet must be non-empty for a match: {body}");
-    assert!(snippet.contains("<b>"), "snippet must contain highlight tags: {snippet}");
-    assert!(snippet.contains("tea"), "snippet must contain the matched term: {snippet}");
+    assert!(
+        !snippet.is_empty(),
+        "snippet must be non-empty for a match: {body}"
+    );
+    assert!(
+        snippet.contains("<b>"),
+        "snippet must contain highlight tags: {snippet}"
+    );
+    assert!(
+        snippet.contains("tea"),
+        "snippet must contain the matched term: {snippet}"
+    );
 
     // Implicit AND still works: both words must appear in one fic.
     let body = get_search("/api/search?q=potions%20teaches").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_wb_c".to_string()), "implicit AND: {body}");
-    assert!(!ids.contains(&"searchit_wb_a".to_string()), "A lacks both words: {body}");
+    assert!(
+        ids.contains(&"searchit_wb_c".to_string()),
+        "implicit AND: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_wb_a".to_string()),
+        "A lacks both words: {body}"
+    );
 
     cleanup(&db, &fics, &[]).await;
 }
@@ -1342,13 +2178,39 @@ async fn search_quoted_phrase_adjacency() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_phr_a", "searchit_phr_b"];
-    seed_fic(&db, "searchit_phr_a", "Embers", "A slow burn romance with tension.", 5000, 5, "complete", 1).await;
-    seed_fic(&db, "searchit_phr_b", "Kindling", "The burn was slow to start but fierce.", 4000, 4, "complete", 2).await;
+    seed_fic(
+        &db,
+        "searchit_phr_a",
+        "Embers",
+        "A slow burn romance with tension.",
+        5000,
+        5,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_phr_b",
+        "Kindling",
+        "The burn was slow to start but fierce.",
+        4000,
+        4,
+        "complete",
+        2,
+    )
+    .await;
 
     let body = get_search("/api/search?q=%22slow%20burn%22").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_phr_a".to_string()), "A has the phrase: {body}");
-    assert!(!ids.contains(&"searchit_phr_b".to_string()), "B has the words apart, not the phrase: {body}");
+    assert!(
+        ids.contains(&"searchit_phr_a".to_string()),
+        "A has the phrase: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_phr_b".to_string()),
+        "B has the words apart, not the phrase: {body}"
+    );
 
     cleanup(&db, &fics, &[]).await;
 }
@@ -1362,9 +2224,39 @@ async fn search_numeric_bounds_and_complete() {
     let db = pool().await;
     let fics = ["searchit_num_a", "searchit_num_b", "searchit_num_c"];
     // a: 1000 words / 1 chapter / complete; b: 10000 / 10 / ongoing; c: 5000 / 5 / complete
-    seed_fic(&db, "searchit_num_a", "Num Alpha", "Shared topic numeric bounds.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_num_b", "Num Beta", "Shared topic numeric bounds.", 10000, 10, "ongoing", 2).await;
-    seed_fic(&db, "searchit_num_c", "Num Gamma", "Shared topic numeric bounds.", 5000, 5, "complete", 3).await;
+    seed_fic(
+        &db,
+        "searchit_num_a",
+        "Num Alpha",
+        "Shared topic numeric bounds.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_num_b",
+        "Num Beta",
+        "Shared topic numeric bounds.",
+        10000,
+        10,
+        "ongoing",
+        2,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_num_c",
+        "Num Gamma",
+        "Shared topic numeric bounds.",
+        5000,
+        5,
+        "complete",
+        3,
+    )
+    .await;
 
     let body = get_search("/api/search?q=numeric%20bounds&min_words=5000").await;
     assert_eq!(total(&body), 2, "min_words=5000: {body}");
@@ -1394,13 +2286,39 @@ async fn search_source_filter() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_src_a", "searchit_src_b"];
-    seed_fic(&db, "searchit_src_a", "Source Alpha", "Shared topic source filter.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_src_b", "Source Beta", "Shared topic source filter.", 2000, 2, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_src_a",
+        "Source Alpha",
+        "Shared topic source filter.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_src_b",
+        "Source Beta",
+        "Shared topic source filter.",
+        2000,
+        2,
+        "ongoing",
+        2,
+    )
+    .await;
 
     let body = get_search("/api/search?q=source%20filter&source=ao3").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_src_a".to_string()), "source=ao3: {body}");
-    assert!(ids.contains(&"searchit_src_b".to_string()), "source=ao3: {body}");
+    assert!(
+        ids.contains(&"searchit_src_a".to_string()),
+        "source=ao3: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_src_b".to_string()),
+        "source=ao3: {body}"
+    );
 
     let body = get_search("/api/search?q=source%20filter&source=ffn").await;
     assert_eq!(total(&body), 0, "source=ffn matches nothing: {body}");
@@ -1417,14 +2335,40 @@ async fn search_empty_no_filters_returns_all() {
     let db = pool().await;
     clean_all_test_fixtures(&db).await;
     let fics = ["searchit_emp_a", "searchit_emp_b"];
-    seed_fic(&db, "searchit_emp_a", "Empty Alpha", "Empty search test.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_emp_b", "Empty Beta", "Empty search test.", 2000, 2, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_emp_a",
+        "Empty Alpha",
+        "Empty search test.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_emp_b",
+        "Empty Beta",
+        "Empty search test.",
+        2000,
+        2,
+        "ongoing",
+        2,
+    )
+    .await;
 
     let body = get_search("/api/search").await;
     let ids = result_ids(&body);
     assert!(body["total"].as_i64().is_some(), "total present: {body}");
-    assert!(ids.contains(&"searchit_emp_a".to_string()), "empty search returns seeded fic A: {body}");
-    assert!(ids.contains(&"searchit_emp_b".to_string()), "empty search returns seeded fic B: {body}");
+    assert!(
+        ids.contains(&"searchit_emp_a".to_string()),
+        "empty search returns seeded fic A: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_emp_b".to_string()),
+        "empty search returns seeded fic B: {body}"
+    );
 
     cleanup(&db, &fics, &[]).await;
 }
@@ -1439,33 +2383,81 @@ async fn search_sort_newest_oldest_words_title() {
     let db = pool().await;
     let fics = ["searchit_sort_a", "searchit_sort_b", "searchit_sort_c"];
     // fic_updated: a=now-1d (newest), b=now-2d, c=now-3d (oldest)
-    seed_fic(&db, "searchit_sort_a", "Sort Alpha", "Shared topic sort order.", 9000, 9, "complete", 1).await;
-    seed_fic(&db, "searchit_sort_b", "Sort Beta", "Shared topic sort order.", 1000, 1, "ongoing", 2).await;
-    seed_fic(&db, "searchit_sort_c", "Sort Gamma", "Shared topic sort order.", 500, 3, "complete", 3).await;
+    seed_fic(
+        &db,
+        "searchit_sort_a",
+        "Sort Alpha",
+        "Shared topic sort order.",
+        9000,
+        9,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_sort_b",
+        "Sort Beta",
+        "Shared topic sort order.",
+        1000,
+        1,
+        "ongoing",
+        2,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_sort_c",
+        "Sort Gamma",
+        "Shared topic sort order.",
+        500,
+        3,
+        "complete",
+        3,
+    )
+    .await;
 
     // Default (no sort): newest first → a, b, c
     let body = get_search("/api/search?q=sort%20order").await;
-    assert_eq!(result_ids(&body), vec!["searchit_sort_a", "searchit_sort_b", "searchit_sort_c"]);
+    assert_eq!(
+        result_ids(&body),
+        vec!["searchit_sort_a", "searchit_sort_b", "searchit_sort_c"]
+    );
 
     // -date (newest): a, b, c
     let body = get_search("/api/search?q=sort%20order&sort=-date").await;
-    assert_eq!(result_ids(&body), vec!["searchit_sort_a", "searchit_sort_b", "searchit_sort_c"]);
+    assert_eq!(
+        result_ids(&body),
+        vec!["searchit_sort_a", "searchit_sort_b", "searchit_sort_c"]
+    );
 
     // date (oldest): c, b, a
     let body = get_search("/api/search?q=sort%20order&sort=date").await;
-    assert_eq!(result_ids(&body), vec!["searchit_sort_c", "searchit_sort_b", "searchit_sort_a"]);
+    assert_eq!(
+        result_ids(&body),
+        vec!["searchit_sort_c", "searchit_sort_b", "searchit_sort_a"]
+    );
 
     // -words: a (9000), b (1000), c (500)
     let body = get_search("/api/search?q=sort%20order&sort=-words").await;
-    assert_eq!(result_ids(&body), vec!["searchit_sort_a", "searchit_sort_b", "searchit_sort_c"]);
+    assert_eq!(
+        result_ids(&body),
+        vec!["searchit_sort_a", "searchit_sort_b", "searchit_sort_c"]
+    );
 
     // -title ascending: Alpha, Beta, Gamma
     let body = get_search("/api/search?q=sort%20order&sort=-title").await;
-    assert_eq!(result_ids(&body), vec!["searchit_sort_a", "searchit_sort_b", "searchit_sort_c"]);
+    assert_eq!(
+        result_ids(&body),
+        vec!["searchit_sort_a", "searchit_sort_b", "searchit_sort_c"]
+    );
 
     // Unknown sort falls back to -date
     let body = get_search("/api/search?q=sort%20order&sort=bogus").await;
-    assert_eq!(result_ids(&body), vec!["searchit_sort_a", "searchit_sort_b", "searchit_sort_c"]);
+    assert_eq!(
+        result_ids(&body),
+        vec!["searchit_sort_a", "searchit_sort_b", "searchit_sort_c"]
+    );
 
     cleanup(&db, &fics, &[]).await;
 }
@@ -1476,7 +2468,13 @@ async fn search_sort_newest_oldest_words_title() {
 async fn search_pagination_page_two() {
     let _guard = db_guard();
     let db = pool().await;
-    let fics = ["searchit_pg2_a", "searchit_pg2_b", "searchit_pg2_c", "searchit_pg2_d", "searchit_pg2_e"];
+    let fics = [
+        "searchit_pg2_a",
+        "searchit_pg2_b",
+        "searchit_pg2_c",
+        "searchit_pg2_d",
+        "searchit_pg2_e",
+    ];
     // Self-heal: a prior crashed run may have left stale rows with the same
     // ids (ON CONFLICT DO NOTHING would otherwise keep them and their old
     // fic_updated, corrupting the sort). Delete first, then seed fresh.
@@ -1492,7 +2490,17 @@ async fn search_pagination_page_two() {
     }
     for (i, f) in fics.iter().enumerate() {
         // Distinct fic_updated: a=1d (newest) ... e=5d (oldest)
-        seed_fic(&db, f, &format!("Page2 {f}"), "Shared topic page two.", 1000 + i as i64, 1, "complete", 1 + i as i64).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("Page2 {f}"),
+            "Shared topic page two.",
+            1000 + i as i64,
+            1,
+            "complete",
+            1 + i as i64,
+        )
+        .await;
     }
     // Default -date order is by fic_updated DESC: a (1d) is newest, e (5d) oldest.
     // per_page=2, page=2 → c, d
@@ -1522,9 +2530,39 @@ async fn search_facets_all_types_for_seeded_data() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_fac_a", "searchit_fac_b", "searchit_fac_c"];
-    seed_fic(&db, "searchit_fac_a", "Facet Alpha", "Shared topic facets.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_fac_b", "Facet Beta", "Shared topic facets.", 2000, 2, "ongoing", 2).await;
-    seed_fic(&db, "searchit_fac_c", "Facet Gamma", "Shared topic facets.", 3000, 3, "complete", 3).await;
+    seed_fic(
+        &db,
+        "searchit_fac_a",
+        "Facet Alpha",
+        "Shared topic facets.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_fac_b",
+        "Facet Beta",
+        "Shared topic facets.",
+        2000,
+        2,
+        "ongoing",
+        2,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_fac_c",
+        "Facet Gamma",
+        "Shared topic facets.",
+        3000,
+        3,
+        "complete",
+        3,
+    )
+    .await;
 
     let fandom = seed_tag(&db, "SearchTest Fandom Facets", 1).await;
     let char_a = seed_tag(&db, "SearchTest Character Facet A", 2).await;
@@ -1546,27 +2584,72 @@ async fn search_facets_all_types_for_seeded_data() {
     let body = get_search("/api/search?q=facets").await;
 
     let fandoms = body["facets"]["fandoms"].as_array().unwrap();
-    assert!(fandoms.iter().any(|f| f["name"] == "SearchTest Fandom Facets" && f["count"] == 3), "fandoms facet: {body}");
+    assert!(
+        fandoms
+            .iter()
+            .any(|f| f["name"] == "SearchTest Fandom Facets" && f["count"] == 3),
+        "fandoms facet: {body}"
+    );
 
     let characters = body["facets"]["characters"].as_array().unwrap();
-    assert!(characters.iter().any(|f| f["name"] == "SearchTest Character Facet A" && f["count"] == 1), "characters facet: {body}");
-    assert!(characters.iter().any(|f| f["name"] == "SearchTest Character Facet B" && f["count"] == 1), "characters facet: {body}");
+    assert!(
+        characters
+            .iter()
+            .any(|f| f["name"] == "SearchTest Character Facet A" && f["count"] == 1),
+        "characters facet: {body}"
+    );
+    assert!(
+        characters
+            .iter()
+            .any(|f| f["name"] == "SearchTest Character Facet B" && f["count"] == 1),
+        "characters facet: {body}"
+    );
 
     let relationships = body["facets"]["relationships"].as_array().unwrap();
-    assert!(relationships.iter().any(|f| f["name"] == "SearchTest Relationship Facet" && f["count"] == 1), "relationships facet: {body}");
+    assert!(
+        relationships
+            .iter()
+            .any(|f| f["name"] == "SearchTest Relationship Facet" && f["count"] == 1),
+        "relationships facet: {body}"
+    );
 
     let warnings = body["facets"]["warnings"].as_array().unwrap();
-    assert!(warnings.iter().any(|f| f["name"] == "SearchTest Warning Facet" && f["count"] == 1), "warnings facet: {body}");
+    assert!(
+        warnings
+            .iter()
+            .any(|f| f["name"] == "SearchTest Warning Facet" && f["count"] == 1),
+        "warnings facet: {body}"
+    );
 
     let categories = body["facets"]["categories"].as_array().unwrap();
-    assert!(categories.iter().any(|f| f["name"] == "SearchTest Category Facet" && f["count"] == 1), "categories facet: {body}");
+    assert!(
+        categories
+            .iter()
+            .any(|f| f["name"] == "SearchTest Category Facet" && f["count"] == 1),
+        "categories facet: {body}"
+    );
 
     let freeforms = body["facets"]["freeforms"].as_array().unwrap();
-    assert!(freeforms.iter().any(|f| f["name"] == "SearchTest Freeform Facet" && f["count"] == 1), "freeforms facet: {body}");
+    assert!(
+        freeforms
+            .iter()
+            .any(|f| f["name"] == "SearchTest Freeform Facet" && f["count"] == 1),
+        "freeforms facet: {body}"
+    );
 
     let statuses = body["facets"]["statuses"].as_array().unwrap();
-    assert!(statuses.iter().any(|f| f["name"] == "complete" && f["count"] == 2), "statuses complete=2: {body}");
-    assert!(statuses.iter().any(|f| f["name"] == "ongoing" && f["count"] == 1), "statuses ongoing=1: {body}");
+    assert!(
+        statuses
+            .iter()
+            .any(|f| f["name"] == "complete" && f["count"] == 2),
+        "statuses complete=2: {body}"
+    );
+    assert!(
+        statuses
+            .iter()
+            .any(|f| f["name"] == "ongoing" && f["count"] == 1),
+        "statuses ongoing=1: {body}"
+    );
 
     cleanup(
         &db,
@@ -1592,8 +2675,28 @@ async fn search_include_tags_case_insensitive() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_ci_a", "searchit_ci_b"];
-    seed_fic(&db, "searchit_ci_a", "Case Alpha", "Case-insensitive tag test.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_ci_b", "Case Beta", "Case-insensitive tag test.", 2000, 2, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_ci_a",
+        "Case Alpha",
+        "Case-insensitive tag test.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_ci_b",
+        "Case Beta",
+        "Case-insensitive tag test.",
+        2000,
+        2,
+        "ongoing",
+        2,
+    )
+    .await;
 
     let harry = seed_tag(&db, "SearchTest Harry Potter", 2).await;
     seed_fic_tag(&db, "searchit_ci_a", harry, 5).await;
@@ -1601,12 +2704,21 @@ async fn search_include_tags_case_insensitive() {
     // Lowercase type-2 lookup resolves via get_matching_tag_ids (LOWER(name) = LOWER($1)).
     let body = get_search("/api/search?include_tags=2%3Asearchtest%20harry%20potter").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_ci_a".to_string()), "lowercase lookup matches Harry Potter: {body}");
-    assert!(!ids.contains(&"searchit_ci_b".to_string()), "fic B has no Harry tag: {body}");
+    assert!(
+        ids.contains(&"searchit_ci_a".to_string()),
+        "lowercase lookup matches Harry Potter: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_ci_b".to_string()),
+        "fic B has no Harry tag: {body}"
+    );
 
     // Mixed-case lookup too.
     let body = get_search("/api/search?include_tags=2%3ASEARCHTEST%20HARRY%20POTTER").await;
-    assert!(result_ids(&body).contains(&"searchit_ci_a".to_string()), "uppercase lookup: {body}");
+    assert!(
+        result_ids(&body).contains(&"searchit_ci_a".to_string()),
+        "uppercase lookup: {body}"
+    );
 
     cleanup(&db, &fics, &["SearchTest Harry Potter"]).await;
 }
@@ -1620,8 +2732,28 @@ async fn search_special_char_tags_slash_and_ampersand() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_spc_a", "searchit_spc_b"];
-    seed_fic(&db, "searchit_spc_a", "Special Alpha", "Special character tags.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_spc_b", "Special Beta", "Special character tags.", 2000, 2, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_spc_a",
+        "Special Alpha",
+        "Special character tags.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_spc_b",
+        "Special Beta",
+        "Special character tags.",
+        2000,
+        2,
+        "ongoing",
+        2,
+    )
+    .await;
 
     let rel = seed_tag(&db, "SearchTest Draco Malfoy/Harry Potter", 3).await;
     let freeform = seed_tag(&db, "SearchTest Bill & Fleur", 4).await;
@@ -1629,18 +2761,40 @@ async fn search_special_char_tags_slash_and_ampersand() {
     seed_fic_tag(&db, "searchit_spc_b", freeform, 5).await;
 
     // '/' must be URL-encoded as %2F.
-    let body = get_search("/api/search?include_tags=3%3ASearchTest%20Draco%20Malfoy%2FHarry%20Potter").await;
+    let body =
+        get_search("/api/search?include_tags=3%3ASearchTest%20Draco%20Malfoy%2FHarry%20Potter")
+            .await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_spc_a".to_string()), "slash tag match: {body}");
-    assert!(!ids.contains(&"searchit_spc_b".to_string()), "slash tag leak: {body}");
+    assert!(
+        ids.contains(&"searchit_spc_a".to_string()),
+        "slash tag match: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_spc_b".to_string()),
+        "slash tag leak: {body}"
+    );
 
     // '&' must be URL-encoded as %26.
     let body = get_search("/api/search?include_tags=4%3ASearchTest%20Bill%20%26%20Fleur").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_spc_b".to_string()), "ampersand tag match: {body}");
-    assert!(!ids.contains(&"searchit_spc_a".to_string()), "ampersand tag leak: {body}");
+    assert!(
+        ids.contains(&"searchit_spc_b".to_string()),
+        "ampersand tag match: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_spc_a".to_string()),
+        "ampersand tag leak: {body}"
+    );
 
-    cleanup(&db, &fics, &["SearchTest Draco Malfoy/Harry Potter", "SearchTest Bill & Fleur"]).await;
+    cleanup(
+        &db,
+        &fics,
+        &[
+            "SearchTest Draco Malfoy/Harry Potter",
+            "SearchTest Bill & Fleur",
+        ],
+    )
+    .await;
 }
 
 /// (27) tag_ids — numeric tag id search: fics carrying the tag match, others
@@ -1651,16 +2805,42 @@ async fn search_tag_ids_numeric() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_tid_a", "searchit_tid_b"];
-    seed_fic(&db, "searchit_tid_a", "TagID Alpha", "Tag id search test.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_tid_b", "TagID Beta", "Tag id search test.", 2000, 2, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_tid_a",
+        "TagID Alpha",
+        "Tag id search test.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_tid_b",
+        "TagID Beta",
+        "Tag id search test.",
+        2000,
+        2,
+        "ongoing",
+        2,
+    )
+    .await;
 
     let tag = seed_tag(&db, "SearchTest TagID Target", 4).await;
     seed_fic_tag(&db, "searchit_tid_a", tag, 5).await;
 
     let body = get_search(&format!("/api/search?tag_ids={}", tag)).await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_tid_a".to_string()), "tag_ids match: {body}");
-    assert!(!ids.contains(&"searchit_tid_b".to_string()), "tag_ids leak: {body}");
+    assert!(
+        ids.contains(&"searchit_tid_a".to_string()),
+        "tag_ids match: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_tid_b".to_string()),
+        "tag_ids leak: {body}"
+    );
 
     // Nonexistent tag id → no results.
     let body = get_search("/api/search?tag_ids=999999999").await;
@@ -1677,8 +2857,28 @@ async fn search_no_warnings_excludes_warning_tagged() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_nw_a", "searchit_nw_b"];
-    seed_fic(&db, "searchit_nw_a", "NoWarn Alpha", "No warnings test.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_nw_b", "NoWarn Beta", "No warnings test.", 2000, 2, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_nw_a",
+        "NoWarn Alpha",
+        "No warnings test.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_nw_b",
+        "NoWarn Beta",
+        "No warnings test.",
+        2000,
+        2,
+        "ongoing",
+        2,
+    )
+    .await;
 
     let warn = seed_tag(&db, "SearchTest Major Character Death", 5).await;
     seed_fic_tag(&db, "searchit_nw_a", warn, 5).await;
@@ -1686,14 +2886,26 @@ async fn search_no_warnings_excludes_warning_tagged() {
     // no_warnings=true → fic A (has the warning tag) excluded, fic B kept.
     let body = get_search("/api/search?q=no%20warnings%20test&no_warnings=true").await;
     let ids = result_ids(&body);
-    assert!(!ids.contains(&"searchit_nw_a".to_string()), "fic A has a warning tag: {body}");
-    assert!(ids.contains(&"searchit_nw_b".to_string()), "fic B has no warnings: {body}");
+    assert!(
+        !ids.contains(&"searchit_nw_a".to_string()),
+        "fic A has a warning tag: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_nw_b".to_string()),
+        "fic B has no warnings: {body}"
+    );
 
     // no_warnings=false → no exclusion at all.
     let body = get_search("/api/search?q=no%20warnings%20test&no_warnings=false").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_nw_a".to_string()), "no_warnings=false keeps everything: {body}");
-    assert!(ids.contains(&"searchit_nw_b".to_string()), "no_warnings=false keeps everything: {body}");
+    assert!(
+        ids.contains(&"searchit_nw_a".to_string()),
+        "no_warnings=false keeps everything: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_nw_b".to_string()),
+        "no_warnings=false keeps everything: {body}"
+    );
 
     cleanup(&db, &fics, &["SearchTest Major Character Death"]).await;
 }
@@ -1709,7 +2921,17 @@ async fn search_exclude_tag_types_no_ships() {
     clean_all_test_fixtures(&db).await;
     let fics = ["searchit_ett_a", "searchit_ett_b"];
     for f in fics {
-        seed_fic(&db, f, &format!("ExclType {f}"), "Exclude tag types test.", 800, 1, "complete", 1).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("ExclType {f}"),
+            "Exclude tag types test.",
+            800,
+            1,
+            "complete",
+            1,
+        )
+        .await;
     }
     let rel = seed_tag(&db, "SearchTest Harry/Draco", 3).await;
     let freeform = seed_tag(&db, "SearchTest Fluffy", 4).await;
@@ -1720,20 +2942,38 @@ async fn search_exclude_tag_types_no_ships() {
     // exclude_tag_types=3 → A dropped, B kept.
     let body = get_search("/api/search?exclude_tag_types=3").await;
     let ids = result_ids(&body);
-    assert!(!ids.contains(&"searchit_ett_a".to_string()), "A has a relationship tag: {body}");
-    assert!(ids.contains(&"searchit_ett_b".to_string()), "B has no relationship tag: {body}");
+    assert!(
+        !ids.contains(&"searchit_ett_a".to_string()),
+        "A has a relationship tag: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_ett_b".to_string()),
+        "B has no relationship tag: {body}"
+    );
 
     // exclude_tag_types=4 → B dropped (freeform), A kept.
     let body = get_search("/api/search?exclude_tag_types=4").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_ett_a".to_string()), "A has no freeform tag: {body}");
-    assert!(!ids.contains(&"searchit_ett_b".to_string()), "B has a freeform tag: {body}");
+    assert!(
+        ids.contains(&"searchit_ett_a".to_string()),
+        "A has no freeform tag: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_ett_b".to_string()),
+        "B has a freeform tag: {body}"
+    );
 
     // No exclusion → both present.
     let body = get_search("/api/search").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_ett_a".to_string()), "no filter keeps A: {body}");
-    assert!(ids.contains(&"searchit_ett_b".to_string()), "no filter keeps B: {body}");
+    assert!(
+        ids.contains(&"searchit_ett_a".to_string()),
+        "no filter keeps A: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_ett_b".to_string()),
+        "no filter keeps B: {body}"
+    );
 
     cleanup(&db, &fics, &["SearchTest Harry/Draco", "SearchTest Fluffy"]).await;
 }
@@ -1748,7 +2988,17 @@ async fn search_strict_gen_hides_ships_and_categories() {
     clean_all_test_fixtures(&db).await;
     let fics = ["searchit_sg_a", "searchit_sg_b", "searchit_sg_c"];
     for f in fics {
-        seed_fic(&db, f, &format!("StrictGen {f}"), "Strict gen test.", 800, 1, "complete", 1).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("StrictGen {f}"),
+            "Strict gen test.",
+            800,
+            1,
+            "complete",
+            1,
+        )
+        .await;
     }
     let rel = seed_tag(&db, "SearchTest Draco/Harry", 3).await;
     let cat = seed_tag(&db, "SearchTest M/M", 6).await;
@@ -1761,25 +3011,61 @@ async fn search_strict_gen_hides_ships_and_categories() {
     // strict_gen=true → A and B dropped, C kept.
     let body = get_search("/api/search?strict_gen=true").await;
     let ids = result_ids(&body);
-    assert!(!ids.contains(&"searchit_sg_a".to_string()), "A has a ship: {body}");
-    assert!(!ids.contains(&"searchit_sg_b".to_string()), "B has a category tag: {body}");
-    assert!(ids.contains(&"searchit_sg_c".to_string()), "C is gen: {body}");
+    assert!(
+        !ids.contains(&"searchit_sg_a".to_string()),
+        "A has a ship: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_sg_b".to_string()),
+        "B has a category tag: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_sg_c".to_string()),
+        "C is gen: {body}"
+    );
 
     // strict_gen=false (or absent) → everything stays (default unchanged).
     let body = get_search("/api/search?strict_gen=false").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_sg_a".to_string()), "strict_gen=false keeps A: {body}");
-    assert!(ids.contains(&"searchit_sg_b".to_string()), "strict_gen=false keeps B: {body}");
-    assert!(ids.contains(&"searchit_sg_c".to_string()), "strict_gen=false keeps C: {body}");
+    assert!(
+        ids.contains(&"searchit_sg_a".to_string()),
+        "strict_gen=false keeps A: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_sg_b".to_string()),
+        "strict_gen=false keeps B: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_sg_c".to_string()),
+        "strict_gen=false keeps C: {body}"
+    );
 
     // strict_gen=true combined with a text query — the exclusion still applies.
     let body = get_search("/api/search?q=strict%20gen%20test&strict_gen=true").await;
     let ids = result_ids(&body);
-    assert!(!ids.contains(&"searchit_sg_a".to_string()), "text+strict_gen drops A: {body}");
-    assert!(!ids.contains(&"searchit_sg_b".to_string()), "text+strict_gen drops B: {body}");
-    assert!(ids.contains(&"searchit_sg_c".to_string()), "text+strict_gen keeps C: {body}");
+    assert!(
+        !ids.contains(&"searchit_sg_a".to_string()),
+        "text+strict_gen drops A: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_sg_b".to_string()),
+        "text+strict_gen drops B: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_sg_c".to_string()),
+        "text+strict_gen keeps C: {body}"
+    );
 
-    cleanup(&db, &fics, &["SearchTest Draco/Harry", "SearchTest M/M", "SearchTest Gen Vibes"]).await;
+    cleanup(
+        &db,
+        &fics,
+        &[
+            "SearchTest Draco/Harry",
+            "SearchTest M/M",
+            "SearchTest Gen Vibes",
+        ],
+    )
+    .await;
 }
 
 /// (31) exclude_tag_types combined with strict_gen — the merged exclusion
@@ -1792,7 +3078,17 @@ async fn search_exclude_tag_types_and_strict_gen_combined() {
     clean_all_test_fixtures(&db).await;
     let fics = ["searchit_ec_a", "searchit_ec_b", "searchit_ec_c"];
     for f in fics {
-        seed_fic(&db, f, &format!("ExclCombo {f}"), "Exclude combo test.", 800, 1, "complete", 1).await;
+        seed_fic(
+            &db,
+            f,
+            &format!("ExclCombo {f}"),
+            "Exclude combo test.",
+            800,
+            1,
+            "complete",
+            1,
+        )
+        .await;
     }
     let rel = seed_tag(&db, "SearchTest Ron/Hermione", 3).await;
     let warn = seed_tag(&db, "SearchTest Graphic Violence", 5).await;
@@ -1806,11 +3102,29 @@ async fn search_exclude_tag_types_and_strict_gen_combined() {
     // exclude_tag_types=5 + strict_gen → A (ship) and B (warning) dropped, C kept.
     let body = get_search("/api/search?exclude_tag_types=5&strict_gen=true").await;
     let ids = result_ids(&body);
-    assert!(!ids.contains(&"searchit_ec_a".to_string()), "A is a ship: {body}");
-    assert!(!ids.contains(&"searchit_ec_b".to_string()), "B has a warning: {body}");
-    assert!(ids.contains(&"searchit_ec_c".to_string()), "C stays: {body}");
+    assert!(
+        !ids.contains(&"searchit_ec_a".to_string()),
+        "A is a ship: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_ec_b".to_string()),
+        "B has a warning: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_ec_c".to_string()),
+        "C stays: {body}"
+    );
 
-    cleanup(&db, &fics, &["SearchTest Ron/Hermione", "SearchTest Graphic Violence", "SearchTest Chill"]).await;
+    cleanup(
+        &db,
+        &fics,
+        &[
+            "SearchTest Ron/Hermione",
+            "SearchTest Graphic Violence",
+            "SearchTest Chill",
+        ],
+    )
+    .await;
 }
 
 /// Seed a kudos entry (idempotent). Returns the kudos id.
@@ -1838,26 +3152,56 @@ async fn search_max_kudos_filters_upper_bound() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_mk_a", "searchit_mk_b"];
-    seed_fic(&db, "searchit_mk_a", "MaxKudos Alpha", "Shared topic max kudos.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_mk_b", "MaxKudos Beta", "Shared topic max kudos.", 2000, 2, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_mk_a",
+        "MaxKudos Alpha",
+        "Shared topic max kudos.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_mk_b",
+        "MaxKudos Beta",
+        "Shared topic max kudos.",
+        2000,
+        2,
+        "ongoing",
+        2,
+    )
+    .await;
 
     // Create a work for each fic so kudos can reference it.
-    let work_a: i32 = sqlx::query_scalar("INSERT INTO works (canonical_title) VALUES ($1) RETURNING id")
-        .bind("MaxKudos Alpha Work")
-        .fetch_one(&db)
-        .await
-        .expect("seed work_a");
-    let work_b: i32 = sqlx::query_scalar("INSERT INTO works (canonical_title) VALUES ($1) RETURNING id")
-        .bind("MaxKudos Beta Work")
-        .fetch_one(&db)
-        .await
-        .expect("seed work_b");
+    let work_a: i32 =
+        sqlx::query_scalar("INSERT INTO works (canonical_title) VALUES ($1) RETURNING id")
+            .bind("MaxKudos Alpha Work")
+            .fetch_one(&db)
+            .await
+            .expect("seed work_a");
+    let work_b: i32 =
+        sqlx::query_scalar("INSERT INTO works (canonical_title) VALUES ($1) RETURNING id")
+            .bind("MaxKudos Beta Work")
+            .fetch_one(&db)
+            .await
+            .expect("seed work_b");
 
     // Update fic_info with work_ids.
     sqlx::query("UPDATE fic_info SET work_id = $1 WHERE id = $2")
-        .bind(work_a).bind("searchit_mk_a").execute(&db).await.unwrap();
+        .bind(work_a)
+        .bind("searchit_mk_a")
+        .execute(&db)
+        .await
+        .unwrap();
     sqlx::query("UPDATE fic_info SET work_id = $1 WHERE id = $2")
-        .bind(work_b).bind("searchit_mk_b").execute(&db).await.unwrap();
+        .bind(work_b)
+        .bind("searchit_mk_b")
+        .execute(&db)
+        .await
+        .unwrap();
 
     // Seed kudos: fic A gets 1 signed-in kudo, fic B gets 5.
     // Need users for signed-in kudos.
@@ -1877,25 +3221,51 @@ async fn search_max_kudos_filters_upper_bound() {
     // max_kudos=1 → only fic A (1 kudo <= 1) matches.
     let body = get_search("/api/search?q=max%20kudos&max_kudos=1").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_mk_a".to_string()), "fic A (1 kudo) must match max_kudos=1: {body}");
-    assert!(!ids.contains(&"searchit_mk_b".to_string()), "fic B (5 kudos) must NOT match max_kudos=1: {body}");
+    assert!(
+        ids.contains(&"searchit_mk_a".to_string()),
+        "fic A (1 kudo) must match max_kudos=1: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_mk_b".to_string()),
+        "fic B (5 kudos) must NOT match max_kudos=1: {body}"
+    );
 
     // max_kudos=5 → both fics match (1 <= 5 and 5 <= 5).
     let body = get_search("/api/search?q=max%20kudos&max_kudos=5").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_mk_a".to_string()), "fic A matches max_kudos=5: {body}");
-    assert!(ids.contains(&"searchit_mk_b".to_string()), "fic B matches max_kudos=5: {body}");
+    assert!(
+        ids.contains(&"searchit_mk_a".to_string()),
+        "fic A matches max_kudos=5: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_mk_b".to_string()),
+        "fic B matches max_kudos=5: {body}"
+    );
 
     // Clean up kudos and works.
     let _ = sqlx::query("DELETE FROM kudos WHERE work_id IN ($1, $2)")
-        .bind(work_a).bind(work_b).execute(&db).await;
+        .bind(work_a)
+        .bind(work_b)
+        .execute(&db)
+        .await;
     let _ = sqlx::query("UPDATE fic_info SET work_id = NULL WHERE id IN ($1, $2)")
-        .bind("searchit_mk_a").bind("searchit_mk_b").execute(&db).await;
+        .bind("searchit_mk_a")
+        .bind("searchit_mk_b")
+        .execute(&db)
+        .await;
     let _ = sqlx::query("DELETE FROM works WHERE id IN ($1, $2)")
-        .bind(work_a).bind(work_b).execute(&db).await;
+        .bind(work_a)
+        .bind(work_b)
+        .execute(&db)
+        .await;
     cleanup(&db, &fics, &[]).await;
-    for u in ["mk_user1", "mk_user2", "mk_user3", "mk_user4", "mk_user5", "mk_user6"] {
-        let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(&db).await;
+    for u in [
+        "mk_user1", "mk_user2", "mk_user3", "mk_user4", "mk_user5", "mk_user6",
+    ] {
+        let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+            .bind(u)
+            .execute(&db)
+            .await;
     }
 }
 
@@ -1907,8 +3277,28 @@ async fn search_bookmarks_bounds() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["searchit_bm_a", "searchit_bm_b"];
-    seed_fic(&db, "searchit_bm_a", "Bookmark Alpha", "Shared topic bookmarks.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_bm_b", "Bookmark Beta", "Shared topic bookmarks.", 2000, 2, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_bm_a",
+        "Bookmark Alpha",
+        "Shared topic bookmarks.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_bm_b",
+        "Bookmark Beta",
+        "Shared topic bookmarks.",
+        2000,
+        2,
+        "ongoing",
+        2,
+    )
+    .await;
 
     // Create users for bookmarks.
     let u1 = seed_suggest_user(&db, "bm_user1").await;
@@ -1924,27 +3314,51 @@ async fn search_bookmarks_bounds() {
     // min_bookmarks=2 → only fic B (3 >= 2).
     let body = get_search("/api/search?q=bookmarks&min_bookmarks=2").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_bm_b".to_string()), "fic B (3 bm) must match min_bookmarks=2: {body}");
-    assert!(!ids.contains(&"searchit_bm_a".to_string()), "fic A (1 bm) must NOT match min_bookmarks=2: {body}");
+    assert!(
+        ids.contains(&"searchit_bm_b".to_string()),
+        "fic B (3 bm) must match min_bookmarks=2: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_bm_a".to_string()),
+        "fic A (1 bm) must NOT match min_bookmarks=2: {body}"
+    );
 
     // max_bookmarks=1 → only fic A (1 <= 1).
     let body = get_search("/api/search?q=bookmarks&max_bookmarks=1").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_bm_a".to_string()), "fic A (1 bm) must match max_bookmarks=1: {body}");
-    assert!(!ids.contains(&"searchit_bm_b".to_string()), "fic B (3 bm) must NOT match max_bookmarks=1: {body}");
+    assert!(
+        ids.contains(&"searchit_bm_a".to_string()),
+        "fic A (1 bm) must match max_bookmarks=1: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_bm_b".to_string()),
+        "fic B (3 bm) must NOT match max_bookmarks=1: {body}"
+    );
 
     // min_bookmarks=1 & max_bookmarks=3 → both fics.
     let body = get_search("/api/search?q=bookmarks&min_bookmarks=1&max_bookmarks=3").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_bm_a".to_string()), "fic A matches range: {body}");
-    assert!(ids.contains(&"searchit_bm_b".to_string()), "fic B matches range: {body}");
+    assert!(
+        ids.contains(&"searchit_bm_a".to_string()),
+        "fic A matches range: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_bm_b".to_string()),
+        "fic B matches range: {body}"
+    );
 
     // Clean up bookmarks.
     let _ = sqlx::query("DELETE FROM bookmarks WHERE url_id IN ($1, $2)")
-        .bind("searchit_bm_a").bind("searchit_bm_b").execute(&db).await;
+        .bind("searchit_bm_a")
+        .bind("searchit_bm_b")
+        .execute(&db)
+        .await;
     cleanup(&db, &fics, &[]).await;
     for u in ["bm_user1", "bm_user2", "bm_user3"] {
-        let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(&db).await;
+        let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+            .bind(u)
+            .execute(&db)
+            .await;
     }
 }
 
@@ -1959,25 +3373,56 @@ async fn search_rating_filter() {
     let db = pool().await;
     clean_all_test_fixtures(&db).await;
     let fics = ["searchit_rt_a", "searchit_rt_b"];
-    seed_fic(&db, "searchit_rt_a", "Rating Alpha", "Shared topic rating.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "searchit_rt_b", "Rating Beta", "Shared topic rating.", 2000, 2, "ongoing", 2).await;
+    seed_fic(
+        &db,
+        "searchit_rt_a",
+        "Rating Alpha",
+        "Shared topic rating.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "searchit_rt_b",
+        "Rating Beta",
+        "Shared topic rating.",
+        2000,
+        2,
+        "ongoing",
+        2,
+    )
+    .await;
 
-    let tag = seed_tag(&db, "SearchTest General Audiences", 7).await;  // tag_type_id = 7 (rating)
+    let tag = seed_tag(&db, "SearchTest General Audiences", 7).await; // tag_type_id = 7 (rating)
     seed_fic_tag(&db, "searchit_rt_a", tag, 5).await;
 
     // rating=General Audiences → only fic A (has the rating tag).
     let body = get_search("/api/search?q=rating&rating=SearchTest%20General%20Audiences").await;
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_rt_a".to_string()), "fic A has the rating tag: {body}");
-    assert!(!ids.contains(&"searchit_rt_b".to_string()), "fic B has no rating tag: {body}");
+    assert!(
+        ids.contains(&"searchit_rt_a".to_string()),
+        "fic A has the rating tag: {body}"
+    );
+    assert!(
+        !ids.contains(&"searchit_rt_b".to_string()),
+        "fic B has no rating tag: {body}"
+    );
 
     // A nonexistent rating name → no results (the rating doesn't resolve to a tag).
     let body = get_search("/api/search?q=rating&rating=NoSuchRating").await;
     // Nonexistent rating is silently ignored, so the search is unfiltered.
     let ids = result_ids(&body);
-    assert!(ids.contains(&"searchit_rt_a".to_string()), "unfiltered: fic A present: {body}");
-    assert!(ids.contains(&"searchit_rt_b".to_string()), "unfiltered: fic B present: {body}");
+    assert!(
+        ids.contains(&"searchit_rt_a".to_string()),
+        "unfiltered: fic A present: {body}"
+    );
+    assert!(
+        ids.contains(&"searchit_rt_b".to_string()),
+        "unfiltered: fic B present: {body}"
+    );
 
     cleanup(&db, &fics, &["SearchTest General Audiences"]).await;
 }
-

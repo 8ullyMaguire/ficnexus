@@ -15,12 +15,12 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::{get, patch, post},
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -47,8 +47,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -76,18 +76,22 @@ async fn app() -> Router {
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
         recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
         strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
         collection_worker: fichub::recommender::worker::CollectionWorker::new(
@@ -105,14 +109,23 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/forum/categories", get(fichub::routes::forum::list_categories))
-        .route("/api/forum/categories", post(fichub::routes::forum::create_category))
+        .route(
+            "/api/forum/categories",
+            get(fichub::routes::forum::list_categories),
+        )
+        .route(
+            "/api/forum/categories",
+            post(fichub::routes::forum::create_category),
+        )
         .route(
             "/api/forum/categories/{id}",
             patch(fichub::routes::forum::update_category),
         )
         .route("/api/forum/topics", get(fichub::routes::forum::list_topics))
-        .route("/api/forum/topics", post(fichub::routes::forum::create_topic))
+        .route(
+            "/api/forum/topics",
+            post(fichub::routes::forum::create_topic),
+        )
         .route(
             "/api/forum/topics/by-slug/{topicSlug}",
             get(fichub::routes::forum::topic_detail_by_slug),
@@ -145,7 +158,10 @@ async fn app() -> Router {
             "/api/forum/topics/{topicId}/read",
             post(fichub::routes::forum::mark_topic_read),
         )
-        .route("/api/forum/search", get(fichub::routes::forum::search_forum))
+        .route(
+            "/api/forum/search",
+            get(fichub::routes::forum::search_forum),
+        )
         .route(
             "/api/forum/posts/{postId}",
             patch(fichub::routes::forum::update_post),
@@ -204,7 +220,10 @@ async fn app() -> Router {
         )
         // ── User reports (F5: forum targets) ──────────────────────────
         .route("/api/reports", post(fichub::routes::reports::create_report))
-        .route("/api/admin/reports", get(fichub::routes::reports::list_reports))
+        .route(
+            "/api/admin/reports",
+            get(fichub::routes::reports::list_reports),
+        )
         .route(
             "/api/admin/reports/{id}/resolve",
             post(fichub::routes::reports::resolve_report),
@@ -217,8 +236,14 @@ async fn app() -> Router {
         )
         // ── F7 subsystems: site info, invites, registration apps, blocks ──
         .route("/api/site", get(fichub::routes::subsystems::site_info))
-        .route("/api/admin/invites", post(fichub::routes::subsystems::create_invite))
-        .route("/api/admin/invites", get(fichub::routes::subsystems::list_invites))
+        .route(
+            "/api/admin/invites",
+            post(fichub::routes::subsystems::create_invite),
+        )
+        .route(
+            "/api/admin/invites",
+            get(fichub::routes::subsystems::list_invites),
+        )
         .route(
             "/api/registration-applications",
             post(fichub::routes::subsystems::apply_registration),
@@ -312,20 +337,14 @@ async fn seed_category(pool: &sqlx::PgPool, slug: &str, title: &str) -> i64 {
 /// locate it again afterwards (tests assert on post content). Use
 /// `seed_topic` for topic-level flows and grab the OP with
 /// `SELECT id FROM forum_posts WHERE topic_id = $1 AND body = 'body'`.
-async fn seed_topic(
-    pool: &sqlx::PgPool,
-    category_id: i64,
-    author_id: i32,
-    title: &str,
-) -> i64 {
-    let existing: Option<(i64,)> = sqlx::query_as(
-        "SELECT id FROM forum_topics WHERE category_id = $1 AND title = $2",
-    )
-    .bind(category_id)
-    .bind(title)
-    .fetch_optional(pool)
-    .await
-    .expect("topic lookup failed");
+async fn seed_topic(pool: &sqlx::PgPool, category_id: i64, author_id: i32, title: &str) -> i64 {
+    let existing: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM forum_topics WHERE category_id = $1 AND title = $2")
+            .bind(category_id)
+            .bind(title)
+            .fetch_optional(pool)
+            .await
+            .expect("topic lookup failed");
     if let Some((id,)) = existing {
         // Self-heal: this topic may be a leftover from a crashed prior run —
         // wipe its posts + reset the cursor fields so the caller's fresh
@@ -335,10 +354,12 @@ async fn seed_topic(
             .bind(id)
             .execute(pool)
             .await;
-        let _ = sqlx::query("UPDATE forum_topics SET last_post_id = NULL, view_count = 0 WHERE id = $1")
-            .bind(id)
-            .execute(pool)
-            .await;
+        let _ = sqlx::query(
+            "UPDATE forum_topics SET last_post_id = NULL, view_count = 0 WHERE id = $1",
+        )
+        .bind(id)
+        .execute(pool)
+        .await;
         sqlx::query(
             "INSERT INTO forum_posts (topic_id, author_id, body, search_vector)
              VALUES ($1, $2, 'body', to_tsvector('english', 'body'))",
@@ -382,8 +403,16 @@ async fn seed_topic(
     topic_id
 }
 
-async fn post_json(app: &Router, uri: &str, token: Option<&str>, body: Value) -> (StatusCode, Value) {
-    let mut req = Request::builder().method("POST").uri(uri).header("content-type", "application/json");
+async fn post_json(
+    app: &Router,
+    uri: &str,
+    token: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
+    let mut req = Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json");
     if let Some(t) = token {
         req = req.header("authorization", t);
     }
@@ -393,8 +422,11 @@ async fn post_json(app: &Router, uri: &str, token: Option<&str>, body: Value) ->
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -409,8 +441,11 @@ async fn delete_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCod
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -425,13 +460,24 @@ async fn get_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCode, 
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
-async fn patch_json(app: &Router, uri: &str, token: Option<&str>, body: Value) -> (StatusCode, Value) {
-    let mut req = Request::builder().method("PATCH").uri(uri).header("content-type", "application/json");
+async fn patch_json(
+    app: &Router,
+    uri: &str,
+    token: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
+    let mut req = Request::builder()
+        .method("PATCH")
+        .uri(uri)
+        .header("content-type", "application/json");
     if let Some(t) = token {
         req = req.header("authorization", t);
     }
@@ -441,8 +487,11 @@ async fn patch_json(app: &Router, uri: &str, token: Option<&str>, body: Value) -
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -464,11 +513,23 @@ async fn anonymous_gets_401_on_all_forum_routes() {
     assert_eq!(s, StatusCode::OK, "topics: {b}");
     assert_eq!(b["err"], 0, "topics: {b}");
 
-    let (s, b) = post_json(&app, "/api/forum/categories", None, json!({ "slug": "x", "title": "x" })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/forum/categories",
+        None,
+        json!({ "slug": "x", "title": "x" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "create: {b}");
     assert_eq!(b["err"], 401, "create: {b}");
 
-    let (s, b) = patch_json(&app, "/api/forum/categories/1", None, json!({ "title": "x" })).await;
+    let (s, b) = patch_json(
+        &app,
+        "/api/forum/categories/1",
+        None,
+        json!({ "title": "x" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "patch: {b}");
     assert_eq!(b["err"], 401, "patch: {b}");
 }
@@ -498,7 +559,11 @@ async fn non_admin_cannot_create_category() {
     assert_eq!(s, StatusCode::FORBIDDEN, "create: {b}");
     assert_eq!(b["err"], -403, "create: {b}");
 
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(username).execute(&db).await.ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(username)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -576,7 +641,11 @@ async fn admin_creates_category_and_list_returns_it() {
         .execute(&db)
         .await
         .ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(username).execute(&db).await.ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(username)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -605,8 +674,16 @@ async fn topic_list_empty_for_new_category() {
     let (s, b) = get_json(&app, "/api/forum/topics?category=nope-nope", Some(&token)).await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "unknown category: {b}");
 
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(username).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(username)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -675,8 +752,17 @@ async fn topic_list_returns_seeded_topic_with_counts() {
     assert_eq!(mine["topic_count"], 1, "category topic count: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -732,7 +818,13 @@ async fn anonymous_gets_401_on_all_f3_routes() {
     assert_eq!(s, StatusCode::BAD_REQUEST, "topic detail: {b}");
     assert_eq!(b["err"], 400, "topic detail: {b}");
 
-    let (s, b) = post_json(&app, "/api/forum/topics", None, json!({ "title": "t", "category_slug": "x", "body": "b" })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/forum/topics",
+        None,
+        json!({ "title": "t", "category_slug": "x", "body": "b" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "create topic: {b}");
     assert_eq!(b["err"], 401, "create topic: {b}");
 
@@ -744,7 +836,13 @@ async fn anonymous_gets_401_on_all_f3_routes() {
     assert_eq!(s, StatusCode::UNAUTHORIZED, "delete topic: {b}");
     assert_eq!(b["err"], 401, "delete topic: {b}");
 
-    let (s, b) = post_json(&app, "/api/forum/topics/1/posts", None, json!({ "body": "b" })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/forum/topics/1/posts",
+        None,
+        json!({ "body": "b" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "create post: {b}");
     assert_eq!(b["err"], 401, "create post: {b}");
 
@@ -791,17 +889,18 @@ async fn f3_create_topic_happy_path_and_validation() {
     let tid = b["id"].as_i64().expect("topic id");
     let op_id = b["post_id"].as_i64().expect("op post id");
     // Slug is auto-generated from the title with the id suffix: `{base}-{id}`.
-    let slug = b["topic_slug"].as_str().expect("topic_slug in create response");
+    let slug = b["topic_slug"]
+        .as_str()
+        .expect("topic_slug in create response");
     assert_eq!(slug, format!("f3-first-topic-{tid}"));
 
     // Topic + OP exist, last_post_id wired.
-    let (topic_author, last_post, body): (i32, Option<i64>, String) = sqlx::query_as(
-        "SELECT author_id, last_post_id, body FROM forum_topics WHERE id = $1",
-    )
-    .bind(tid)
-    .fetch_one(&db)
-    .await
-    .expect("topic row");
+    let (topic_author, last_post, body): (i32, Option<i64>, String) =
+        sqlx::query_as("SELECT author_id, last_post_id, body FROM forum_topics WHERE id = $1")
+            .bind(tid)
+            .fetch_one(&db)
+            .await
+            .expect("topic row");
     assert_eq!(topic_author, uid);
     assert_eq!(last_post, Some(op_id));
     assert_eq!(body, "Hello **world**");
@@ -820,22 +919,60 @@ async fn f3_create_topic_happy_path_and_validation() {
     assert_eq!(post_author, uid);
 
     // Validation: empty title / empty body / bad category.
-    let (s, b) = post_json(&app, "/api/forum/topics", Some(&token), json!({ "title": "   ", "category_slug": "fr3-general", "body": "body" })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/forum/topics",
+        Some(&token),
+        json!({ "title": "   ", "category_slug": "fr3-general", "body": "body" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "empty title: {b}");
-    let (s, b) = post_json(&app, "/api/forum/topics", Some(&token), json!({ "title": "ok", "category_slug": "fr3-general", "body": "  " })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/forum/topics",
+        Some(&token),
+        json!({ "title": "ok", "category_slug": "fr3-general", "body": "  " }),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "empty body: {b}");
-    let (s, b) = post_json(&app, "/api/forum/topics", Some(&token), json!({ "title": "ok", "category_slug": "nope-nope", "body": "body" })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/forum/topics",
+        Some(&token),
+        json!({ "title": "ok", "category_slug": "nope-nope", "body": "body" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "bad category: {b}");
     let long_title = "x".repeat(121);
-    let (s, b) = post_json(&app, "/api/forum/topics", Some(&token), json!({ "title": long_title, "category_slug": "fr3-general", "body": "body" })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/forum/topics",
+        Some(&token),
+        json!({ "title": long_title, "category_slug": "fr3-general", "body": "body" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "long title: {b}");
     let long_body = "y".repeat(20_001);
-    let (s, b) = post_json(&app, "/api/forum/topics", Some(&token), json!({ "title": "ok", "category_slug": "fr3-general", "body": long_body })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/forum/topics",
+        Some(&token),
+        json!({ "title": "ok", "category_slug": "fr3-general", "body": long_body }),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "long body: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 /// Slug URLs: a topic is reachable both by its auto-generated slug
@@ -872,7 +1009,12 @@ async fn topic_slug_by_slug_route_and_detail() {
     assert_eq!(slug, format!("my-great-topic-{tid}"));
 
     // By-slug route resolves to the same detail as the numeric route.
-    let (s, by_slug) = get_json(&app, &format!("/api/forum/topics/by-slug/{slug}"), Some(&token)).await;
+    let (s, by_slug) = get_json(
+        &app,
+        &format!("/api/forum/topics/by-slug/{slug}"),
+        Some(&token),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "by-slug: {by_slug}");
     assert_eq!(by_slug["err"], 0, "by-slug: {by_slug}");
     assert_eq!(by_slug["id"], tid, "by-slug id");
@@ -881,15 +1023,31 @@ async fn topic_slug_by_slug_route_and_detail() {
 
     let (s, by_id) = get_json(&app, &format!("/api/forum/topics/{tid}"), Some(&token)).await;
     assert_eq!(s, StatusCode::OK, "by-id: {by_id}");
-    assert_eq!(by_id["topic_slug"], slug, "numeric detail also carries slug");
+    assert_eq!(
+        by_id["topic_slug"], slug,
+        "numeric detail also carries slug"
+    );
 
     // Unknown slug → 400.
-    let (s, b) = get_json(&app, "/api/forum/topics/by-slug/does-not-exist-1", Some(&token)).await;
+    let (s, b) = get_json(
+        &app,
+        "/api/forum/topics/by-slug/does-not-exist-1",
+        Some(&token),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "unknown slug: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -956,7 +1114,13 @@ async fn f3_topic_detail_posts_cursor_and_view_count() {
     let quoted = items.iter().find(|p| p["id"] == json!(r2)).unwrap();
     assert_eq!(quoted["quote_of"], json!(r1));
     assert_eq!(quoted["quote"]["author_username"], u2);
-    assert!(quoted["quote"]["preview"].as_str().unwrap().contains("first reply"), "preview: {quoted}");
+    assert!(
+        quoted["quote"]["preview"]
+            .as_str()
+            .unwrap()
+            .contains("first reply"),
+        "preview: {quoted}"
+    );
     // view_count incremented.
     assert_eq!(b["view_count"], json!(1), "first view: {b}");
     assert_eq!(b["view_count_before"], json!(0), "before: {b}");
@@ -978,22 +1142,44 @@ async fn f3_topic_detail_posts_cursor_and_view_count() {
     .fetch_one(&db)
     .await
     .expect("op id");
-    let (s, b) = get_json(&app, &format!("/api/forum/topics/{tid}?after={op_id}"), Some(&token)).await;
+    let (s, b) = get_json(
+        &app,
+        &format!("/api/forum/topics/{tid}?after={op_id}"),
+        Some(&token),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "cursor: {b}");
     let items = b["items"].as_array().unwrap();
     assert_eq!(items.len(), 2, "after OP: {b}");
-    assert!(items.iter().all(|p| p["id"].as_i64().unwrap() > op_id), "ids after cursor: {b}");
+    assert!(
+        items.iter().all(|p| p["id"].as_i64().unwrap() > op_id),
+        "ids after cursor: {b}"
+    );
 
     // Limit clamps.
-    let (_, b) = get_json(&app, &format!("/api/forum/topics/{tid}?limit=2"), Some(&token)).await;
+    let (_, b) = get_json(
+        &app,
+        &format!("/api/forum/topics/{tid}?limit=2"),
+        Some(&token),
+    )
+    .await;
     assert_eq!(b["items"].as_array().unwrap().len(), 2, "limit 2: {b}");
     // With 3 posts (OP, r1, r2), limit=2 returns OP+r1; the next cursor is the
     // last item on the page (r1), NOT r2 — there's still one page left.
     assert_eq!(b["next_cursor"].as_i64(), Some(r1), "next cursor: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -1035,11 +1221,12 @@ async fn f3_reply_creates_post_and_notifies_follower() {
     assert_eq!(s, StatusCode::OK, "reply: {b}");
     assert_eq!(b["err"], 0, "reply: {b}");
     let post_id = b["id"].as_i64().expect("post id");
-    let last: Option<i64> = sqlx::query_scalar("SELECT last_post_id FROM forum_topics WHERE id = $1")
-        .bind(tid)
-        .fetch_one(&db)
-        .await
-        .expect("topic last");
+    let last: Option<i64> =
+        sqlx::query_scalar("SELECT last_post_id FROM forum_topics WHERE id = $1")
+            .bind(tid)
+            .fetch_one(&db)
+            .await
+            .expect("topic last");
     assert_eq!(last, Some(post_id), "topic last_post_id updated");
 
     // Follower (u1) got a forum_reply notification; author (u2) did not.
@@ -1053,12 +1240,27 @@ async fn f3_reply_creates_post_and_notifies_follower() {
     .expect("notif count u1");
     assert_eq!(n1, 1, "follower notified");
 
-    let (s, b) = post_json(&app, &format!("/api/forum/topics/{tid}/posts"), Some(&token), json!({ "body": "  " })).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/forum/topics/{tid}/posts"),
+        Some(&token),
+        json!({ "body": "  " }),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "empty body: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -1101,8 +1303,17 @@ async fn f3_reply_mention_creates_forum_mention_notification() {
     assert_eq!(n, 1, "mention notification created");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -1125,24 +1336,51 @@ async fn f3_follow_toggle_on_off_and_count() {
     let app = app().await;
     let token = auth_header(id2, u2, 0);
 
-    let (s, b) = post_json(&app, &format!("/api/forum/topics/{tid}/follow"), Some(&token), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/forum/topics/{tid}/follow"),
+        Some(&token),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "follow on: {b}");
     assert_eq!(b["err"], 0, "follow on: {b}");
     assert_eq!(b["following"], json!(true), "following true: {b}");
     assert_eq!(b["follower_count"], json!(1), "count 1: {b}");
 
-    let (s, b) = post_json(&app, &format!("/api/forum/topics/{tid}/follow"), Some(&token), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/forum/topics/{tid}/follow"),
+        Some(&token),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "follow off: {b}");
     assert_eq!(b["following"], json!(false), "following false: {b}");
     assert_eq!(b["follower_count"], json!(0), "count 0: {b}");
 
     // Unknown topic → 400.
-    let (s, b) = post_json(&app, "/api/forum/topics/999999/follow", Some(&token), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/forum/topics/999999/follow",
+        Some(&token),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "unknown topic: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -1166,15 +1404,31 @@ async fn f3_follow_state_get_reads_current_state() {
     let token = auth_header(id2, u2, 0);
 
     // Not following yet.
-    let (s, b) = get_json(&app, &format!("/api/forum/topics/{tid}/follow"), Some(&token)).await;
+    let (s, b) = get_json(
+        &app,
+        &format!("/api/forum/topics/{tid}/follow"),
+        Some(&token),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "get follow: {b}");
     assert_eq!(b["err"], 0, "get follow: {b}");
     assert_eq!(b["following"], json!(false), "not following: {b}");
     assert_eq!(b["follower_count"], json!(0), "count 0: {b}");
 
     // Follow, then GET shows it.
-    let (_, _) = post_json(&app, &format!("/api/forum/topics/{tid}/follow"), Some(&token), json!({})).await;
-    let (s, b) = get_json(&app, &format!("/api/forum/topics/{tid}/follow"), Some(&token)).await;
+    let (_, _) = post_json(
+        &app,
+        &format!("/api/forum/topics/{tid}/follow"),
+        Some(&token),
+        json!({}),
+    )
+    .await;
+    let (s, b) = get_json(
+        &app,
+        &format!("/api/forum/topics/{tid}/follow"),
+        Some(&token),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "get follow after: {b}");
     assert_eq!(b["following"], json!(true), "following: {b}");
     assert_eq!(b["follower_count"], json!(1), "count 1: {b}");
@@ -1184,8 +1438,17 @@ async fn f3_follow_state_get_reads_current_state() {
     assert_eq!(s, StatusCode::BAD_REQUEST, "unknown topic: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -1227,18 +1490,31 @@ async fn f3_edit_topic_author_window_and_mod() {
     let token_mod = auth_header(id2, u2, 5);
 
     // Author after window → 403.
-    let (s, b) = patch_json(&app, &format!("/api/forum/topics/{tid}"), Some(&token_author), json!({ "title": "Renamed" })).await;
+    let (s, b) = patch_json(
+        &app,
+        &format!("/api/forum/topics/{tid}"),
+        Some(&token_author),
+        json!({ "title": "Renamed" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "author expired: {b}");
 
     // Mod can edit any time.
-    let (s, b) = patch_json(&app, &format!("/api/forum/topics/{tid}"), Some(&token_mod), json!({ "title": "Mod rename", "body": "Mod body" })).await;
+    let (s, b) = patch_json(
+        &app,
+        &format!("/api/forum/topics/{tid}"),
+        Some(&token_mod),
+        json!({ "title": "Mod rename", "body": "Mod body" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "mod edit: {b}");
     assert_eq!(b["err"], 0, "mod edit: {b}");
-    let (title, body): (String, String) = sqlx::query_as("SELECT title, body FROM forum_topics WHERE id = $1")
-        .bind(tid)
-        .fetch_one(&db)
-        .await
-        .expect("topic row");
+    let (title, body): (String, String) =
+        sqlx::query_as("SELECT title, body FROM forum_topics WHERE id = $1")
+            .bind(tid)
+            .fetch_one(&db)
+            .await
+            .expect("topic row");
     assert_eq!(title, "Mod rename");
     assert_eq!(body, "Mod body");
 
@@ -1257,7 +1533,13 @@ async fn f3_edit_topic_author_window_and_mod() {
         .execute(&db)
         .await
         .ok();
-    let (s, b) = patch_json(&app, &format!("/api/forum/topics/{tid2}"), Some(&token_author), json!({ "body": "Only body changed" })).await;
+    let (s, b) = patch_json(
+        &app,
+        &format!("/api/forum/topics/{tid2}"),
+        Some(&token_author),
+        json!({ "body": "Only body changed" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "fresh author edit: {b}");
     let body: String = sqlx::query_scalar("SELECT body FROM forum_topics WHERE id = $1")
         .bind(tid2)
@@ -1265,11 +1547,12 @@ async fn f3_edit_topic_author_window_and_mod() {
         .await
         .expect("body");
     assert_eq!(body, "Only body changed");
-    let (title, _): (String, String) = sqlx::query_as("SELECT title, body FROM forum_topics WHERE id = $1")
-        .bind(tid2)
-        .fetch_one(&db)
-        .await
-        .expect("title");
+    let (title, _): (String, String) =
+        sqlx::query_as("SELECT title, body FROM forum_topics WHERE id = $1")
+            .bind(tid2)
+            .fetch_one(&db)
+            .await
+            .expect("title");
     assert_eq!(title, "fr3 fresh topic");
     // The fresh topic's OP post must stay fresh too (the aged-topic cleanup
     // above runs before this seed, but re-age defensively for order changes).
@@ -1279,12 +1562,27 @@ async fn f3_edit_topic_author_window_and_mod() {
         .await
         .ok();
     // Non-author non-mod → 403.
-    let (s, b) = patch_json(&app, &format!("/api/forum/topics/{tid}"), Some(&token_mod), json!({ "title": "x" })).await;
+    let (s, b) = patch_json(
+        &app,
+        &format!("/api/forum/topics/{tid}"),
+        Some(&token_mod),
+        json!({ "title": "x" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "mod can always edit: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -1340,22 +1638,41 @@ async fn f3_edit_post_author_window_and_mod() {
     let token_mod = auth_header(id2, u2, 5);
 
     // Author edits own fresh post within window → OK, edited_at set.
-    let (s, b) = patch_json(&app, &format!("/api/forum/posts/{own_post}"), Some(&token_author), json!({ "body": "mine v2" })).await;
+    let (s, b) = patch_json(
+        &app,
+        &format!("/api/forum/posts/{own_post}"),
+        Some(&token_author),
+        json!({ "body": "mine v2" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "author fresh edit: {b}");
-    let (body, edited): (String, Option<String>) = sqlx::query_as("SELECT body, edited_at::text FROM forum_posts WHERE id = $1")
-        .bind(own_post)
-        .fetch_one(&db)
-        .await
-        .expect("own post row");
+    let (body, edited): (String, Option<String>) =
+        sqlx::query_as("SELECT body, edited_at::text FROM forum_posts WHERE id = $1")
+            .bind(own_post)
+            .fetch_one(&db)
+            .await
+            .expect("own post row");
     assert_eq!(body, "mine v2");
     assert!(edited.is_some(), "edited_at set");
 
     // Author edits old post after window → 403.
-    let (s, b) = patch_json(&app, &format!("/api/forum/posts/{old_post}"), Some(&token_author), json!({ "body": "hijack" })).await;
+    let (s, b) = patch_json(
+        &app,
+        &format!("/api/forum/posts/{old_post}"),
+        Some(&token_author),
+        json!({ "body": "hijack" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "author expired: {b}");
 
     // Mod edits old post → OK.
-    let (s, b) = patch_json(&app, &format!("/api/forum/posts/{old_post}"), Some(&token_mod), json!({ "body": "mod fixed it" })).await;
+    let (s, b) = patch_json(
+        &app,
+        &format!("/api/forum/posts/{old_post}"),
+        Some(&token_mod),
+        json!({ "body": "mod fixed it" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "mod edit: {b}");
     let body: String = sqlx::query_scalar("SELECT body FROM forum_posts WHERE id = $1")
         .bind(old_post)
@@ -1365,8 +1682,17 @@ async fn f3_edit_post_author_window_and_mod() {
     assert_eq!(body, "mod fixed it");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -1401,22 +1727,38 @@ async fn f3_delete_topic_author_mod_and_non_author() {
     let token_other = auth_header(id3, u3, 0);
 
     // Non-author non-mod → 403.
-    let (s, b) = delete_json(&app, &format!("/api/forum/topics/{tid}"), Some(&token_other)).await;
+    let (s, b) = delete_json(
+        &app,
+        &format!("/api/forum/topics/{tid}"),
+        Some(&token_other),
+    )
+    .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "non-author: {b}");
 
     // Author can delete any time (soft delete).
-    let (s, b) = delete_json(&app, &format!("/api/forum/topics/{tid}"), Some(&token_author)).await;
+    let (s, b) = delete_json(
+        &app,
+        &format!("/api/forum/topics/{tid}"),
+        Some(&token_author),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "author delete: {b}");
     assert_eq!(b["err"], 0, "author delete: {b}");
-    let deleted: Option<String> = sqlx::query_scalar("SELECT deleted_at::text FROM forum_topics WHERE id = $1")
-        .bind(tid)
-        .fetch_one(&db)
-        .await
-        .expect("deleted_at");
+    let deleted: Option<String> =
+        sqlx::query_scalar("SELECT deleted_at::text FROM forum_topics WHERE id = $1")
+            .bind(tid)
+            .fetch_one(&db)
+            .await
+            .expect("deleted_at");
     assert!(deleted.is_some(), "topic soft-deleted");
 
     // Detail now 400 for deleted topic.
-    let (s, b) = get_json(&app, &format!("/api/forum/topics/{tid}"), Some(&token_author)).await;
+    let (s, b) = get_json(
+        &app,
+        &format!("/api/forum/topics/{tid}"),
+        Some(&token_author),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "deleted detail: {b}");
 
     // Mod delete of someone else's topic → soft-delete + modlog entry.
@@ -1433,9 +1775,18 @@ async fn f3_delete_topic_author_mod_and_non_author() {
     assert_eq!(modlog_count, 1, "mod delete logged");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2 OR username = $3")
-        .bind(u1).bind(u2).bind(u3).execute(&db).await.ok();
+        .bind(u1)
+        .bind(u2)
+        .bind(u3)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -1477,17 +1828,28 @@ async fn f3_delete_post_author_mod_and_non_author() {
     let token_other = auth_header(id3, u3, 0);
 
     // Non-author → 403.
-    let (s, b) = delete_json(&app, &format!("/api/forum/posts/{post}"), Some(&token_other)).await;
+    let (s, b) = delete_json(
+        &app,
+        &format!("/api/forum/posts/{post}"),
+        Some(&token_other),
+    )
+    .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "non-author: {b}");
 
     // Author deletes own post → soft-delete, no modlog.
-    let (s, b) = delete_json(&app, &format!("/api/forum/posts/{post}"), Some(&token_author)).await;
+    let (s, b) = delete_json(
+        &app,
+        &format!("/api/forum/posts/{post}"),
+        Some(&token_author),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "author delete: {b}");
-    let deleted: Option<String> = sqlx::query_scalar("SELECT deleted_at::text FROM forum_posts WHERE id = $1")
-        .bind(post)
-        .fetch_one(&db)
-        .await
-        .expect("deleted_at");
+    let deleted: Option<String> =
+        sqlx::query_scalar("SELECT deleted_at::text FROM forum_posts WHERE id = $1")
+            .bind(post)
+            .fetch_one(&db)
+            .await
+            .expect("deleted_at");
     assert!(deleted.is_some(), "post soft-deleted");
 
     // Mod deletes someone else's post → soft-delete + modlog.
@@ -1511,9 +1873,18 @@ async fn f3_delete_post_author_mod_and_non_author() {
     assert_eq!(modlog_count, 1, "mod delete logged");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2 OR username = $3")
-        .bind(u1).bind(u2).bind(u3).execute(&db).await.ok();
+        .bind(u1)
+        .bind(u2)
+        .bind(u3)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1556,7 +1927,11 @@ async fn f4_search_requires_auth() {
     let token = auth_header(id1, u1, 0);
     let (s, b) = get_json(&app, "/api/forum/search?q=", Some(&token)).await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "empty q: {b}");
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(u1).execute(&db).await.ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u1)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -1601,8 +1976,14 @@ async fn f4_mark_read_updates_state_and_unread_flags() {
     let (s, b) = get_json(&app, "/api/forum/topics?category=fr4-read", Some(&token)).await;
     assert_eq!(s, StatusCode::OK, "topics: {b}");
     let items = b["items"].as_array().unwrap();
-    let ta = items.iter().find(|i| i["id"] == json!(tid_a)).expect("topic a");
-    let tb = items.iter().find(|i| i["id"] == json!(tid_b)).expect("topic b");
+    let ta = items
+        .iter()
+        .find(|i| i["id"] == json!(tid_a))
+        .expect("topic a");
+    let tb = items
+        .iter()
+        .find(|i| i["id"] == json!(tid_b))
+        .expect("topic b");
     assert_eq!(ta["unread"], true, "a unread before: {b}");
     assert_eq!(tb["unread"], true, "b unread before: {b}");
 
@@ -1621,14 +2002,26 @@ async fn f4_mark_read_updates_state_and_unread_flags() {
 
     let (_, b) = get_json(&app, "/api/forum/topics?category=fr4-read", Some(&token)).await;
     let items = b["items"].as_array().unwrap();
-    let ta = items.iter().find(|i| i["id"] == json!(tid_a)).expect("topic a");
-    let tb = items.iter().find(|i| i["id"] == json!(tid_b)).expect("topic b");
+    let ta = items
+        .iter()
+        .find(|i| i["id"] == json!(tid_a))
+        .expect("topic a");
+    let tb = items
+        .iter()
+        .find(|i| i["id"] == json!(tid_b))
+        .expect("topic b");
     assert_eq!(ta["unread"], false, "a read after: {b}");
     assert_eq!(tb["unread"], true, "b still unread: {b}");
 
     // Default target (no body) = topic's last_post_id; monotonic GREATEST:
     // replaying an older marker must not move the read cursor backwards.
-    let (s, b) = post_json(&app, &format!("/api/forum/topics/{tid_a}/read"), Some(&token), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/forum/topics/{tid_a}/read"),
+        Some(&token),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "default: {b}");
     assert_eq!(b["last_read_post_id"], reply, "default keeps last: {b}");
     let (s, b) = post_json(
@@ -1651,8 +2044,17 @@ async fn f4_mark_read_updates_state_and_unread_flags() {
     );
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -1729,12 +2131,20 @@ async fn f4_search_finds_topic_and_post() {
     let results = b["results"].as_array().unwrap();
     let topic_hits: Vec<&Value> = results.iter().filter(|r| r["type"] == "topic").collect();
     assert_eq!(topic_hits.len(), 2, "two topic hits: {b}");
-    assert!(topic_hits.iter().all(|r| r["post_id"].is_null()), "topic post_id null: {b}");
     assert!(
-        topic_hits.iter().all(|r| r["snippet"].as_str().map_or(false, |s| s.contains("<mark>quokka</mark>"))),
+        topic_hits.iter().all(|r| r["post_id"].is_null()),
+        "topic post_id null: {b}"
+    );
+    assert!(
+        topic_hits.iter().all(|r| r["snippet"]
+            .as_str()
+            .map_or(false, |s| s.contains("<mark>quokka</mark>"))),
         "snippet highlighted: {b}"
     );
-    let slugs: Vec<&str> = topic_hits.iter().map(|r| r["category_slug"].as_str().unwrap()).collect();
+    let slugs: Vec<&str> = topic_hits
+        .iter()
+        .map(|r| r["category_slug"].as_str().unwrap())
+        .collect();
     assert!(slugs.contains(&"fr4-search"), "a in results: {b}");
     assert!(slugs.contains(&"fr4-search-other"), "b in results: {b}");
     assert!(
@@ -1750,17 +2160,35 @@ async fn f4_search_finds_topic_and_post() {
     assert_eq!(r["type"], "post", "post hit: {b}");
     assert!(r["post_id"].is_i64(), "post_id present: {b}");
     assert_eq!(r["topic_id"], tid_a, "topic id: {b}");
-    assert_eq!(r["title"], "fr4 quokka lantern sightings", "topic title: {b}");
-    assert!(r["snippet"].as_str().map_or(false, |s| s.contains("<mark>platypus</mark>")), "post snippet: {b}");
+    assert_eq!(
+        r["title"], "fr4 quokka lantern sightings",
+        "topic title: {b}"
+    );
+    assert!(
+        r["snippet"]
+            .as_str()
+            .map_or(false, |s| s.contains("<mark>platypus</mark>")),
+        "post snippet: {b}"
+    );
 
     // Combined AND query: both words in different rows → no hits.
-    let (s, b) = get_json(&app, "/api/forum/search?q=quokka+AND+platypus", Some(&token)).await;
+    let (s, b) = get_json(
+        &app,
+        "/api/forum/search?q=quokka+AND+platypus",
+        Some(&token),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "combined: {b}");
     assert_eq!(b["total"], 0, "combined AND across rows: {b}");
 
     // Category filter: quokka limited to fr4-search → 1 topic hit (+ its OP
     // post hit).
-    let (s, b) = get_json(&app, "/api/forum/search?q=quokka&category=fr4-search", Some(&token)).await;
+    let (s, b) = get_json(
+        &app,
+        "/api/forum/search?q=quokka&category=fr4-search",
+        Some(&token),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "category filter: {b}");
     assert_eq!(b["total"], 2, "filtered (topic + OP post): {b}");
     let filtered_topics: Vec<&Value> = b["results"]
@@ -1771,15 +2199,33 @@ async fn f4_search_finds_topic_and_post() {
         .collect();
     assert_eq!(filtered_topics.len(), 1, "one topic hit: {b}");
     assert_eq!(filtered_topics[0]["topic_id"], tid_a, "filtered topic: {b}");
-    assert_eq!(filtered_topics[0]["category_slug"], "fr4-search", "filtered slug: {b}");
+    assert_eq!(
+        filtered_topics[0]["category_slug"], "fr4-search",
+        "filtered slug: {b}"
+    );
 
     // Bad category slug → 400.
-    let (s, b) = get_json(&app, "/api/forum/search?q=quokka&category=nope-nope", Some(&token)).await;
+    let (s, b) = get_json(
+        &app,
+        "/api/forum/search?q=quokka&category=nope-nope",
+        Some(&token),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "bad category: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1 OR id = $2").bind(cid).bind(cid_other).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1 OR id = $2")
+        .bind(cid)
+        .bind(cid_other)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 // ── F5: moderation points + floor actions ───────────────────────────────────
@@ -1877,7 +2323,10 @@ async fn seed_mod_action(
     // UNIQUE topic title per call — reusing one title makes seed_topic hit its
     // existing-topic self-heal branch (wipe posts + re-create OP), which
     // cascade-deletes prior mod_actions/votes on the shared topic.
-    let title = format!("fr6 meta target {}", chrono::Utc::now().timestamp_subsec_nanos());
+    let title = format!(
+        "fr6 meta target {}",
+        chrono::Utc::now().timestamp_subsec_nanos()
+    );
     let tid = seed_topic(db, cid, author_id, &title).await;
     let post_id: i64 = sqlx::query_scalar(
         "SELECT id FROM forum_posts WHERE topic_id = $1 AND author_id = $2 ORDER BY id LIMIT 1",
@@ -1977,13 +2426,12 @@ async fn f5_moderate_positive() {
         .ok();
     let cid = seed_category(&db, "fr5-mod", "F5 Mod").await;
     let tid = seed_topic(&db, cid, author_id, "fr5 mod target").await;
-    let post_id: i64 = sqlx::query_scalar(
-        "SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1",
-    )
-    .bind(tid)
-    .fetch_one(&db)
-    .await
-    .expect("op post id");
+    let post_id: i64 =
+        sqlx::query_scalar("SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1")
+            .bind(tid)
+            .fetch_one(&db)
+            .await
+            .expect("op post id");
     promote_curator(&db, cur_id).await;
 
     let app = app().await;
@@ -2030,10 +2478,17 @@ async fn f5_moderate_positive() {
     assert_eq!(b["items"][0]["delta"], 2, "delta: {b}");
     assert_eq!(b["items"][0]["score_after"], 2, "score_after: {b}");
     assert_eq!(b["items"][0]["moderator_id"], cur_id, "moderator_id: {b}");
-    assert!(b["items"][0].get("moderator_username").is_none(), "no username leak: {b}");
+    assert!(
+        b["items"][0].get("moderator_username").is_none(),
+        "no username leak: {b}"
+    );
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
         .bind(u_author)
         .bind(u_cur)
@@ -2058,13 +2513,12 @@ async fn f5_moderate_negative_collapse() {
         .ok();
     let cid = seed_category(&db, "fr5-collapse", "F5 Collapse").await;
     let tid = seed_topic(&db, cid, author_id, "fr5 collapse target").await;
-    let post_id: i64 = sqlx::query_scalar(
-        "SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1",
-    )
-    .bind(tid)
-    .fetch_one(&db)
-    .await
-    .expect("op post id");
+    let post_id: i64 =
+        sqlx::query_scalar("SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1")
+            .bind(tid)
+            .fetch_one(&db)
+            .await
+            .expect("op post id");
     promote_curator(&db, cur_id).await;
 
     let app = app().await;
@@ -2088,20 +2542,27 @@ async fn f5_moderate_negative_collapse() {
         "hidden_until must be null (client-side collapse): {b}"
     );
 
-    let (score, hidden): (i32, Option<chrono::DateTime<chrono::Utc>>) = sqlx::query_as(
-        "SELECT score, hidden_until FROM forum_posts WHERE id = $1",
-    )
-    .bind(post_id)
-    .fetch_one(&db)
-    .await
-    .expect("post row");
+    let (score, hidden): (i32, Option<chrono::DateTime<chrono::Utc>>) =
+        sqlx::query_as("SELECT score, hidden_until FROM forum_posts WHERE id = $1")
+            .bind(post_id)
+            .fetch_one(&db)
+            .await
+            .expect("post row");
     assert_eq!(score, -3, "score: {score}");
-    assert!(hidden.is_none(), "hidden_until must stay NULL for auto-collapse");
+    assert!(
+        hidden.is_none(),
+        "hidden_until must stay NULL for auto-collapse"
+    );
 
     // The collapsed post REMAINS visible in the topic detail with score −3
     // (the frontend renders the collapsed toggle client-side).
     let reader_token = auth_header(author_id, u_author, 0);
-    let (s, b) = get_json(&app, &format!("/api/forum/topics/{tid}"), Some(&reader_token)).await;
+    let (s, b) = get_json(
+        &app,
+        &format!("/api/forum/topics/{tid}"),
+        Some(&reader_token),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "detail: {b}");
     let items = b["items"].as_array().unwrap();
     let hit = items.iter().find(|p| p["id"] == json!(post_id));
@@ -2109,7 +2570,11 @@ async fn f5_moderate_negative_collapse() {
     assert_eq!(hit.unwrap()["score"], -3, "score in detail: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
         .bind(u_author)
         .bind(u_cur)
@@ -2132,13 +2597,12 @@ async fn f5_moderate_self_forbidden() {
         .ok();
     let cid = seed_category(&db, "fr5-self", "F5 Self").await;
     let tid = seed_topic(&db, cid, uid, "fr5 self topic").await;
-    let post_id: i64 = sqlx::query_scalar(
-        "SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1",
-    )
-    .bind(tid)
-    .fetch_one(&db)
-    .await
-    .expect("op post id");
+    let post_id: i64 =
+        sqlx::query_scalar("SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1")
+            .bind(tid)
+            .fetch_one(&db)
+            .await
+            .expect("op post id");
     promote_curator(&db, uid).await;
 
     let app = app().await;
@@ -2161,8 +2625,16 @@ async fn f5_moderate_self_forbidden() {
     assert_eq!(mod_count, 0, "no action recorded: {mod_count}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -2181,13 +2653,12 @@ async fn f5_moderate_duplicate_forbidden() {
         .ok();
     let cid = seed_category(&db, "fr5-dup", "F5 Dup").await;
     let tid = seed_topic(&db, cid, author_id, "fr5 dup target").await;
-    let post_id: i64 = sqlx::query_scalar(
-        "SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1",
-    )
-    .bind(tid)
-    .fetch_one(&db)
-    .await
-    .expect("op post id");
+    let post_id: i64 =
+        sqlx::query_scalar("SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1")
+            .bind(tid)
+            .fetch_one(&db)
+            .await
+            .expect("op post id");
     promote_curator(&db, cur_id).await;
 
     let app = app().await;
@@ -2222,7 +2693,11 @@ async fn f5_moderate_duplicate_forbidden() {
     assert_eq!(mod_count, 1, "only one action: {mod_count}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
         .bind(u_author)
         .bind(u_cur)
@@ -2247,13 +2722,12 @@ async fn f5_admin_hide() {
         .ok();
     let cid = seed_category(&db, "fr5-hide", "F5 Hide").await;
     let tid = seed_topic(&db, cid, author_id, "fr5 hide target").await;
-    let post_id: i64 = sqlx::query_scalar(
-        "SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1",
-    )
-    .bind(tid)
-    .fetch_one(&db)
-    .await
-    .expect("op post id");
+    let post_id: i64 =
+        sqlx::query_scalar("SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1")
+            .bind(tid)
+            .fetch_one(&db)
+            .await
+            .expect("op post id");
     promote_curator(&db, cur_id).await;
 
     let app = app().await;
@@ -2261,11 +2735,23 @@ async fn f5_admin_hide() {
 
     // Low-role user cannot fast-hide (needs role ≥ 5).
     let low = auth_header(author_id, u_author, 0);
-    let (s, b) = post_json(&app, &format!("/api/admin/forum/hide/{post_id}"), Some(&low), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/admin/forum/hide/{post_id}"),
+        Some(&low),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "low role hide: {b}");
 
     // Curator hides for 72h.
-    let (s, b) = post_json(&app, &format!("/api/admin/forum/hide/{post_id}"), Some(&token), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/admin/forum/hide/{post_id}"),
+        Some(&token),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "hide: {b}");
     assert_eq!(b["err"], 0, "hide: {b}");
     let hidden: Option<chrono::DateTime<chrono::Utc>> =
@@ -2282,7 +2768,11 @@ async fn f5_admin_hide() {
     );
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
         .bind(u_author)
         .bind(u_cur)
@@ -2316,28 +2806,62 @@ async fn f5_lock_pin_topic() {
 
     // Low-role user cannot lock or pin.
     let low = auth_header(low_id, u_low, 0);
-    let (s, b) = post_json(&app, &format!("/api/admin/forum/topics/{tid}/lock"), Some(&low), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/admin/forum/topics/{tid}/lock"),
+        Some(&low),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "low lock: {b}");
-    let (s, b) = post_json(&app, &format!("/api/admin/forum/topics/{tid}/pin"), Some(&low), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/admin/forum/topics/{tid}/pin"),
+        Some(&low),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "low pin: {b}");
 
     // Lock: open → locked.
-    let (s, b) = post_json(&app, &format!("/api/admin/forum/topics/{tid}/lock"), Some(&token), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/admin/forum/topics/{tid}/lock"),
+        Some(&token),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "lock: {b}");
     assert_eq!(b["status"], "locked", "locked: {b}");
 
     // Pin: open → pinned (toggle).
-    let (s, b) = post_json(&app, &format!("/api/admin/forum/topics/{tid}/pin"), Some(&token), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/admin/forum/topics/{tid}/pin"),
+        Some(&token),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "pin: {b}");
     assert_eq!(b["status"], "pinned", "pinned: {b}");
 
     // Unpin toggles back.
-    let (s, b) = post_json(&app, &format!("/api/admin/forum/topics/{tid}/pin"), Some(&token), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/admin/forum/topics/{tid}/pin"),
+        Some(&token),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "unpin: {b}");
     assert_eq!(b["status"], "open", "unpinned: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2 OR username = $3")
         .bind(u_author)
         .bind(u_cur)
@@ -2402,12 +2926,18 @@ async fn f5_ban_enforcement() {
     assert_eq!(b["msg"], "Banned from the forum", "ban msg: {b}");
 
     // Lift it, then category-scope ban on A only.
-    let ban_id: i64 = sqlx::query_scalar("SELECT id FROM forum_bans WHERE user_id = $1 ORDER BY id DESC LIMIT 1")
-        .bind(target_id)
-        .fetch_one(&db)
-        .await
-        .expect("ban id");
-    let (s, _) = delete_json(&app, &format!("/api/admin/forum/bans/{ban_id}"), Some(&admin_token)).await;
+    let ban_id: i64 =
+        sqlx::query_scalar("SELECT id FROM forum_bans WHERE user_id = $1 ORDER BY id DESC LIMIT 1")
+            .bind(target_id)
+            .fetch_one(&db)
+            .await
+            .expect("ban id");
+    let (s, _) = delete_json(
+        &app,
+        &format!("/api/admin/forum/bans/{ban_id}"),
+        Some(&admin_token),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "lift forum ban");
 
     let (s, b) = post_json(
@@ -2462,12 +2992,14 @@ async fn f5_ban_enforcement() {
     assert!(expired_exists, "expired ban row must exist");
     // Cleanup helper rows first: the active category-scope ban from step 2 is
     // still on cid_a; remove it so the expired-ban check is unambiguous.
-    sqlx::query("DELETE FROM forum_bans WHERE user_id = $1 AND category_id = $2 AND expires_at IS NULL")
-        .bind(target_id)
-        .bind(cid_a)
-        .execute(&db)
-        .await
-        .ok();
+    sqlx::query(
+        "DELETE FROM forum_bans WHERE user_id = $1 AND category_id = $2 AND expires_at IS NULL",
+    )
+    .bind(target_id)
+    .bind(cid_a)
+    .execute(&db)
+    .await
+    .ok();
     let (s, b) = post_json(
         &app,
         "/api/forum/topics",
@@ -2478,7 +3010,12 @@ async fn f5_ban_enforcement() {
     assert_eq!(s, StatusCode::OK, "expired ban allows: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1 OR id = $2").bind(cid_a).bind(cid_b).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1 OR id = $2")
+        .bind(cid_a)
+        .bind(cid_b)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
         .bind(u_admin)
         .bind(u_target)
@@ -2529,11 +3066,12 @@ async fn f5_ban_lift() {
     )
     .await;
     assert_eq!(s, StatusCode::OK, "ban: {b}");
-    let ban_id: i64 = sqlx::query_scalar("SELECT id FROM forum_bans WHERE user_id = $1 ORDER BY id DESC LIMIT 1")
-        .bind(target_id)
-        .fetch_one(&db)
-        .await
-        .expect("ban id");
+    let ban_id: i64 =
+        sqlx::query_scalar("SELECT id FROM forum_bans WHERE user_id = $1 ORDER BY id DESC LIMIT 1")
+            .bind(target_id)
+            .fetch_one(&db)
+            .await
+            .expect("ban id");
     let (s, b) = post_json(
         &app,
         "/api/forum/topics",
@@ -2543,7 +3081,12 @@ async fn f5_ban_lift() {
     .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "blocked while banned: {b}");
 
-    let (s, b) = delete_json(&app, &format!("/api/admin/forum/bans/{ban_id}"), Some(&admin_token)).await;
+    let (s, b) = delete_json(
+        &app,
+        &format!("/api/admin/forum/bans/{ban_id}"),
+        Some(&admin_token),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "lift: {b}");
     let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forum_bans WHERE id = $1")
         .bind(ban_id)
@@ -2562,7 +3105,11 @@ async fn f5_ban_lift() {
     assert_eq!(s, StatusCode::OK, "allowed after lift: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
         .bind(u_admin)
         .bind(u_target)
@@ -2587,13 +3134,12 @@ async fn f5_report_forum_target() {
         .ok();
     let cid = seed_category(&db, "fr5-report", "F5 Report").await;
     let tid = seed_topic(&db, cid, author_id, "fr5 report topic").await;
-    let post_id: i64 = sqlx::query_scalar(
-        "SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1",
-    )
-    .bind(tid)
-    .fetch_one(&db)
-    .await
-    .expect("op post id");
+    let post_id: i64 =
+        sqlx::query_scalar("SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1")
+            .bind(tid)
+            .fetch_one(&db)
+            .await
+            .expect("op post id");
 
     let app = app().await;
     let token = auth_header(reporter_id, u_reporter, 0);
@@ -2621,7 +3167,11 @@ async fn f5_report_forum_target() {
     assert_eq!(b["err"], 0, "report forum_topic: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
         .bind(u_reporter)
         .bind(u_author)
@@ -2759,7 +3309,10 @@ async fn f6_queue_random_sample() {
     assert_eq!(hit["score_after"], 2, "score_after: {hit}");
     // Anonymized: no moderator identity anywhere.
     assert!(hit.get("moderator_id").is_none(), "no moderator_id: {hit}");
-    assert!(hit.get("moderator_username").is_none(), "no username: {hit}");
+    assert!(
+        hit.get("moderator_username").is_none(),
+        "no username: {hit}"
+    );
 
     // Cleanup
     sqlx::query("DELETE FROM forum_mod_actions WHERE id = $1")
@@ -3015,11 +3568,12 @@ async fn f6_vote_invalid_verdict() {
     .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "bad verdict: {b}");
     assert_eq!(b["err"], -1, "bad verdict err: {b}");
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forum_metamod_votes WHERE mod_action_id = $1")
-        .bind(action_id)
-        .fetch_one(&db)
-        .await
-        .expect("count");
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM forum_metamod_votes WHERE mod_action_id = $1")
+            .bind(action_id)
+            .fetch_one(&db)
+            .await
+            .expect("count");
     assert_eq!(count, 0, "no vote stored: {count}");
 
     // Cleanup
@@ -3123,15 +3677,17 @@ async fn f6_cooldown_triggered() {
     assert_eq!(b["err"], 0, "trigger vote err: {b}");
 
     // cooldown_until set on the grant row.
-    let cooldown: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
-        "SELECT cooldown_until FROM forum_mod_grants WHERE user_id = $1",
-    )
-    .bind(mod_id)
-    .fetch_one(&db)
-    .await
-    .expect("grant row");
+    let cooldown: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT cooldown_until FROM forum_mod_grants WHERE user_id = $1")
+            .bind(mod_id)
+            .fetch_one(&db)
+            .await
+            .expect("grant row");
     let cooldown = cooldown.expect("cooldown_until set");
-    assert!(cooldown > chrono::Utc::now(), "cooldown in future: {cooldown}");
+    assert!(
+        cooldown > chrono::Utc::now(),
+        "cooldown in future: {cooldown}"
+    );
 
     // Modlog entry: 'mod_privileges_suspended', aggregate-only (no voter id).
     let (action, target, details): (String, String, serde_json::Value) = sqlx::query_as(
@@ -3200,10 +3756,12 @@ async fn f6_cooldown_triggered() {
         .bind(mod_id)
         .execute(&db)
         .await;
-    let _ = sqlx::query("DELETE FROM modlog WHERE action = 'mod_privileges_suspended' AND target_id = $1")
-        .bind(mod_id.to_string())
-        .execute(&db)
-        .await;
+    let _ = sqlx::query(
+        "DELETE FROM modlog WHERE action = 'mod_privileges_suspended' AND target_id = $1",
+    )
+    .bind(mod_id.to_string())
+    .execute(&db)
+    .await;
     let _ = sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2 OR username = $3")
         .bind(u_author)
         .bind(u_mod)
@@ -3248,7 +3806,10 @@ async fn f6_pool_too_small() {
     // or absent depending on how many eligible users the shared dev DB has —
     // both are valid responses for this endpoint.
     assert!(b["items"].is_array(), "items array: {b}");
-    assert_eq!(b["count"].as_i64().unwrap_or(0), b["items"].as_array().unwrap().len() as i64);
+    assert_eq!(
+        b["count"].as_i64().unwrap_or(0),
+        b["items"].as_array().unwrap().len() as i64
+    );
 
     // Cleanup
     sqlx::query("DELETE FROM forum_posts WHERE author_id = $1")
@@ -3299,8 +3860,11 @@ async fn f7_level_exp_from_topic_and_post() {
     assert_eq!(s, StatusCode::OK, "create topic: {b}");
     let tid = b["id"].as_i64().expect("topic id");
 
-    let (exp, lvl): (i64, i16) =
-        sqlx::query_as("SELECT exp, level FROM users WHERE id = $1").bind(uid).fetch_one(&db).await.expect("user row");
+    let (exp, lvl): (i64, i16) = sqlx::query_as("SELECT exp, level FROM users WHERE id = $1")
+        .bind(uid)
+        .fetch_one(&db)
+        .await
+        .expect("user row");
     assert_eq!(exp, 2, "topic create exp: {exp}");
     assert_eq!(lvl, 0, "still level 0: {lvl}");
 
@@ -3313,7 +3877,11 @@ async fn f7_level_exp_from_topic_and_post() {
     )
     .await;
     assert_eq!(s, StatusCode::OK, "reply: {b}");
-    let (exp,): (i64,) = sqlx::query_as("SELECT exp FROM users WHERE id = $1").bind(uid).fetch_one(&db).await.expect("user row");
+    let (exp,): (i64,) = sqlx::query_as("SELECT exp FROM users WHERE id = $1")
+        .bind(uid)
+        .fetch_one(&db)
+        .await
+        .expect("user row");
     assert_eq!(exp, 4, "reply exp: {exp}");
 
     // exp_events audit trail.
@@ -3325,8 +3893,16 @@ async fn f7_level_exp_from_topic_and_post() {
     assert_eq!(n, 2, "two exp events: {n}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -3355,7 +3931,11 @@ async fn f7_level_me_level_endpoint() {
     assert!((progress - 0.5).abs() < 0.001, "progress 50%: {progress}");
 
     // Cleanup
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(&db).await.ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -3374,13 +3954,12 @@ async fn f7_level_gate_curator() {
         .ok();
     let cid = seed_category(&db, "fr7-gate", "F7 Gate").await;
     let tid = seed_topic(&db, cid, author_id, "fr7 gate target").await;
-    let post_id: i64 = sqlx::query_scalar(
-        "SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1",
-    )
-    .bind(tid)
-    .fetch_one(&db)
-    .await
-    .expect("op post id");
+    let post_id: i64 =
+        sqlx::query_scalar("SELECT id FROM forum_posts WHERE topic_id = $1 ORDER BY id LIMIT 1")
+            .bind(tid)
+            .fetch_one(&db)
+            .await
+            .expect("op post id");
 
     // Curator at level 50 (14+ days old): can moderate.
     sqlx::query("UPDATE users SET level = 50, exp = 5000, created_at = NOW() - INTERVAL '30 days' WHERE id = $1")
@@ -3417,7 +3996,11 @@ async fn f7_level_gate_curator() {
     assert_eq!(s, StatusCode::FORBIDDEN, "level 49 forbidden: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
         .bind(u_author)
         .bind(u_cur)
@@ -3478,7 +4061,11 @@ async fn f7_level_gate_admin() {
         .execute(&db)
         .await
         .ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(&db).await.ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -3569,7 +4156,11 @@ async fn f7_level_mod_received_exp_capped() {
     assert_eq!(n, 3, "3 mod events recorded (cap stops the 4th): {n}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
         .bind(u_author)
         .bind(u_cur)
@@ -3590,24 +4181,21 @@ async fn wipe_f7_for_users(db: &sqlx::PgPool, usernames: &[&str]) {
         if let Some(uid) = uid {
             // Hard-delete every F7 row referencing the user, then the
             // account itself. Order matters: child tables first.
-            let _ = sqlx::query(
-                "DELETE FROM user_invites WHERE created_by = $1 OR used_by = $1",
-            )
-            .bind(uid)
-            .execute(db)
-            .await;
+            let _ = sqlx::query("DELETE FROM user_invites WHERE created_by = $1 OR used_by = $1")
+                .bind(uid)
+                .execute(db)
+                .await;
             let _ = sqlx::query(
                 "DELETE FROM registration_applications WHERE user_id = $1 OR reviewed_by = $1",
             )
             .bind(uid)
             .execute(db)
             .await;
-            let _ = sqlx::query(
-                "DELETE FROM blocked_users WHERE user_id = $1 OR blocked_user_id = $1",
-            )
-            .bind(uid)
-            .execute(db)
-            .await;
+            let _ =
+                sqlx::query("DELETE FROM blocked_users WHERE user_id = $1 OR blocked_user_id = $1")
+                    .bind(uid)
+                    .execute(db)
+                    .await;
             let _ = sqlx::query(
                 "DELETE FROM modlog WHERE action IN ('invite_create','registration_app_review') AND actor_id = $1",
             )
@@ -3618,10 +4206,12 @@ async fn wipe_f7_for_users(db: &sqlx::PgPool, usernames: &[&str]) {
             // (bookmarks, follows, ...) may reference it. Delete those.
             // Email is globally unique — the wiped row's '' default is
             // shared, so a fresh user created here gets its own unique email.
-            let _ = sqlx::query("UPDATE users SET email = 'f7-wipe-' || id WHERE id = $1 AND email = ''")
-                .bind(uid)
-                .execute(db)
-                .await;
+            let _ = sqlx::query(
+                "UPDATE users SET email = 'f7-wipe-' || id WHERE id = $1 AND email = ''",
+            )
+            .bind(uid)
+            .execute(db)
+            .await;
             // The username column is globally unique too — release it so a
             // re-registered user with the same name doesn't collide.
             let _ = sqlx::query("UPDATE users SET username = 'f7-wiped-' || id WHERE id = $1")
@@ -3695,8 +4285,11 @@ async fn f7_level_level_up_notification() {
     .await;
     assert_eq!(s, StatusCode::OK, "create: {b}");
 
-    let (lvl, exp): (i16, i64) =
-        sqlx::query_as("SELECT level, exp FROM users WHERE id = $1").bind(uid).fetch_one(&db).await.expect("user row");
+    let (lvl, exp): (i16, i64) = sqlx::query_as("SELECT level, exp FROM users WHERE id = $1")
+        .bind(uid)
+        .fetch_one(&db)
+        .await
+        .expect("user row");
     assert_eq!(lvl, 1, "leveled up: {lvl}");
     assert_eq!(exp, 100, "exp 100: {exp}");
 
@@ -3710,8 +4303,16 @@ async fn f7_level_level_up_notification() {
     assert_eq!(n, 1, "one level_up notification: {n}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[allow(dead_code)]
@@ -3723,8 +4324,14 @@ async fn f7_site_info() {
     assert_eq!(s, StatusCode::OK, "site: {b}");
     assert_eq!(b["err"], 0, "site err: {b}");
     assert!(b["site"]["name"].is_string(), "site name: {b}");
-    assert!(!b["site"]["name"].as_str().unwrap().is_empty(), "site name empty: {b}");
-    assert!(b["site"]["description"].is_string(), "site description: {b}");
+    assert!(
+        !b["site"]["name"].as_str().unwrap().is_empty(),
+        "site name empty: {b}"
+    );
+    assert!(
+        b["site"]["description"].is_string(),
+        "site description: {b}"
+    );
     assert!(b["site"]["version"].is_string(), "site version: {b}");
     let mode = b["site"]["registration_mode"].as_str().unwrap();
     assert!(
@@ -3805,8 +4412,13 @@ async fn f7_invite_register_flow() {
     let u_new2 = "fr7_flow_new2";
     let u_new3 = "fr7_flow_new3";
     for u in [u_curator, u_new1, u_new2, u_new3] {
-        let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(&db).await;
-        let _ = sqlx::query("DELETE FROM user_invites WHERE code LIKE 'f7flow%'").execute(&db).await;
+        let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+            .bind(u)
+            .execute(&db)
+            .await;
+        let _ = sqlx::query("DELETE FROM user_invites WHERE code LIKE 'f7flow%'")
+            .execute(&db)
+            .await;
     }
     wipe_f7_for_users(&db, &[u_curator, u_new1, u_new2, u_new3]).await;
     // Rename any stale rows that still hold the target usernames (they can
@@ -3880,12 +4492,11 @@ async fn f7_invite_register_flow() {
     assert_eq!(b["err"], 0, "register with code err: {b}");
     let new1_id = b["user"]["id"].as_i64().unwrap() as i32;
 
-    let (used_by, used_at): (Option<i32>, Option<chrono::DateTime<chrono::Utc>>) = sqlx::query_as(
-        "SELECT used_by, used_at FROM user_invites WHERE code = 'f7flowcode1'",
-    )
-    .fetch_one(&db)
-    .await
-    .expect("invite row");
+    let (used_by, used_at): (Option<i32>, Option<chrono::DateTime<chrono::Utc>>) =
+        sqlx::query_as("SELECT used_by, used_at FROM user_invites WHERE code = 'f7flowcode1'")
+            .fetch_one(&db)
+            .await
+            .expect("invite row");
     assert_eq!(used_by, Some(new1_id), "code consumed by new user");
     assert!(used_at.is_some(), "used_at set");
 
@@ -3916,7 +4527,10 @@ async fn f7_invite_register_flow() {
     assert!(used_by.is_none(), "expired code untouched in open mode");
 
     // Cleanup
-    sqlx::query("DELETE FROM user_invites WHERE code LIKE 'f7flow%'").execute(&db).await.ok();
+    sqlx::query("DELETE FROM user_invites WHERE code LIKE 'f7flow%'")
+        .execute(&db)
+        .await
+        .ok();
     wipe_f7_for_users(&db, &[u_curator, u_new1, u_new2, u_new3]).await;
 }
 
@@ -4027,7 +4641,10 @@ async fn f7_application_submit_review() {
     assert_eq!(action, "registration_app_review");
     assert_eq!(target, app_id.to_string());
     assert_eq!(details["status"], "approved", "modlog details: {details}");
-    assert_eq!(details["applicant_id"], applicant_id, "modlog applicant: {details}");
+    assert_eq!(
+        details["applicant_id"], applicant_id,
+        "modlog applicant: {details}"
+    );
 
     // Reviewing again → 409 (already reviewed).
     let (s, b) = post_json(
@@ -4111,18 +4728,36 @@ async fn f7_block_flow() {
     .await;
     assert_eq!(s, StatusCode::OK, "re-block idempotent: {b}");
     let (_s, b) = get_json(&app, "/api/blocks", Some(&blocker_token)).await;
-    assert_eq!(b["items"].as_array().unwrap().len(), 1, "still one block: {b}");
+    assert_eq!(
+        b["items"].as_array().unwrap().len(),
+        1,
+        "still one block: {b}"
+    );
 
-    let (s, b) = delete_json(&app, &format!("/api/blocks/{target_id}"), Some(&blocker_token)).await;
+    let (s, b) = delete_json(
+        &app,
+        &format!("/api/blocks/{target_id}"),
+        Some(&blocker_token),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "unblock: {b}");
     assert_eq!(b["blocked"], false, "unblocked flag: {b}");
 
     let (s, b) = get_json(&app, "/api/blocks", Some(&blocker_token)).await;
     assert_eq!(s, StatusCode::OK, "list after unblock: {b}");
-    assert_eq!(b["items"].as_array().unwrap().len(), 0, "empty after unblock: {b}");
+    assert_eq!(
+        b["items"].as_array().unwrap().len(),
+        0,
+        "empty after unblock: {b}"
+    );
 
     // Unblocking again is also idempotent.
-    let (s, b) = delete_json(&app, &format!("/api/blocks/{target_id}"), Some(&blocker_token)).await;
+    let (s, b) = delete_json(
+        &app,
+        &format!("/api/blocks/{target_id}"),
+        Some(&blocker_token),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "re-unblock idempotent: {b}");
 
     // Cleanup
@@ -4137,8 +4772,13 @@ async fn f7_invite_gate_closed() {
     let u_curator = "fr7_gate_curator";
     let u_new = "fr7_gate_new";
     for u in [u_curator, u_new] {
-        let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(u).execute(&db).await;
-        let _ = sqlx::query("DELETE FROM user_invites WHERE code LIKE 'f7gate%'").execute(&db).await;
+        let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+            .bind(u)
+            .execute(&db)
+            .await;
+        let _ = sqlx::query("DELETE FROM user_invites WHERE code LIKE 'f7gate%'")
+            .execute(&db)
+            .await;
     }
     wipe_f7_for_users(&db, &[u_curator, u_new]).await;
     // A previous aborted run may have left a row whose username/email now
@@ -4245,7 +4885,10 @@ async fn f7_invite_gate_closed() {
     unsafe { std::env::remove_var("REGISTRATION_MODE") };
 
     // Cleanup
-    sqlx::query("DELETE FROM user_invites WHERE code LIKE 'f7gate%'").execute(&db).await.ok();
+    sqlx::query("DELETE FROM user_invites WHERE code LIKE 'f7gate%'")
+        .execute(&db)
+        .await
+        .ok();
     wipe_f7_for_users(&db, &[u_curator, u_new]).await;
 }
 
@@ -4259,11 +4902,16 @@ async fn f8_anonymous_view_does_not_500() {
     let id1 = seed_user(&db, u1).await;
     wipe_forum_for_users(&db, &[u1]).await;
     sqlx::query("DELETE FROM forum_categories WHERE slug = 'fr8-anonview'")
-        .execute(&db).await.ok();
+        .execute(&db)
+        .await
+        .ok();
     let cid = seed_category(&db, "fr8-anonview", "AnonView").await;
     let tid = seed_topic(&db, cid, id1, "fr8 anon topic").await;
     sqlx::query("UPDATE forum_topics SET view_count = 0 WHERE id = $1")
-        .bind(tid).execute(&db).await.ok();
+        .bind(tid)
+        .execute(&db)
+        .await
+        .ok();
 
     let app = app().await;
 
@@ -4280,8 +4928,16 @@ async fn f8_anonymous_view_does_not_500() {
     assert_eq!(b["view_count"], json!(2), "anon 2nd view: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(u1).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u1)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 // ── Regression: logged-in user view rate-limited to 1/60min ──────────────────
@@ -4294,11 +4950,16 @@ async fn f8_logged_in_view_rate_limited() {
     let id1 = seed_user(&db, u1).await;
     wipe_forum_for_users(&db, &[u1]).await;
     sqlx::query("DELETE FROM forum_categories WHERE slug = 'fr8-ratelimit'")
-        .execute(&db).await.ok();
+        .execute(&db)
+        .await
+        .ok();
     let cid = seed_category(&db, "fr8-ratelimit", "RateLimit").await;
     let tid = seed_topic(&db, cid, id1, "fr8 rl topic").await;
     sqlx::query("UPDATE forum_topics SET view_count = 0 WHERE id = $1")
-        .bind(tid).execute(&db).await.ok();
+        .bind(tid)
+        .execute(&db)
+        .await
+        .ok();
 
     let app = app().await;
     let token = auth_header(id1, u1, 0);
@@ -4314,11 +4975,23 @@ async fn f8_logged_in_view_rate_limited() {
 
     // Clean the rate-limit row → third view counts again.
     sqlx::query("DELETE FROM forum_topic_views WHERE topic_id = $1 AND user_id = $2")
-        .bind(tid).bind(id1).execute(&db).await.ok();
+        .bind(tid)
+        .bind(id1)
+        .execute(&db)
+        .await
+        .ok();
     let (_, b) = get_json(&app, &format!("/api/forum/topics/{tid}"), Some(&token)).await;
     assert_eq!(b["view_count"], json!(2), "rl 3rd (after reset): {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM forum_categories WHERE id = $1").bind(cid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(u1).execute(&db).await.ok();
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u1)
+        .execute(&db)
+        .await
+        .ok();
 }

@@ -30,7 +30,10 @@ fn main() -> ExitCode {
         }
     };
     if !body_dir.exists() {
-        eprintln!("error: BODY_CACHE_DIR {} does not exist", body_dir.display());
+        eprintln!(
+            "error: BODY_CACHE_DIR {} does not exist",
+            body_dir.display()
+        );
         return ExitCode::FAILURE;
     }
 

@@ -14,8 +14,8 @@ use async_trait::async_trait;
 use chrono::TimeZone;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct TthFanficScraper;
 
@@ -25,7 +25,11 @@ impl SiteScraper for TthFanficScraper {
         url.contains("tthfanfic.org/Story-")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
 
         if html.contains("<h2>Story Not Found</h2>") {
@@ -38,7 +42,18 @@ impl SiteScraper for TthFanficScraper {
         // Parse everything into owned values inside a scoped block: the
         // parsed document is not Send, so drop it before the author-page
         // fetch below.
-        let (story_id, author, author_url, author_local_id, rating, words, status, published, updated, chapters) = {
+        let (
+            story_id,
+            author,
+            author_url,
+            author_local_id,
+            rating,
+            words,
+            status,
+            published,
+            updated,
+            chapters,
+        ) = {
             let doc = Html::parse_document(&html);
 
             // Story id from URL.
@@ -80,7 +95,12 @@ impl SiteScraper for TthFanficScraper {
                         .collect();
                     if tds.len() > 10 {
                         rating = tds[2].clone();
-                        words = tds[4].chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap_or(0);
+                        words = tds[4]
+                            .chars()
+                            .filter(|c| c.is_ascii_digit())
+                            .collect::<String>()
+                            .parse()
+                            .unwrap_or(0);
                         if tds[10].contains("Yes") {
                             status = "complete".to_string();
                         }
@@ -102,7 +122,18 @@ impl SiteScraper for TthFanficScraper {
                 chapters = 1;
             }
 
-            (story_id, author, author_url, author_local_id, rating, words, status, published, updated, chapters)
+            (
+                story_id,
+                author,
+                author_url,
+                author_local_id,
+                rating,
+                words,
+                status,
+                published,
+                updated,
+                chapters,
+            )
         }; // doc dropped here
 
         // Title + description: from the author's story list page.
@@ -136,7 +167,11 @@ impl SiteScraper for TthFanficScraper {
         let now = chrono::Utc::now().timestamp_millis();
         Ok(FicMetadata {
             url_id: format!("tth_{story_id}"),
-            title: if title.is_empty() { format!("Story {story_id}") } else { title },
+            title: if title.is_empty() {
+                format!("Story {story_id}")
+            } else {
+                title
+            },
             author,
             chapters,
             words,
@@ -292,7 +327,11 @@ mod tests {
     #[test]
     fn parses_story_id() {
         let url = "https://www.tthfanfic.org/Story-12345/7/Chapter";
-        let id = url.split("/Story-").nth(1).and_then(|s| s.split('/').next()).unwrap();
+        let id = url
+            .split("/Story-")
+            .nth(1)
+            .and_then(|s| s.split('/').next())
+            .unwrap();
         assert_eq!(id, "12345");
     }
 

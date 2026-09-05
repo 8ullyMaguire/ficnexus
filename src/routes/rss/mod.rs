@@ -30,9 +30,5 @@ mod build;
 /// New-arrivals + follows + per-fic feed handlers.
 mod handlers;
 
-pub use build::{
-    atom_feed, atom_response, entry_for_fic, html_escape, iso_now, FeedQuery,
-};
-pub use handlers::{
-    follows_feed, new_arrivals_feed, work_feed,
-};
+pub use build::{FeedQuery, atom_feed, atom_response, entry_for_fic, html_escape, iso_now};
+pub use handlers::{follows_feed, new_arrivals_feed, work_feed};

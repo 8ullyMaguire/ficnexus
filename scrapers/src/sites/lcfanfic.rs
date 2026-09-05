@@ -10,8 +10,8 @@
 use async_trait::async_trait;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct LcFanficScraper;
 
@@ -21,7 +21,11 @@ impl SiteScraper for LcFanficScraper {
         url.contains("lcfanfic.com/stories/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
         let doc = Html::parse_document(&html);
 
@@ -80,7 +84,12 @@ impl SiteScraper for LcFanficScraper {
             return Err(ScrapeError::ParseError("lcfanfic: no title".into()));
         }
 
-        let story_id = url.trim_end_matches(".html").rsplit('/').next().unwrap_or("").to_string();
+        let story_id = url
+            .trim_end_matches(".html")
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+            .to_string();
         let now = chrono::Utc::now().timestamp_millis();
         Ok(FicMetadata {
             url_id: format!("lcff_{story_id}"),
@@ -134,7 +143,9 @@ async fn fetch_chapter_text(client: &reqwest::Client, url: &str) -> String {
         return String::new();
     };
     // Find the *** separator.
-    let sep = html.find("<p align=center>***</p>").or_else(|| html.find("<p align=\"center\">***</p>"));
+    let sep = html
+        .find("<p align=center>***</p>")
+        .or_else(|| html.find("<p align=\"center\">***</p>"));
     let Some(idx) = sep else { return String::new() };
     let after = &html[idx..];
     let doc = Html::parse_document(after);

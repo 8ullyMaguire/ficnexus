@@ -71,12 +71,11 @@ pub async fn rebuild_transitions(ctx: &StrategyContext) -> Result<(usize, f64), 
             let (from_w, _) = pair[0];
             let (to_w, _) = pair[1];
             // work_id → url_id via fic_info.
-            let urls: Vec<(String, String)> = sqlx::query_as(
-                "SELECT id, work_id::text FROM fic_info WHERE work_id = ANY($1)",
-            )
-            .bind(&[from_w, to_w])
-            .fetch_all(&ctx.db)
-            .await?;
+            let urls: Vec<(String, String)> =
+                sqlx::query_as("SELECT id, work_id::text FROM fic_info WHERE work_id = ANY($1)")
+                    .bind(&[from_w, to_w])
+                    .fetch_all(&ctx.db)
+                    .await?;
             let mut from_url: Option<String> = None;
             let mut to_url: Option<String> = None;
             for (id, wid) in urls {
@@ -95,17 +94,20 @@ pub async fn rebuild_transitions(ctx: &StrategyContext) -> Result<(usize, f64), 
 
     // 2. request_log co-download sequences: same IP + etype download/export
     // within a 6-hour window → (earlier → later).
-    let downloads: Vec<(Option<String>, Option<String>, chrono::DateTime<chrono::Utc>)> =
-        sqlx::query_as(
-            r#"SELECT url, url_id, created
+    let downloads: Vec<(
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+    )> = sqlx::query_as(
+        r#"SELECT url, url_id, created
                FROM request_log
                WHERE url_id IS NOT NULL
                  AND (export_file_name LIKE '%.epub' OR etype IN ('download', 'export'))
                  AND created > now() - interval '180 days'
                ORDER BY created"#,
-        )
-        .fetch_all(&ctx.db)
-        .await?;
+    )
+    .fetch_all(&ctx.db)
+    .await?;
     // Group by url (the IP is not reliably present; url = requested URL is
     // the closest session key we have). Take consecutive pairs in the
     // ordered stream where the gap ≤ 6h.
@@ -127,7 +129,9 @@ pub async fn rebuild_transitions(ctx: &StrategyContext) -> Result<(usize, f64), 
 
     // Upsert (idempotent).
     let mut tx = ctx.db.begin().await?;
-    sqlx::query("DELETE FROM rec_transitions").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM rec_transitions")
+        .execute(&mut *tx)
+        .await?;
     let mut inserted = 0usize;
     let mut total_weight = 0.0f64;
     for ((from, to), w) in &map {

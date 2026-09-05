@@ -18,11 +18,11 @@
 use std::io::Write;
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
@@ -31,7 +31,16 @@ use crate::server::AppState;
 /// Collect every bookmark (with notes + private flag) belonging to the user.
 async fn collect_bookmarks(state: &AppState, user_id: i32) -> Result<Vec<Value>, AppError> {
     // bookmarks.id is BIGSERIAL (INT8); work_id is INT4 nullable.
-    let rows = sqlx::query_as::<_, (i64, Option<i32>, String, bool, chrono::DateTime<chrono::Utc>)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            Option<i32>,
+            String,
+            bool,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
         r#"SELECT b.id, b.work_id, b.notes, b.is_private, b.created_at
            FROM bookmarks b
            WHERE b.user_id = $1
@@ -57,7 +66,17 @@ async fn collect_bookmarks(state: &AppState, user_id: i32) -> Result<Vec<Value>,
 
 /// Collect shelves + the works each shelf contains.
 async fn collect_shelves(state: &AppState, user_id: i32) -> Result<Vec<Value>, AppError> {
-    let shelves = sqlx::query_as::<_, (i32, String, String, bool, i32, chrono::DateTime<chrono::Utc>)>(
+    let shelves = sqlx::query_as::<
+        _,
+        (
+            i32,
+            String,
+            String,
+            bool,
+            i32,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
         r#"SELECT s.id, s.name, s.description, s.is_public, s.sort_order, s.created_at
            FROM shelves s
            WHERE s.user_id = $1
@@ -103,22 +122,35 @@ async fn collect_reading(state: &AppState, user_id: i32) -> Result<Vec<Value>, A
 
     Ok(rows
         .into_iter()
-        .map(|(work_id, words_read, last_read_at, read_count, status, current_chapter)| {
-            json!({
-                "work_id": work_id,
-                "words_read": words_read,
-                "last_read_at": last_read_at.to_rfc3339(),
-                "read_count": read_count,
-                "status": status,
-                "current_chapter": current_chapter,
-            })
-        })
+        .map(
+            |(work_id, words_read, last_read_at, read_count, status, current_chapter)| {
+                json!({
+                    "work_id": work_id,
+                    "words_read": words_read,
+                    "last_read_at": last_read_at.to_rfc3339(),
+                    "read_count": read_count,
+                    "status": status,
+                    "current_chapter": current_chapter,
+                })
+            },
+        )
         .collect())
 }
 
 /// Collect the user's comments.
 async fn collect_comments(state: &AppState, user_id: i32) -> Result<Vec<Value>, AppError> {
-    let rows = sqlx::query_as::<_, (String, Option<i32>, Option<i64>, String, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>, bool)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            String,
+            Option<i32>,
+            Option<i64>,
+            String,
+            chrono::DateTime<chrono::Utc>,
+            Option<chrono::DateTime<chrono::Utc>>,
+            bool,
+        ),
+    >(
         r#"SELECT c.url_id, c.work_id, c.parent_id, c.body, c.created_at, c.updated_at, c.is_hidden
            FROM comments c
            WHERE c.user_id = $1
@@ -130,23 +162,34 @@ async fn collect_comments(state: &AppState, user_id: i32) -> Result<Vec<Value>, 
 
     Ok(rows
         .into_iter()
-        .map(|(url_id, work_id, parent_id, body, created_at, updated_at, is_hidden)| {
-            json!({
-                "url_id": url_id,
-                "work_id": work_id,
-                "parent_id": parent_id,
-                "body": body,
-                "created_at": created_at.to_rfc3339(),
-                "updated_at": updated_at.map(|d| d.to_rfc3339()),
-                "is_hidden": is_hidden,
-            })
-        })
+        .map(
+            |(url_id, work_id, parent_id, body, created_at, updated_at, is_hidden)| {
+                json!({
+                    "url_id": url_id,
+                    "work_id": work_id,
+                    "parent_id": parent_id,
+                    "body": body,
+                    "created_at": created_at.to_rfc3339(),
+                    "updated_at": updated_at.map(|d| d.to_rfc3339()),
+                    "is_hidden": is_hidden,
+                })
+            },
+        )
         .collect())
 }
 
 /// Collect follows (users, works, authors).
 async fn collect_follows(state: &AppState, user_id: i32) -> Result<Vec<Value>, AppError> {
-    let rows = sqlx::query_as::<_, (i64, Option<i32>, Option<i32>, Option<String>, chrono::DateTime<chrono::Utc>)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            Option<i32>,
+            Option<i32>,
+            Option<String>,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
         r#"SELECT f.id, f.followee_id, f.work_id, f.author_name, f.created_at
            FROM follows f
            WHERE f.follower_id = $1
@@ -172,7 +215,16 @@ async fn collect_follows(state: &AppState, user_id: i32) -> Result<Vec<Value>, A
 
 /// Collect reputation events + badges for the user.
 async fn collect_reputation(state: &AppState, user_id: i32) -> Result<Value, AppError> {
-    let events = sqlx::query_as::<_, (String, i32, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>)>(
+    let events = sqlx::query_as::<
+        _,
+        (
+            String,
+            i32,
+            Option<String>,
+            Option<String>,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
         r#"SELECT re.event_type, re.points, re.reference_type, re.reference_id, re.created_at
            FROM reputation_events re
            WHERE re.user_id = $1
@@ -277,7 +329,10 @@ pub async fn user_export_handler(
     let user_id = auth
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
-    let username = auth.username.clone().unwrap_or_else(|| format!("user{user_id}"));
+    let username = auth
+        .username
+        .clone()
+        .unwrap_or_else(|| format!("user{user_id}"));
 
     let bookmarks = collect_bookmarks(&state, user_id).await?;
     let shelves = collect_shelves(&state, user_id).await?;
@@ -291,10 +346,18 @@ pub async fn user_export_handler(
     // ── Assemble the archive ──────────────────────────────────────────
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     write_json_entry(&mut zip, "profile.json", &stats)?;
-    write_json_entry(&mut zip, "bookmarks.json", &json!({ "bookmarks": bookmarks }))?;
+    write_json_entry(
+        &mut zip,
+        "bookmarks.json",
+        &json!({ "bookmarks": bookmarks }),
+    )?;
     write_json_entry(&mut zip, "shelves.json", &json!({ "shelves": shelves }))?;
     write_json_entry(&mut zip, "notes.json", &json!({ "notes": bookmarks }))?;
-    write_json_entry(&mut zip, "reading.json", &json!({ "reading_stats": reading }))?;
+    write_json_entry(
+        &mut zip,
+        "reading.json",
+        &json!({ "reading_stats": reading }),
+    )?;
     write_json_entry(&mut zip, "comments.json", &json!({ "comments": comments }))?;
     write_json_entry(&mut zip, "follows.json", &json!({ "follows": follows }))?;
     write_json_entry(&mut zip, "reputation.json", &reputation)?;
@@ -307,7 +370,13 @@ pub async fn user_export_handler(
 
     let safe_username: String = username
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let filename = format!("ficnexus-user-data-{}.zip", safe_username);
 
@@ -336,7 +405,10 @@ pub async fn delete_account_handler(
     let user_id = auth
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
-    let username = auth.username.clone().unwrap_or_else(|| format!("user{user_id}"));
+    let username = auth
+        .username
+        .clone()
+        .unwrap_or_else(|| format!("user{user_id}"));
 
     // ── 1. Hard-delete all personal-data rows owned by this user ──────
     // Each delete is best-effort: the tables may not all exist in older
@@ -423,4 +495,3 @@ pub struct ConsentBody {
     pub consent_type: Option<String>,
     pub version: Option<String>,
 }
-

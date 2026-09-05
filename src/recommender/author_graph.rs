@@ -15,9 +15,7 @@ use super::strategy::{RecError, RecStrategy, ScoredRec, StrategyContext};
 /// Co-occurrence: two authors co-occur when a reader bookmarks works by
 /// both; counted via the work-level co-occurrence pairs. Tag Jaccard: shared
 /// tag sets over their works (top 50 tags each).
-pub async fn rebuild_author_graph(
-    ctx: &StrategyContext,
-) -> Result<(usize, usize), RecError> {
+pub async fn rebuild_author_graph(ctx: &StrategyContext) -> Result<(usize, usize), RecError> {
     // Map work → author (works may have multiple sources; use the work-level
     // canonical author when available, else fic_info.author).
     let work_authors: Vec<(String, String)> = sqlx::query_as(
@@ -31,11 +29,10 @@ pub async fn rebuild_author_graph(
 
     // Co-occurrence edges: from fic_bookmark_cooccur (work_a, work_b) →
     // (author_a, author_b).
-    let cooccur_edges: Vec<(String, String, i64)> = sqlx::query_as(
-        "SELECT work_a, work_b, cooccur_count FROM fic_bookmark_cooccur",
-    )
-    .fetch_all(&ctx.db)
-    .await?;
+    let cooccur_edges: Vec<(String, String, i64)> =
+        sqlx::query_as("SELECT work_a, work_b, cooccur_count FROM fic_bookmark_cooccur")
+            .fetch_all(&ctx.db)
+            .await?;
 
     // Shared-tag Jaccard per author pair (computed in Rust from per-author
     // tag sets — cheap at this scale).
@@ -51,7 +48,11 @@ pub async fn rebuild_author_graph(
         if aa == ab || aa.is_empty() || ab.is_empty() {
             continue;
         }
-        let (a, b) = if aa < ab { (aa.clone(), ab.clone()) } else { (ab.clone(), aa.clone()) };
+        let (a, b) = if aa < ab {
+            (aa.clone(), ab.clone())
+        } else {
+            (ab.clone(), aa.clone())
+        };
         let entry = edges.entry((a, b)).or_insert((0, 0.0));
         entry.0 += count;
     }
@@ -76,7 +77,9 @@ pub async fn rebuild_author_graph(
 
     // Upsert into rec_author_graph (idempotent).
     let mut tx = ctx.db.begin().await?;
-    sqlx::query("DELETE FROM rec_author_graph").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM rec_author_graph")
+        .execute(&mut *tx)
+        .await?;
     let mut inserted = 0usize;
     for ((a, b), (count, jac)) in edges.iter() {
         if *count == 0 {
@@ -221,7 +224,9 @@ impl RecStrategy for AuthorGraphStrategy {
         }
 
         if out.is_empty() {
-            return Err(RecError::NotEnoughData("author graph produced no works".into()));
+            return Err(RecError::NotEnoughData(
+                "author graph produced no works".into(),
+            ));
         }
         Ok(out)
     }

@@ -1,10 +1,10 @@
-pub mod feeds;
-pub mod tags;
 pub mod authors;
+pub mod feeds;
+pub mod manifest;
 pub mod recommendations;
 pub mod search;
 pub mod shelves;
-pub mod manifest;
+pub mod tags;
 
 use axum::http::header;
 use std::collections::HashMap;
@@ -19,7 +19,10 @@ fn etype_mime_path(etype: &str) -> (&'static str, &'static str) {
         "txt" => ("txt", "text/plain"),
         "azw3" => ("azw3", "application/vnd.amazon.ebook"),
         "md" => ("md", "text/markdown"),
-        "docx" => ("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        "docx" => (
+            "docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ),
         "fb2" => ("fb2", "application/x-fictionbook+xml"),
         "kepub" => ("kepub", "application/epub+zip"),
         _ => ("epub", "application/octet-stream"),
@@ -185,12 +188,8 @@ pub enum FeedKind {
 impl FeedKind {
     pub fn content_type(&self) -> &'static str {
         match self {
-            FeedKind::Navigation => {
-                "application/atom+xml; profile=opds-catalog; kind=navigation"
-            }
-            FeedKind::Acquisition => {
-                "application/atom+xml; profile=opds-catalog; kind=acquisition"
-            }
+            FeedKind::Navigation => "application/atom+xml; profile=opds-catalog; kind=navigation",
+            FeedKind::Acquisition => "application/atom+xml; profile=opds-catalog; kind=acquisition",
         }
     }
 }
@@ -252,14 +251,17 @@ pub fn build_feed(
     ));
 
     if let Some(ref pagi) = pagination {
-        let total_pages =
-            (pagi.total as f64 / pagi.per_page as f64).ceil() as usize;
+        let total_pages = (pagi.total as f64 / pagi.per_page as f64).ceil() as usize;
         if pagi.page > 1 {
             let prev_page = pagi.page - 1;
             let prev_href = format!(
                 "{base}{separator}page={page}&per_page={per_page}",
                 base = pagi.base_path,
-                separator = if pagi.base_path.contains('?') { '&' } else { '?' },
+                separator = if pagi.base_path.contains('?') {
+                    '&'
+                } else {
+                    '?'
+                },
                 page = prev_page,
                 per_page = pagi.per_page,
             );
@@ -276,7 +278,11 @@ pub fn build_feed(
             let next_href = format!(
                 "{base}{separator}page={page}&per_page={per_page}",
                 base = pagi.base_path,
-                separator = if pagi.base_path.contains('?') { '&' } else { '?' },
+                separator = if pagi.base_path.contains('?') {
+                    '&'
+                } else {
+                    '?'
+                },
                 page = next_page,
                 per_page = pagi.per_page,
             );
@@ -307,7 +313,10 @@ pub fn build_feed(
 }
 
 /// Helper: produce a response tuple (ContentType header, body) for OPDS responses.
-pub fn opds_response(body: String, kind: FeedKind) -> ([(header::HeaderName, &'static str); 1], String) {
+pub fn opds_response(
+    body: String,
+    kind: FeedKind,
+) -> ([(header::HeaderName, &'static str); 1], String) {
     ([(header::CONTENT_TYPE, kind.content_type())], body)
 }
 
@@ -423,9 +432,18 @@ mod tests {
     #[test]
     fn test_fic_entry_contains_links() {
         let acq = vec![
-            ("application/epub+zip".to_string(), "/cache/epub/abc123?h=deadbeef".to_string()),
-            ("application/pdf".to_string(), "/cache/pdf/abc123?h=cafebabe".to_string()),
-            ("text/html".to_string(), "/cache/html/abc123?h=12345678".to_string()),
+            (
+                "application/epub+zip".to_string(),
+                "/cache/epub/abc123?h=deadbeef".to_string(),
+            ),
+            (
+                "application/pdf".to_string(),
+                "/cache/pdf/abc123?h=cafebabe".to_string(),
+            ),
+            (
+                "text/html".to_string(),
+                "/cache/html/abc123?h=12345678".to_string(),
+            ),
         ];
         let entry = fic_entry(
             "abc123",
@@ -450,8 +468,21 @@ mod tests {
 
     #[test]
     fn test_fic_entry_hash_based_hrefs() {
-        let acq = vec![("application/epub+zip".to_string(), "/cache/epub/xyz?h=abc123".to_string())];
-        let entry = fic_entry("xyz", "T", "A", "S", "2024-01-01T00:00:00Z", 100, 1, "complete", &acq);
+        let acq = vec![(
+            "application/epub+zip".to_string(),
+            "/cache/epub/xyz?h=abc123".to_string(),
+        )];
+        let entry = fic_entry(
+            "xyz",
+            "T",
+            "A",
+            "S",
+            "2024-01-01T00:00:00Z",
+            100,
+            1,
+            "complete",
+            &acq,
+        );
         assert!(entry.contains("?h=abc123"));
         assert!(entry.contains("/cache/epub/xyz?h="));
     }
@@ -466,7 +497,10 @@ mod tests {
             cache_href(Some("https://example.com/"), "pdf", "id2", "h2"),
             "https://example.com/cache/pdf/id2?h=h2"
         );
-        assert_eq!(cache_href(None, "html", "id3", "h3"), "/cache/html/id3?h=h3");
+        assert_eq!(
+            cache_href(None, "html", "id3", "h3"),
+            "/cache/html/id3?h=h3"
+        );
     }
 
     #[test]
@@ -745,7 +779,9 @@ mod tests {
             Some("https://fichub.polarisocial.xyz"),
         );
         assert!(feed.contains("href=\"https://fichub.polarisocial.xyz/opds/new?page=1&amp;per_page=10\" rel=\"previous\""));
-        assert!(feed.contains("href=\"https://fichub.polarisocial.xyz/opds/new?page=3&amp;per_page=10\" rel=\"next\""));
+        assert!(feed.contains(
+            "href=\"https://fichub.polarisocial.xyz/opds/new?page=3&amp;per_page=10\" rel=\"next\""
+        ));
         assert!(feed.contains("rel=\"self\""));
     }
 
@@ -796,7 +832,10 @@ mod tests {
         };
         assert_eq!(params.offset(), 50);
         // page 1 → offset 0
-        let first = PageParams { page: None, per_page: None };
+        let first = PageParams {
+            page: None,
+            per_page: None,
+        };
         assert_eq!(first.offset(), 0);
     }
 }

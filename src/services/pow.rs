@@ -139,16 +139,16 @@ pub async fn solution_solved(
 
 /// The most recently issued challenge for `client_id` (if any). Used by the
 /// export gate to decide whether the client already solved it.
-pub fn latest_challenge_for_client(state: &crate::server::AppState, client_id: &str) -> Option<String> {
+pub fn latest_challenge_for_client(
+    state: &crate::server::AppState,
+    client_id: &str,
+) -> Option<String> {
     let key = format!("{CHALLENGE_KEY_PREFIX}{client_id}");
     let mut conn = state.redis.clone();
     let mut cmd = redis::cmd("GET");
     cmd.arg(key);
     let fut = cmd.query_async::<Option<String>>(&mut conn);
-    tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(fut)
-    })
-    .unwrap_or(None)
+    tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut)).unwrap_or(None)
 }
 
 /// Remember the challenge we issued to `client_id` so the export gate can
@@ -162,13 +162,10 @@ pub fn set_latest_challenge_for_client(
     let key = format!("{CHALLENGE_KEY_PREFIX}{client_id}");
     let mut conn = state.redis.clone();
     let mut cmd = redis::cmd("SETEX");
-    cmd.arg(key)
-        .arg(state.config.pow_ttl_secs)
-        .arg(challenge);
+    cmd.arg(key).arg(state.config.pow_ttl_secs).arg(challenge);
     let fut = cmd.query_async::<()>(&mut conn);
-    let _: Result<(), redis::RedisError> = tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(fut)
-    });
+    let _: Result<(), redis::RedisError> =
+        tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(fut));
 }
 
 #[cfg(test)]
@@ -278,8 +275,8 @@ mod tests {
     /// from thread-rng ones; a fixed RNG makes the generation testable.
     #[test]
     fn generate_challenge_with_fixed_rng() {
-        use rand::rngs::StdRng;
         use rand::SeedableRng;
+        use rand::rngs::StdRng;
 
         let rng1: Rng = Box::new(StdRng::seed_from_u64(42));
         let rng2: Rng = Box::new(StdRng::seed_from_u64(42));

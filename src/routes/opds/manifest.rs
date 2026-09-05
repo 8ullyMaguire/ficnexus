@@ -1,7 +1,4 @@
-use axum::{
-    extract::State,
-    response::IntoResponse,
-};
+use axum::{extract::State, response::IntoResponse};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -94,8 +91,8 @@ pub async fn manifest(
         ]
     });
 
-    let body = serde_json::to_string_pretty(&manifest)
-        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let body =
+        serde_json::to_string_pretty(&manifest).map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok((
         [(

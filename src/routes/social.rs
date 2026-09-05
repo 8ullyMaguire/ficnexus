@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::HeaderMap;
-use axum::Json;
 use axum::response::IntoResponse;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::limiter::Tier;
-use crate::routes::auth::{self, AuthUser, LoginRequest, RegisterRequest, RefreshRequest};
+use crate::routes::auth::{self, AuthUser, LoginRequest, RefreshRequest, RegisterRequest};
 use crate::routes::honeypot::{self, TrapVerdict};
 use crate::server::AppState;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -66,7 +66,8 @@ pub async fn register_handler(
         }
         "application" => {
             return Err(AppError::Forbidden(
-                "Registration by application only — apply via /api/registration-applications".to_string(),
+                "Registration by application only — apply via /api/registration-applications"
+                    .to_string(),
             ));
         }
         _ => {}
@@ -80,7 +81,8 @@ pub async fn register_handler(
     // mode this was validated above; the UPDATE only touches unused codes so
     // a racing second registration cannot double-consume.
     if !invite_code.trim().is_empty() {
-        crate::routes::subsystems::consume_invite_code(&state.db, &invite_code, result.user.id).await;
+        crate::routes::subsystems::consume_invite_code(&state.db, &invite_code, result.user.id)
+            .await;
     }
 
     Ok(Json(json!({
@@ -172,9 +174,7 @@ pub async fn login_handler(
 }
 
 /// GET /api/v1/auth/me — return the current user from token
-pub async fn me_handler(
-    auth: AuthUser,
-) -> Result<Json<Value>, AppError> {
+pub async fn me_handler(auth: AuthUser) -> Result<Json<Value>, AppError> {
     match auth.user_id {
         Some(id) => Ok(Json(json!({
             "err": 0,
@@ -204,7 +204,7 @@ pub async fn refresh_handler(
     }
 
     let user = sqlx::query_as::<_, (i32, String, i16, i32, Option<String>, i16, i64)>(
-        "SELECT id, username, role, reputation, email, level, exp FROM users WHERE id = $1"
+        "SELECT id, username, role, reputation, email, level, exp FROM users WHERE id = $1",
     )
     .bind(claims.sub)
     .fetch_optional(&state.db)
@@ -247,7 +247,9 @@ pub async fn add_bookmark_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<BookmarkBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     // Resolve the url_id (fic_info.id) for this work — the `bookmarks`
     // table requires `url_id NOT NULL` with `UNIQUE(user_id, url_id)`.
@@ -277,7 +279,9 @@ pub async fn remove_bookmark_handler(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(work_id): axum::extract::Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     sqlx::query("DELETE FROM bookmarks WHERE user_id = $1 AND work_id = $2")
         .bind(user_id)
@@ -293,7 +297,9 @@ pub async fn list_bookmarks_handler(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let rows = sqlx::query_as::<_, (i32, String, bool, chrono::DateTime<chrono::Utc>)>(
         "SELECT b.work_id, b.notes, b.is_private, b.created_at
@@ -303,14 +309,17 @@ pub async fn list_bookmarks_handler(
     .fetch_all(&state.db)
     .await?;
 
-    let bookmarks: Vec<Value> = rows.into_iter().map(|(work_id, notes, is_private, created_at)| {
-        json!({
-            "work_id": work_id,
-            "notes": notes,
-            "is_private": is_private,
-            "created_at": created_at.to_rfc3339(),
+    let bookmarks: Vec<Value> = rows
+        .into_iter()
+        .map(|(work_id, notes, is_private, created_at)| {
+            json!({
+                "work_id": work_id,
+                "notes": notes,
+                "is_private": is_private,
+                "created_at": created_at.to_rfc3339(),
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({ "err": 0, "bookmarks": bookmarks })))
 }
@@ -320,7 +329,9 @@ pub async fn export_bookmarks_csv(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<axum::response::Response, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let rows = sqlx::query_as::<_, (String, String, String, chrono::DateTime<chrono::Utc>)>(
         r#"SELECT w.canonical_title, w.canonical_author, fi.source, b.created_at
@@ -356,7 +367,10 @@ pub async fn export_bookmarks_csv(
 
     let headers = [
         (axum::http::header::CONTENT_TYPE, "text/csv; charset=utf-8"),
-        (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"ficnexus-bookmarks.csv\""),
+        (
+            axum::http::header::CONTENT_DISPOSITION,
+            "attachment; filename=\"ficnexus-bookmarks.csv\"",
+        ),
     ];
 
     Ok((headers, csv).into_response())
@@ -373,7 +387,9 @@ pub async fn import_bookmarks_csv(
     State(state): State<Arc<AppState>>,
     mut multipart: axum::extract::Multipart,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let mut csv_data: Option<Vec<u8>> = None;
 
@@ -383,7 +399,8 @@ pub async fn import_bookmarks_csv(
         }
     }
 
-    let csv_bytes = csv_data.ok_or_else(|| AppError::BadRequest("CSV file required".to_string()))?;
+    let csv_bytes =
+        csv_data.ok_or_else(|| AppError::BadRequest("CSV file required".to_string()))?;
 
     // Size guard: refuse obviously-oversized uploads before queueing.
     const MAX_IMPORT_BYTES: usize = 10 * 1024 * 1024;
@@ -430,10 +447,14 @@ pub async fn rate_work_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RatingBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     if !(1..=5).contains(&body.rating) && body.rating != -1 {
-        return Err(AppError::BadRequest("Rating must be 1..=5 stars (legacy -1 accepted)".to_string()));
+        return Err(AppError::BadRequest(
+            "Rating must be 1..=5 stars (legacy -1 accepted)".to_string(),
+        ));
     }
 
     // Resolve the url_id (fic_info.id) for this work — `work_ratings` has
@@ -560,11 +581,13 @@ async fn kudos_aggregate_json(
 
     let my_kudos = match viewer_id {
         Some(uid) => {
-            sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM kudos WHERE work_id = $1 AND user_id = $2)")
-                .bind(work_id)
-                .bind(uid)
-                .fetch_one(&state.db)
-                .await?
+            sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM kudos WHERE work_id = $1 AND user_id = $2)",
+            )
+            .bind(work_id)
+            .bind(uid)
+            .fetch_one(&state.db)
+            .await?
         }
         None => false,
     };
@@ -587,7 +610,9 @@ pub async fn give_kudos_handler(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(work_id): axum::extract::Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let work_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM works WHERE id = $1)")
         .bind(work_id)
@@ -603,7 +628,9 @@ pub async fn give_kudos_handler(
         .execute(&state.db)
         .await?;
 
-    Ok(Json(kudos_aggregate_json(&state, work_id, Some(user_id)).await?))
+    Ok(Json(
+        kudos_aggregate_json(&state, work_id, Some(user_id)).await?,
+    ))
 }
 
 /// DELETE /api/kudos/{work_id} — remove kudos (auth required).
@@ -614,7 +641,9 @@ pub async fn remove_kudos_handler(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(work_id): axum::extract::Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     sqlx::query("DELETE FROM kudos WHERE work_id = $1 AND user_id = $2")
         .bind(work_id)
@@ -622,7 +651,9 @@ pub async fn remove_kudos_handler(
         .execute(&state.db)
         .await?;
 
-    Ok(Json(kudos_aggregate_json(&state, work_id, Some(user_id)).await?))
+    Ok(Json(
+        kudos_aggregate_json(&state, work_id, Some(user_id)).await?,
+    ))
 }
 
 /// GET /api/kudos/{work_id} — public kudos state for a work.
@@ -634,7 +665,9 @@ pub async fn get_kudos_handler(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(work_id): axum::extract::Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    Ok(Json(kudos_aggregate_json(&state, work_id, auth.user_id).await?))
+    Ok(Json(
+        kudos_aggregate_json(&state, work_id, auth.user_id).await?,
+    ))
 }
 
 // ── Comments ───────────────────────────────────────────────────────────
@@ -663,7 +696,9 @@ pub async fn add_comment_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<CommentBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     // ── Honeypot + timing trap (silent rejection) ──────────────────────
     // Same trap as registration: a bot that fills `website` or submits too
@@ -691,19 +726,25 @@ pub async fn add_comment_handler(
         return Err(AppError::BadRequest("Comment cannot be empty".to_string()));
     }
     if body.body.len() > 2000 {
-        return Err(AppError::BadRequest("Comment too long (max 2000 chars)".to_string()));
+        return Err(AppError::BadRequest(
+            "Comment too long (max 2000 chars)".to_string(),
+        ));
     }
 
     // If url_id not provided, use default_source_id from work
     let url_id = match body.url_id {
         Some(id) => id,
         None => {
-            let work = sqlx::query_as::<_, (Option<String>,)>("SELECT default_source_id FROM works WHERE id = $1")
-                .bind(body.work_id)
-                .fetch_optional(&state.db)
-                .await?
-                .and_then(|r| r.0)
-                .ok_or_else(|| AppError::BadRequest("Work not found or no default source".to_string()))?;
+            let work = sqlx::query_as::<_, (Option<String>,)>(
+                "SELECT default_source_id FROM works WHERE id = $1",
+            )
+            .bind(body.work_id)
+            .fetch_optional(&state.db)
+            .await?
+            .and_then(|r| r.0)
+            .ok_or_else(|| {
+                AppError::BadRequest("Work not found or no default source".to_string())
+            })?;
             work
         }
     };
@@ -762,7 +803,17 @@ pub async fn list_comments_handler(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(work_id): axum::extract::Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    let rows = sqlx::query_as::<_, (i64, i32, String, String, Option<i64>, chrono::DateTime<chrono::Utc>)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            i32,
+            String,
+            String,
+            Option<i64>,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
         "SELECT c.id, c.user_id, u.username, c.body, c.parent_id, c.created_at
          FROM comments c
          JOIN users u ON u.id = c.user_id
@@ -775,16 +826,19 @@ pub async fn list_comments_handler(
     .fetch_all(&state.db)
     .await?;
 
-    let comments: Vec<Value> = rows.into_iter().map(|(id, user_id, username, body, parent_id, created_at)| {
-        json!({
-            "id": id,
-            "user_id": user_id,
-            "username": username,
-            "body": body,
-            "parent_id": parent_id,
-            "created_at": created_at.to_rfc3339(),
+    let comments: Vec<Value> = rows
+        .into_iter()
+        .map(|(id, user_id, username, body, parent_id, created_at)| {
+            json!({
+                "id": id,
+                "user_id": user_id,
+                "username": username,
+                "body": body,
+                "parent_id": parent_id,
+                "created_at": created_at.to_rfc3339(),
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({
         "err": 0,
@@ -806,13 +860,16 @@ pub async fn leaderboard_curators_handler(
     .fetch_all(&state.db)
     .await?;
 
-    let entries: Vec<Value> = rows.into_iter().map(|(id, username, reputation)| {
-        json!({
-            "id": id,
-            "username": username,
-            "reputation": reputation,
+    let entries: Vec<Value> = rows
+        .into_iter()
+        .map(|(id, username, reputation)| {
+            json!({
+                "id": id,
+                "username": username,
+                "reputation": reputation,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({ "err": 0, "leaderboard": entries })))
 }
@@ -822,8 +879,18 @@ pub async fn user_profile_handler(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(user_id): axum::extract::Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    let row = sqlx::query_as::<_, (i32, String, i16, i32, Option<String>, chrono::DateTime<chrono::Utc>)>(
-        "SELECT id, username, role, reputation, email, created_at FROM users WHERE id = $1",
+    let row = sqlx::query_as::<
+        _,
+        (
+            i32,
+            String,
+            i16,
+            i32,
+            Option<String>,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
+        "SELECT id, username, role, reputation, email, created_at FROM users WHERE id = $1"
     )
     .bind(user_id)
     .fetch_optional(&state.db)
@@ -866,18 +933,21 @@ pub async fn get_work_handler(
     // Get sources (fic_info rows linked to this work)
     let sources = crate::db::queries::get_work_sources(&state.db, work_id).await?;
 
-    let source_list: Vec<Value> = sources.into_iter().map(|s| {
-        json!({
-            "id": s.id,
-            "source": s.source,
-            "title": s.title,
-            "author": s.author,
-            "words": s.words,
-            "chapters": s.chapters,
-            "status": s.status,
-            "url": s.source,
+    let source_list: Vec<Value> = sources
+        .into_iter()
+        .map(|s| {
+            json!({
+                "id": s.id,
+                "source": s.source,
+                "title": s.title,
+                "author": s.author,
+                "words": s.words,
+                "chapters": s.chapters,
+                "status": s.status,
+                "url": s.source,
+            })
         })
-    }).collect();
+        .collect();
 
     // Get aggregate stats
     let (total_bookmarks, total_ratings, total_comments): (i64, i64, i64) = sqlx::query_as(
@@ -914,13 +984,19 @@ pub async fn work_stats_handler(
     State(state): State<Arc<AppState>>,
     axum::extract::Path(work_id): axum::extract::Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    let (kudos_count, guest_count, total_bookmarks, total_ratings, total_comments): (i64, i64, i64, i64, i64) = sqlx::query_as(
+    let (kudos_count, guest_count, total_bookmarks, total_ratings, total_comments): (
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+    ) = sqlx::query_as(
         "SELECT
             (SELECT COUNT(*) FROM kudos WHERE work_id = $1 AND user_id IS NOT NULL),
             (SELECT COUNT(*) FROM kudos WHERE work_id = $1 AND user_id IS NULL),
             (SELECT COUNT(*) FROM bookmarks WHERE work_id = $1),
             (SELECT COUNT(*) FROM work_ratings WHERE work_id = $1),
-            (SELECT COUNT(*) FROM comments WHERE work_id = $1)"
+            (SELECT COUNT(*) FROM comments WHERE work_id = $1)",
     )
     .bind(work_id)
     .fetch_one(&state.db)
@@ -973,21 +1049,15 @@ async fn enforce_auth_rate_limit(state: &Arc<AppState>) -> Result<(), AppError> 
         None,
         std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
     );
-    match state
-        .rate_limiter
-        .check(ip, None, Tier::Auth)
-        .await
-    {
-        crate::limiter::TieredRateLimitResult::Wait(secs) => {
-            Err(AppError::RateLimited(secs))
-        }
+    match state.rate_limiter.check(ip, None, Tier::Auth).await {
+        crate::limiter::TieredRateLimitResult::Wait(secs) => Err(AppError::RateLimited(secs)),
         crate::limiter::TieredRateLimitResult::Allowed => Ok(()),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::routes::auth::{create_token, verify_token, User};
+    use crate::routes::auth::{User, create_token, verify_token};
 
     #[test]
     fn test_token_roundtrip() {
@@ -1023,7 +1093,8 @@ mod tests {
             &jsonwebtoken::Header::default(),
             &claims,
             &jsonwebtoken::EncodingKey::from_secret(b"test-secret"),
-        ).unwrap();
+        )
+        .unwrap();
         let result = verify_token(&token, "test-secret");
         assert!(result.is_err());
     }

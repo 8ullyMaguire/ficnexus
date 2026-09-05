@@ -17,7 +17,9 @@ impl Default for Registry {
 
 impl Registry {
     pub fn new() -> Self {
-        Self { scrapers: Vec::new() }
+        Self {
+            scrapers: Vec::new(),
+        }
     }
 
     /// Register an adapter (call order matters: first = catch-all).
@@ -150,8 +152,8 @@ pub use crate::NoopHealHook as _NoopHealHook;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use crate::NoopHealHook;
+    use async_trait::async_trait;
 
     struct DummyScraper {
         prefix: &'static str,
@@ -186,7 +188,10 @@ mod tests {
         }));
         assert!(r.has_specific_scraper("https://ao3.org/works/1"));
         assert!(!r.has_specific_scraper("https://unknown.example/x"));
-        assert!(r.find_specific_or_fallback("https://ao3.org/works/1").is_some());
+        assert!(
+            r.find_specific_or_fallback("https://ao3.org/works/1")
+                .is_some()
+        );
     }
 
     #[test]
@@ -203,7 +208,11 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
-        let res = rt.block_on(r.lookup(&reqwest::Client::new(), "https://nope.example/x", Some(&Hook)));
+        let res = rt.block_on(r.lookup(
+            &reqwest::Client::new(),
+            "https://nope.example/x",
+            Some(&Hook),
+        ));
         assert!(matches!(res, Err(ScrapeError::Unsupported(_))));
         let _ = NoopHealHook;
     }

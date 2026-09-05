@@ -1,7 +1,7 @@
-use axum::extract::{Query, State};
 use axum::Json;
+use axum::extract::{Query, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;
@@ -20,7 +20,9 @@ pub async fn feed_handler(
     State(state): State<Arc<AppState>>,
     Query(params): Query<FeedQuery>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params.per_page.unwrap_or(20).clamp(1, 50);
     let offset = (page - 1) * per_page;
@@ -69,9 +71,7 @@ pub async fn feed_handler(
     .into_iter()
     .map(|row| {
         let cache_url = format!("/cache/{}/{}?h={}", row.etype, row.url_id, row.export_hash);
-        let updated = row.created
-            .map(|c| c.to_rfc3339())
-            .unwrap_or_default();
+        let updated = row.created.map(|c| c.to_rfc3339()).unwrap_or_default();
         json!({
             "work_id": row.work_id,
             "url_id": row.url_id,

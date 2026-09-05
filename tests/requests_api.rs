@@ -10,12 +10,12 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::{delete, get, post},
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -42,8 +42,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -71,17 +71,22 @@ async fn app() -> Router {
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -100,10 +105,22 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/requests", post(fichub::routes::requests::create_request))
-        .route("/api/requests", get(fichub::routes::requests::list_requests))
-        .route("/api/requests/{id}", get(fichub::routes::requests::get_request))
-        .route("/api/requests/{id}", delete(fichub::routes::requests::delete_request))
+        .route(
+            "/api/requests",
+            post(fichub::routes::requests::create_request),
+        )
+        .route(
+            "/api/requests",
+            get(fichub::routes::requests::list_requests),
+        )
+        .route(
+            "/api/requests/{id}",
+            get(fichub::routes::requests::get_request),
+        )
+        .route(
+            "/api/requests/{id}",
+            delete(fichub::routes::requests::delete_request),
+        )
         .route(
             "/api/requests/{id}/answers",
             post(fichub::routes::requests::add_answer),
@@ -226,8 +243,16 @@ async fn seed_work(pool: &sqlx::PgPool, url_id: &str, title: &str, author: &str)
     work_id
 }
 
-async fn post_json(app: &Router, uri: &str, token: Option<&str>, body: Value) -> (StatusCode, Value) {
-    let mut req = Request::builder().method("POST").uri(uri).header("content-type", "application/json");
+async fn post_json(
+    app: &Router,
+    uri: &str,
+    token: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
+    let mut req = Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json");
     if let Some(t) = token {
         req = req.header("authorization", t);
     }
@@ -237,8 +262,11 @@ async fn post_json(app: &Router, uri: &str, token: Option<&str>, body: Value) ->
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -253,8 +281,11 @@ async fn get_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCode, 
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -269,8 +300,11 @@ async fn delete_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCod
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -307,7 +341,10 @@ async fn create_list_detail_request() {
     let (_, list) = get_json(&app, "/api/requests?status=open&sort=new", None).await;
     assert_eq!(list["err"], 0, "list: {list}");
     let items = list["items"].as_array().unwrap();
-    assert!(items.iter().any(|i| i["id"] == json!(rid)), "request in list: {list}");
+    assert!(
+        items.iter().any(|i| i["id"] == json!(rid)),
+        "request in list: {list}"
+    );
 
     // Detail
     let (_, det) = get_json(&app, &format!("/api/requests/{rid}"), None).await;
@@ -317,8 +354,16 @@ async fn create_list_detail_request() {
     assert_eq!(det["answers"].as_array().unwrap().len(), 0);
 
     // Cleanup
-    sqlx::query("DELETE FROM fic_requests WHERE id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(username).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(username)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -330,8 +375,18 @@ async fn answer_and_vote_flow() {
     let u2 = "reqt_answer_u2";
     let id1 = seed_user(&db, u1).await;
     let id2 = seed_user(&db, u2).await;
-    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1 OR user_id = $2").bind(id1).bind(id2).execute(&db).await.ok();
-    sqlx::query("DELETE FROM fic_request_answers WHERE user_id = $1 OR user_id = $2").bind(id1).bind(id2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1 OR user_id = $2")
+        .bind(id1)
+        .bind(id2)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM fic_request_answers WHERE user_id = $1 OR user_id = $2")
+        .bind(id1)
+        .bind(id2)
+        .execute(&db)
+        .await
+        .ok();
     let wid = seed_work(&db, "reqt-ans-work", "Answer Fic", "Answer Author").await;
 
     let app = app().await;
@@ -339,7 +394,13 @@ async fn answer_and_vote_flow() {
     let t2 = auth_header(id2, u2);
 
     // u1 creates a request
-    let (_, b) = post_json(&app, "/api/requests", Some(&t1), json!({ "title": "Need slow burn recs" })).await;
+    let (_, b) = post_json(
+        &app,
+        "/api/requests",
+        Some(&t1),
+        json!({ "title": "Need slow burn recs" }),
+    )
+    .await;
     let rid = b["id"].as_i64().unwrap();
 
     // u2 answers with a work
@@ -391,9 +452,22 @@ async fn answer_and_vote_flow() {
     assert_eq!(ans[0]["score"], 0);
 
     // Cleanup
-    sqlx::query("DELETE FROM fic_requests WHERE id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM fic_request_answers WHERE request_id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM fic_request_answers WHERE request_id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -408,8 +482,18 @@ async fn answer_via_url_id_ask_flow() {
     let u2 = "reqt_askurl_u2";
     let id1 = seed_user(&db, u1).await;
     let id2 = seed_user(&db, u2).await;
-    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1 OR user_id = $2").bind(id1).bind(id2).execute(&db).await.ok();
-    sqlx::query("DELETE FROM fic_request_answers WHERE user_id = $1 OR user_id = $2").bind(id1).bind(id2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1 OR user_id = $2")
+        .bind(id1)
+        .bind(id2)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM fic_request_answers WHERE user_id = $1 OR user_id = $2")
+        .bind(id1)
+        .bind(id2)
+        .execute(&db)
+        .await
+        .ok();
     // seed_work creates the fic_info row (url_id = "reqt-ask-url") AND links
     // it to a work — exactly what ask results carry (url_id + work link).
     let url_id = "reqt-ask-url";
@@ -418,7 +502,13 @@ async fn answer_via_url_id_ask_flow() {
     let app = app().await;
     let t1 = auth_header(id1, u1);
     let t2 = auth_header(id2, u2);
-    let (_, b) = post_json(&app, "/api/requests", Some(&t1), json!({ "title": "Slow burn recs" })).await;
+    let (_, b) = post_json(
+        &app,
+        "/api/requests",
+        Some(&t1),
+        json!({ "title": "Slow burn recs" }),
+    )
+    .await;
     let rid = b["id"].as_i64().unwrap();
 
     // Answer via url_id only (no work_id, no url) — the Ask×Requests path.
@@ -451,9 +541,22 @@ async fn answer_via_url_id_ask_flow() {
     assert_eq!(b["err"], -1);
 
     // Cleanup
-    sqlx::query("DELETE FROM fic_requests WHERE id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM fic_request_answers WHERE request_id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM fic_request_answers WHERE request_id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -463,8 +566,16 @@ async fn duplicate_answer_and_cap() {
     let db = pool().await;
     let u1 = "reqt_cap_u1";
     let id1 = seed_user(&db, u1).await;
-    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1").bind(id1).execute(&db).await.ok();
-    sqlx::query("DELETE FROM fic_request_answers WHERE user_id = $1").bind(id1).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1")
+        .bind(id1)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM fic_request_answers WHERE user_id = $1")
+        .bind(id1)
+        .execute(&db)
+        .await
+        .ok();
     let w1 = seed_work(&db, "reqt-cap-w1", "Cap Fic 1", "Cap Author").await;
     let w2 = seed_work(&db, "reqt-cap-w2", "Cap Fic 2", "Cap Author").await;
     let w3 = seed_work(&db, "reqt-cap-w3", "Cap Fic 3", "Cap Author").await;
@@ -472,26 +583,62 @@ async fn duplicate_answer_and_cap() {
 
     let app = app().await;
     let t1 = auth_header(id1, u1);
-    let (_, b) = post_json(&app, "/api/requests", Some(&t1), json!({ "title": "Cap test" })).await;
+    let (_, b) = post_json(
+        &app,
+        "/api/requests",
+        Some(&t1),
+        json!({ "title": "Cap test" }),
+    )
+    .await;
     let rid = b["id"].as_i64().unwrap();
 
     // 3 answers OK
     for wid in [w1, w2, w3] {
-        let (s, b) = post_json(&app, &format!("/api/requests/{rid}/answers"), Some(&t1), json!({ "work_id": wid })).await;
+        let (s, b) = post_json(
+            &app,
+            &format!("/api/requests/{rid}/answers"),
+            Some(&t1),
+            json!({ "work_id": wid }),
+        )
+        .await;
         assert_eq!(s, StatusCode::OK, "answer {wid}: {b}");
     }
     // 4th blocked by cap → HTTP 400
-    let (s, b) = post_json(&app, &format!("/api/requests/{rid}/answers"), Some(&t1), json!({ "work_id": w4 })).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/requests/{rid}/answers"),
+        Some(&t1),
+        json!({ "work_id": w4 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "4th answer blocked: {b}");
 
     // Duplicate (same work) rejected → HTTP 400
-    let (s, b) = post_json(&app, &format!("/api/requests/{rid}/answers"), Some(&t1), json!({ "work_id": w1 })).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/requests/{rid}/answers"),
+        Some(&t1),
+        json!({ "work_id": w1 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "duplicate rejected: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM fic_requests WHERE id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM fic_request_answers WHERE request_id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(u1).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM fic_request_answers WHERE request_id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u1)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -501,25 +648,43 @@ async fn candidates_and_auth_gates() {
     let db = pool().await;
     let u1 = "reqt_cand_u1";
     let id1 = seed_user(&db, u1).await;
-    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1").bind(id1).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1")
+        .bind(id1)
+        .execute(&db)
+        .await
+        .ok();
 
     let app = app().await;
     let t1 = auth_header(id1, u1);
 
     // Candidates requires login (modlog::require_logged_in gate).
     let (s, b) = get_json(&app, "/api/requests/1/candidates", None).await;
-    assert_eq!(s, StatusCode::UNAUTHORIZED, "anonymous candidates blocked: {b}");
+    assert_eq!(
+        s,
+        StatusCode::UNAUTHORIZED,
+        "anonymous candidates blocked: {b}"
+    );
     assert_eq!(b["err"], 401, "anonymous candidates err: {b}");
 
     // Authenticated → 200 with the engine shape: candidates list carrying
     // the requested request_id (empty when the request has no seed work).
-    let (_, b) = post_json(&app, "/api/requests", Some(&t1), json!({ "title": "Candidates test" })).await;
+    let (_, b) = post_json(
+        &app,
+        "/api/requests",
+        Some(&t1),
+        json!({ "title": "Candidates test" }),
+    )
+    .await;
     let rid = b["id"].as_i64().unwrap();
     let (s, b) = get_json(&app, &format!("/api/requests/{rid}/candidates"), Some(&t1)).await;
     assert_eq!(s, StatusCode::OK, "candidates: {b}");
     assert_eq!(b["err"], 0, "candidates err: {b}");
     assert_eq!(b["request_id"], json!(rid), "request_id echoed: {b}");
-    assert_eq!(b["candidates"].as_array().unwrap().len(), 0, "no seed → empty candidates: {b}");
+    assert_eq!(
+        b["candidates"].as_array().unwrap().len(),
+        0,
+        "no seed → empty candidates: {b}"
+    );
 
     // Candidates for a nonexistent request still returns the empty list.
     let (s, b) = get_json(&app, "/api/requests/999999999/candidates", Some(&t1)).await;
@@ -528,8 +693,16 @@ async fn candidates_and_auth_gates() {
     assert_eq!(b["request_id"], 999999999);
 
     // Cleanup
-    sqlx::query("DELETE FROM fic_requests WHERE id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind(u1).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u1)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -541,20 +714,41 @@ async fn delete_answer_flow() {
     let u2 = "reqt_del_u2";
     let id1 = seed_user(&db, u1).await;
     let id2 = seed_user(&db, u2).await;
-    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1").bind(id1).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1")
+        .bind(id1)
+        .execute(&db)
+        .await
+        .ok();
     let wid = seed_work(&db, "reqt-del-work", "Delete Fic", "Delete Author").await;
 
     let app = app().await;
     let t1 = auth_header(id1, u1);
     let t2 = auth_header(id2, u2);
 
-    let (_, b) = post_json(&app, "/api/requests", Some(&t1), json!({ "title": "Delete answer test" })).await;
+    let (_, b) = post_json(
+        &app,
+        "/api/requests",
+        Some(&t1),
+        json!({ "title": "Delete answer test" }),
+    )
+    .await;
     let rid = b["id"].as_i64().unwrap();
-    let (_, b) = post_json(&app, &format!("/api/requests/{rid}/answers"), Some(&t2), json!({ "work_id": wid })).await;
+    let (_, b) = post_json(
+        &app,
+        &format!("/api/requests/{rid}/answers"),
+        Some(&t2),
+        json!({ "work_id": wid }),
+    )
+    .await;
     let aid = b["answer_id"].as_i64().unwrap();
 
     // Answerer deletes their own answer → 200, gone from detail.
-    let (s, b) = delete_json(&app, &format!("/api/requests/{rid}/answers/{aid}"), Some(&t2)).await;
+    let (s, b) = delete_json(
+        &app,
+        &format!("/api/requests/{rid}/answers/{aid}"),
+        Some(&t2),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "delete answer: {b}");
     assert_eq!(b["err"], 0, "delete answer err: {b}");
     let (_, det) = get_json(&app, &format!("/api/requests/{rid}"), None).await;
@@ -564,16 +758,40 @@ async fn delete_answer_flow() {
     // Non-owner delete blocked → HTTP 400 err 403.
     // Use a DIFFERENT work for the second answer (UNIQUE work per request).
     let wid2 = seed_work(&db, "reqt-del-work2", "Delete Fic 2", "Delete Author").await;
-    let (_, b) = post_json(&app, &format!("/api/requests/{rid}/answers"), Some(&t2), json!({ "work_id": wid2 })).await;
+    let (_, b) = post_json(
+        &app,
+        &format!("/api/requests/{rid}/answers"),
+        Some(&t2),
+        json!({ "work_id": wid2 }),
+    )
+    .await;
     let aid2 = b["answer_id"].as_i64().unwrap();
-    let (s, b) = delete_json(&app, &format!("/api/requests/{rid}/answers/{aid2}"), Some(&t1)).await;
+    let (s, b) = delete_json(
+        &app,
+        &format!("/api/requests/{rid}/answers/{aid2}"),
+        Some(&t1),
+    )
+    .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "non-owner delete blocked: {b}");
     assert_eq!(b["err"], -403, "non-owner delete err: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM fic_requests WHERE id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM fic_request_answers WHERE request_id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM fic_request_answers WHERE request_id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -585,25 +803,57 @@ async fn accept_flow() {
     let u2 = "reqt_acc_u2";
     let id1 = seed_user(&db, u1).await;
     let id2 = seed_user(&db, u2).await;
-    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1").bind(id1).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1")
+        .bind(id1)
+        .execute(&db)
+        .await
+        .ok();
     let wid = seed_work(&db, "reqt-acc-work", "Accept Fic", "Accept Author").await;
 
     let app = app().await;
     let t1 = auth_header(id1, u1);
     let t2 = auth_header(id2, u2);
 
-    let (_, b) = post_json(&app, "/api/requests", Some(&t1), json!({ "title": "Accept me" })).await;
+    let (_, b) = post_json(
+        &app,
+        "/api/requests",
+        Some(&t1),
+        json!({ "title": "Accept me" }),
+    )
+    .await;
     let rid = b["id"].as_i64().unwrap();
-    let (_, b) = post_json(&app, &format!("/api/requests/{rid}/answers"), Some(&t2), json!({ "work_id": wid })).await;
+    let (_, b) = post_json(
+        &app,
+        &format!("/api/requests/{rid}/answers"),
+        Some(&t2),
+        json!({ "work_id": wid }),
+    )
+    .await;
     let aid = b["answer_id"].as_i64().unwrap();
 
     // Non-requester cannot accept → HTTP 403 (AppError::BadRequest(403, ...))
-    let (s, b) = post_json(&app, &format!("/api/requests/{rid}/accept/{aid}"), Some(&t2), json!({})).await;
-    assert_eq!(s, StatusCode::FORBIDDEN, "non-requester accept blocked (err -403 in body): {b}");
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/requests/{rid}/accept/{aid}"),
+        Some(&t2),
+        json!({}),
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::FORBIDDEN,
+        "non-requester accept blocked (err -403 in body): {b}"
+    );
     assert_eq!(b["err"], -403, "accept err code: {b}");
 
     // Requester accepts
-    let (s, b) = post_json(&app, &format!("/api/requests/{rid}/accept/{aid}"), Some(&t1), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/requests/{rid}/accept/{aid}"),
+        Some(&t1),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "accept: {b}");
     assert_eq!(b["err"], 0, "accept ok: {b}");
 
@@ -618,12 +868,29 @@ async fn accept_flow() {
         json!({ "work_id": wid }),
     )
     .await;
-    assert_eq!(s, StatusCode::BAD_REQUEST, "answers blocked after answered: {b}");
+    assert_eq!(
+        s,
+        StatusCode::BAD_REQUEST,
+        "answers blocked after answered: {b}"
+    );
 
     // Cleanup
-    sqlx::query("DELETE FROM fic_requests WHERE id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM fic_request_answers WHERE request_id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM fic_request_answers WHERE request_id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -635,29 +902,68 @@ async fn answer_requires_work_or_url() {
     let u2 = "reqt_nourl_u2";
     let id1 = seed_user(&db, u1).await;
     let id2 = seed_user(&db, u2).await;
-    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1 OR user_id = $2").bind(id1).bind(id2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1 OR user_id = $2")
+        .bind(id1)
+        .bind(id2)
+        .execute(&db)
+        .await
+        .ok();
 
     let app = app().await;
     let t1 = auth_header(id1, u1);
     let t2 = auth_header(id2, u2);
 
-    let (_, b) = post_json(&app, "/api/requests", Some(&t1), json!({ "title": "Need recs" })).await;
+    let (_, b) = post_json(
+        &app,
+        "/api/requests",
+        Some(&t1),
+        json!({ "title": "Need recs" }),
+    )
+    .await;
     let rid = b["id"].as_i64().unwrap();
 
     // No work_id AND no url → friendly 400
-    let (s, b) = post_json(&app, &format!("/api/requests/{rid}/answers"), Some(&t2), json!({ "pitch": "x" })).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/requests/{rid}/answers"),
+        Some(&t2),
+        json!({ "pitch": "x" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "neither work nor url: {b}");
     assert_eq!(b["err"], -1, "err code: {b}");
 
     // A well-formed but unsupported URL → friendly error, never 500
-    let (s, b) = post_json(&app, &format!("/api/requests/{rid}/answers"), Some(&t2), json!({ "url": "https://not-a-real-site.example/fic/1", "pitch": "x" })).await;
-    assert!(s == StatusCode::BAD_REQUEST || s == StatusCode::OK, "url ingest: {s} {b}");
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/requests/{rid}/answers"),
+        Some(&t2),
+        json!({ "url": "https://not-a-real-site.example/fic/1", "pitch": "x" }),
+    )
+    .await;
+    assert!(
+        s == StatusCode::BAD_REQUEST || s == StatusCode::OK,
+        "url ingest: {s} {b}"
+    );
     assert!(b["err"] == 0 || b["err"] == -1, "err: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM fic_requests WHERE id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM fic_request_answers WHERE request_id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM fic_request_answers WHERE request_id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -686,21 +992,44 @@ async fn request_upvote_flow() {
     let u2 = "reqt_uv_u2";
     let id1 = seed_user(&db, u1).await;
     let id2 = seed_user(&db, u2).await;
-    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1 OR user_id = $2").bind(id1).bind(id2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1 OR user_id = $2")
+        .bind(id1)
+        .bind(id2)
+        .execute(&db)
+        .await
+        .ok();
 
     let app = app().await;
     let t1 = auth_header(id1, u1);
     let t2 = auth_header(id2, u2);
 
-    let (_, b) = post_json(&app, "/api/requests", Some(&t1), json!({ "title": "Upvote me" })).await;
+    let (_, b) = post_json(
+        &app,
+        "/api/requests",
+        Some(&t1),
+        json!({ "title": "Upvote me" }),
+    )
+    .await;
     let rid = b["id"].as_i64().unwrap();
 
     // Self-upvote blocked
-    let (s, b) = post_json(&app, &format!("/api/requests/{rid}/upvote"), Some(&t1), json!({ "enabled": true })).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/requests/{rid}/upvote"),
+        Some(&t1),
+        json!({ "enabled": true }),
+    )
+    .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "self-upvote blocked: {b}");
 
     // Other user upvotes
-    let (s, b) = post_json(&app, &format!("/api/requests/{rid}/upvote"), Some(&t2), json!({ "enabled": true })).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/requests/{rid}/upvote"),
+        Some(&t2),
+        json!({ "enabled": true }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "upvote: {b}");
     assert_eq!(b["err"], 0, "upvote ok: {b}");
     assert_eq!(b["upvotes"], 1, "upvote count: {b}");
@@ -712,19 +1041,44 @@ async fn request_upvote_flow() {
     assert_eq!(det["request"]["my_upvote"], true, "detail my_upvote: {det}");
 
     // Toggle off
-    let (s, b) = post_json(&app, &format!("/api/requests/{rid}/upvote"), Some(&t2), json!({ "enabled": false })).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/requests/{rid}/upvote"),
+        Some(&t2),
+        json!({ "enabled": false }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "unupvote: {b}");
     assert_eq!(b["upvotes"], 0, "unupvote count: {b}");
     assert_eq!(b["my_upvote"], false, "unupvote my_upvote: {b}");
 
     // Anonymous blocked
-    let (s, b) = post_json(&app, &format!("/api/requests/{rid}/upvote"), None, json!({ "enabled": true })).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/requests/{rid}/upvote"),
+        None,
+        json!({ "enabled": true }),
+    )
+    .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "anonymous upvote blocked: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM fic_requests WHERE id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM fic_request_upvotes WHERE request_id = $1").bind(rid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM fic_request_upvotes WHERE request_id = $1")
+        .bind(rid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -734,7 +1088,11 @@ async fn auth_gates_and_curator_delete() {
     let db = pool().await;
     let u1 = "reqt_auth_u1";
     let id1 = seed_user(&db, u1).await;
-    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1").bind(id1).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE user_id = $1")
+        .bind(id1)
+        .execute(&db)
+        .await
+        .ok();
 
     let app = app().await;
     let t1 = auth_header(id1, u1);
@@ -745,7 +1103,13 @@ async fn auth_gates_and_curator_delete() {
     assert_eq!(b["err"], 401, "unauth err code: {b}");
 
     // Delete by owner works
-    let (_, b) = post_json(&app, "/api/requests", Some(&t1), json!({ "title": "Delete me" })).await;
+    let (_, b) = post_json(
+        &app,
+        "/api/requests",
+        Some(&t1),
+        json!({ "title": "Delete me" }),
+    )
+    .await;
     let rid = b["id"].as_i64().unwrap();
     let (s, b) = delete_json(&app, &format!("/api/requests/{rid}"), Some(&t1)).await;
     assert_eq!(s, StatusCode::OK, "delete: {b}");
@@ -759,13 +1123,32 @@ async fn auth_gates_and_curator_delete() {
     let u2 = "reqt_auth_u2";
     let id2 = seed_user(&db, u2).await;
     let t2 = auth_header(id2, u2);
-    let (_, b) = post_json(&app, "/api/requests", Some(&t2), json!({ "title": "Others request" })).await;
+    let (_, b) = post_json(
+        &app,
+        "/api/requests",
+        Some(&t2),
+        json!({ "title": "Others request" }),
+    )
+    .await;
     let rid2 = b["id"].as_i64().unwrap();
     let (s, b) = delete_json(&app, &format!("/api/requests/{rid2}"), Some(&t1)).await;
-    assert_eq!(s, StatusCode::FORBIDDEN, "non-owner delete blocked (err -403 in body): {b}");
+    assert_eq!(
+        s,
+        StatusCode::FORBIDDEN,
+        "non-owner delete blocked (err -403 in body): {b}"
+    );
     assert_eq!(b["err"], -403, "delete err code: {b}");
 
     // Cleanup
-    sqlx::query("DELETE FROM fic_requests WHERE id = $1").bind(rid2).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
+    sqlx::query("DELETE FROM fic_requests WHERE id = $1")
+        .bind(rid2)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
 }

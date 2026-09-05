@@ -6,10 +6,10 @@
 //! `target_type` ∈ {work, comment, chapter}.  Works use INT4 ids; comments use
 //! BIGINT — both fit fine in the BIGINT `target_id` column.
 
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;

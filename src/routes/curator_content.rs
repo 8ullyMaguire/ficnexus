@@ -5,11 +5,11 @@
 //! fic's content.
 
 use axum::{
-    extract::{Path, Query, State},
     Json,
+    extract::{Path, Query, State},
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 use std::sync::Arc;
 
@@ -23,7 +23,9 @@ const VOTE_QUORUM: i32 = 2;
 const VOTE_NET_MIN: i32 = 1;
 
 pub(crate) fn require_curator(user: &AuthUser) -> AppResult<i32> {
-    let uid = user.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let uid = user
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
     if user.role < 10 {
         return Err(AppError::Forbidden("Curator access required".to_string()));
     }
@@ -77,7 +79,9 @@ pub async fn propose_fix(
     let uid = require_curator(&auth)?;
 
     if body.body_html.trim().is_empty() {
-        return Err(AppError::BadRequest("body_html must not be empty".to_string()));
+        return Err(AppError::BadRequest(
+            "body_html must not be empty".to_string(),
+        ));
     }
 
     let row = sqlx::query(
@@ -96,7 +100,16 @@ pub async fn propose_fix(
     let id: i64 = row.get("id");
     let status: String = row.get("status");
 
-    crate::modlog::record_json(&state.db, auth.user_id, auth.username.clone(), "propose_fix", "fic", &url_id, vec![("proposal_id", serde_json::json!(id))]).await;
+    crate::modlog::record_json(
+        &state.db,
+        auth.user_id,
+        auth.username.clone(),
+        "propose_fix",
+        "fic",
+        &url_id,
+        vec![("proposal_id", serde_json::json!(id))],
+    )
+    .await;
 
     Ok(Json(json!({
         "ok": true,
@@ -141,7 +154,9 @@ pub async fn vote_fix(
         return Err(AppError::BadRequest(format!("proposal already {status}")));
     }
     if proposed_by == uid {
-        return Err(AppError::BadRequest("cannot vote on your own proposal".to_string()));
+        return Err(AppError::BadRequest(
+            "cannot vote on your own proposal".to_string(),
+        ));
     }
 
     // Upsert the vote (one per curator).
@@ -333,7 +348,16 @@ pub async fn delete_body(
     crate::body_cache::delete_body(&state.config, &url_id)
         .map_err(|e| AppError::BadRequest(format!("failed to delete body: {e}")))?;
 
-    crate::modlog::record(&state.db, auth.user_id, auth.username.clone(), "delete_body", "fic", &url_id, serde_json::json!({})).await;
+    crate::modlog::record(
+        &state.db,
+        auth.user_id,
+        auth.username.clone(),
+        "delete_body",
+        "fic",
+        &url_id,
+        serde_json::json!({}),
+    )
+    .await;
 
     Ok(Json(json!({
         "ok": true,
@@ -354,7 +378,7 @@ pub struct MetadataProposalBody {
     pub work_id: i32,
     #[serde(default)]
     pub url_id: String,
-    pub field: String,      // title | author | status | description
+    pub field: String, // title | author | status | description
     #[serde(default)]
     pub old_value: String,
     pub new_value: String,
@@ -369,8 +393,13 @@ pub async fn propose_metadata_fix(
     Json(body): Json<MetadataProposalBody>,
 ) -> AppResult<Json<Value>> {
     let uid = require_curator(&auth)?;
-    if !matches!(body.field.as_str(), "title" | "author" | "status" | "description") {
-        return Err(AppError::BadRequest("field must be title|author|status|description".to_string()));
+    if !matches!(
+        body.field.as_str(),
+        "title" | "author" | "status" | "description"
+    ) {
+        return Err(AppError::BadRequest(
+            "field must be title|author|status|description".to_string(),
+        ));
     }
     let new_value = body.new_value.trim();
     if new_value.is_empty() {
@@ -378,16 +407,17 @@ pub async fn propose_metadata_fix(
     }
 
     // Verify the work exists + snapshot the current value.
-    let current: Option<String> = sqlx::query(
-        "SELECT canonical_title FROM works WHERE id = $1",
-    )
-    .bind(body.work_id)
-    .fetch_optional(&state.db)
-    .await?
-    .map(|r| r.get("canonical_title"));
+    let current: Option<String> = sqlx::query("SELECT canonical_title FROM works WHERE id = $1")
+        .bind(body.work_id)
+        .fetch_optional(&state.db)
+        .await?
+        .map(|r| r.get("canonical_title"));
 
     let Some(_current) = current else {
-        return Err(AppError::NotFound(format!("work {} not found", body.work_id)));
+        return Err(AppError::NotFound(format!(
+            "work {} not found",
+            body.work_id
+        )));
     };
 
     let id: i64 = sqlx::query(
@@ -415,10 +445,17 @@ pub async fn propose_metadata_fix(
         "propose_metadata_fix",
         "work",
         &body.work_id.to_string(),
-        vec![("proposal_id", json!(id)), ("field", json!(body.field)), ("new_value", json!(new_value))],
-    ).await;
+        vec![
+            ("proposal_id", json!(id)),
+            ("field", json!(body.field)),
+            ("new_value", json!(new_value)),
+        ],
+    )
+    .await;
 
-    Ok(Json(json!({ "err": 0, "proposal_id": id, "status": "pending", "msg": "Metadata change proposed for curator vote" })))
+    Ok(Json(
+        json!({ "err": 0, "proposal_id": id, "status": "pending", "msg": "Metadata change proposed for curator vote" }),
+    ))
 }
 
 /// POST /api/curator/metadata/proposals/{id}/vote — vote on a metadata fix.
@@ -451,7 +488,9 @@ pub async fn vote_metadata_fix(
         return Err(AppError::BadRequest(format!("proposal already {status}")));
     }
     if proposed_by == uid {
-        return Err(AppError::BadRequest("cannot vote on your own proposal".to_string()));
+        return Err(AppError::BadRequest(
+            "cannot vote on your own proposal".to_string(),
+        ));
     }
 
     sqlx::query(
@@ -488,9 +527,15 @@ pub async fn vote_metadata_fix(
             // works row; status lives on fic_info (the fic's own
             // per-source status), updated via the default source.
             let sql = match field.as_str() {
-                "title" => "UPDATE works SET canonical_title = $2, updated_at = NOW() WHERE id = $1",
-                "author" => "UPDATE works SET canonical_author = $2, updated_at = NOW() WHERE id = $1",
-                "description" => "UPDATE works SET description = $2, updated_at = NOW() WHERE id = $1",
+                "title" => {
+                    "UPDATE works SET canonical_title = $2, updated_at = NOW() WHERE id = $1"
+                }
+                "author" => {
+                    "UPDATE works SET canonical_author = $2, updated_at = NOW() WHERE id = $1"
+                }
+                "description" => {
+                    "UPDATE works SET description = $2, updated_at = NOW() WHERE id = $1"
+                }
                 _ => "",
             };
             if field == "status" {
@@ -503,7 +548,11 @@ pub async fn vote_metadata_fix(
                 .execute(&state.db)
                 .await?;
             } else {
-                sqlx::query(sql).bind(work_id).bind(&new_value).execute(&state.db).await?;
+                sqlx::query(sql)
+                    .bind(work_id)
+                    .bind(&new_value)
+                    .execute(&state.db)
+                    .await?;
             }
             applied = true;
             new_status = "applied".to_string();
@@ -534,8 +583,13 @@ pub async fn vote_metadata_fix(
         "vote_metadata_fix",
         "work",
         &work_id.to_string(),
-        vec![("proposal_id", json!(id)), ("applied", json!(applied)), ("status", json!(new_status))],
-    ).await;
+        vec![
+            ("proposal_id", json!(id)),
+            ("applied", json!(applied)),
+            ("status", json!(new_status)),
+        ],
+    )
+    .await;
 
     Ok(Json(json!({
         "err": 0, "proposal_id": id, "status": new_status,
@@ -553,7 +607,19 @@ pub async fn list_metadata_proposals(
     require_curator(&auth)?;
     let status = params.status.unwrap_or_else(|| "pending".to_string());
 
-    let rows: Vec<(i64, i32, String, String, String, String, String, i32, String, i32, i32)> = sqlx::query_as(
+    let rows: Vec<(
+        i64,
+        i32,
+        String,
+        String,
+        String,
+        String,
+        String,
+        i32,
+        String,
+        i32,
+        i32,
+    )> = sqlx::query_as(
         r#"SELECT p.id, p.work_id, w.canonical_title, p.field, p.old_value, p.new_value,
                    p.reason, p.proposed_by, u.username, p.upvotes, p.downvotes
             FROM curator_metadata_proposals p
@@ -569,17 +635,33 @@ pub async fn list_metadata_proposals(
 
     let items: Vec<Value> = rows
         .into_iter()
-        .map(|(id, work_id, work_title, field, old_value, new_value, reason, proposed_by, username, upvotes, downvotes)| {
-            json!({
-                "id": id, "work_id": work_id, "work_title": work_title,
-                "field": field, "old_value": old_value, "new_value": new_value,
-                "reason": reason, "proposed_by": proposed_by, "username": username,
-                "upvotes": upvotes, "downvotes": downvotes,
-            })
-        })
+        .map(
+            |(
+                id,
+                work_id,
+                work_title,
+                field,
+                old_value,
+                new_value,
+                reason,
+                proposed_by,
+                username,
+                upvotes,
+                downvotes,
+            )| {
+                json!({
+                    "id": id, "work_id": work_id, "work_title": work_title,
+                    "field": field, "old_value": old_value, "new_value": new_value,
+                    "reason": reason, "proposed_by": proposed_by, "username": username,
+                    "upvotes": upvotes, "downvotes": downvotes,
+                })
+            },
+        )
         .collect();
 
-    Ok(Json(json!({ "ok": true, "status": status, "proposals": items })))
+    Ok(Json(
+        json!({ "ok": true, "status": status, "proposals": items }),
+    ))
 }
 
 #[derive(Deserialize)]

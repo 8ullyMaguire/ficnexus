@@ -16,7 +16,7 @@ use axum::extract::{Path, Query, State};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
@@ -83,10 +83,19 @@ pub(crate) async fn publish(
     let uid = auth
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
-    let _ = trust::assert_staff_or_min_trust(&state.db, Some(uid), auth.role, trust::PUBLISH_MIN_TRUST, "Publishing extensions").await?;
+    let _ = trust::assert_staff_or_min_trust(
+        &state.db,
+        Some(uid),
+        auth.role,
+        trust::PUBLISH_MIN_TRUST,
+        "Publishing extensions",
+    )
+    .await?;
     let ext = extensions::publish(&state.db, uid, body, q.upsert).await?;
     let verb = if q.upsert { "updated" } else { "published" };
-    Ok(Json(json!({ "err": 0, "msg": format!("Extension {verb}"), "extension": ext })))
+    Ok(Json(
+        json!({ "err": 0, "msg": format!("Extension {verb}"), "extension": ext }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -102,11 +111,8 @@ pub(crate) async fn get_one(
     auth: AuthUser,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-        let ext = extensions::get(&state.db, id).await?;
-    if !ext.is_public
-        && auth.user_id != Some(ext.author_id)
-        && auth.role < 10
-    {
+    let ext = extensions::get(&state.db, id).await?;
+    if !ext.is_public && auth.user_id != Some(ext.author_id) && auth.role < 10 {
         return Err(AppError::Forbidden("Not allowed".into()));
     }
     Ok(Json(json!({ "err": 0, "extension": ext })))
@@ -164,7 +170,11 @@ pub(crate) async fn admin_verify(
         &state.db,
         auth.user_id,
         auth.username.clone(),
-        if verified { "extension_verify" } else { "extension_unverify" },
+        if verified {
+            "extension_verify"
+        } else {
+            "extension_unverify"
+        },
         "extension",
         &id.to_string(),
         json!({ "verified": verified }),
@@ -184,7 +194,9 @@ pub(crate) async fn remix(
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
     let ext = extensions::remix(&state.db, uid, id, &body.slug, &body.name).await?;
-    Ok(Json(json!({ "err": 0, "msg": "remixed", "extension": ext })))
+    Ok(Json(
+        json!({ "err": 0, "msg": "remixed", "extension": ext }),
+    ))
 }
 
 #[derive(Deserialize)]

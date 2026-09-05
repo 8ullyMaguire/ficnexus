@@ -48,7 +48,9 @@ pub struct ExternalStrategy {
 impl ExternalStrategy {
     pub fn new() -> Self {
         Self {
-            base_url: std::env::var("REC_EXTERNAL_URL").ok().filter(|s| !s.is_empty()),
+            base_url: std::env::var("REC_EXTERNAL_URL")
+                .ok()
+                .filter(|s| !s.is_empty()),
         }
     }
 }
@@ -81,13 +83,20 @@ impl RecStrategy for ExternalStrategy {
             user_id,
             n: ctx.config.rec_max_recommendations,
         };
-        let call = ctx.http_client.post(format!("{}/score", base.trim_end_matches('/'))).json(&payload).send();
+        let call = ctx
+            .http_client
+            .post(format!("{}/score", base.trim_end_matches('/')))
+            .json(&payload)
+            .send();
         let resp = tokio::time::timeout(ctx.call_timeout(), call)
             .await
             .map_err(|_| RecError::External("sidecar timed out".into()))?
             .map_err(|e| RecError::External(format!("sidecar request failed: {e}")))?;
         if !resp.status().is_success() {
-            return Err(RecError::External(format!("sidecar HTTP {}", resp.status())));
+            return Err(RecError::External(format!(
+                "sidecar HTTP {}",
+                resp.status()
+            )));
         }
         let body: ExternalResponse = resp
             .json()
@@ -110,7 +119,9 @@ impl RecStrategy for ExternalStrategy {
 
     async fn train(&self, ctx: &StrategyContext) -> Result<serde_json::Value, RecError> {
         let Some(base) = &self.base_url else {
-            return Err(RecError::NotEnoughData("external sidecar not configured".into()));
+            return Err(RecError::NotEnoughData(
+                "external sidecar not configured".into(),
+            ));
         };
         let call = ctx
             .http_client
@@ -122,7 +133,10 @@ impl RecStrategy for ExternalStrategy {
             .map_err(|_| RecError::External("sidecar train timed out".into()))?
             .map_err(|e| RecError::External(format!("sidecar train failed: {e}")))?;
         if !resp.status().is_success() {
-            return Err(RecError::External(format!("sidecar train HTTP {}", resp.status())));
+            return Err(RecError::External(format!(
+                "sidecar train HTTP {}",
+                resp.status()
+            )));
         }
         Ok(json!({ "sidecar": "trained", "base": base }))
     }

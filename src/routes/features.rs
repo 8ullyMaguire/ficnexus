@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
     Json,
+    extract::{Path, State},
 };
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::progression::Feature;
@@ -33,11 +33,9 @@ pub async fn list_features(
     let user_id = auth.user_id.unwrap_or(0);
 
     // Fetch all features
-    let features = sqlx::query_as::<_, Feature>(
-        "SELECT * FROM features ORDER BY sort_hint",
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let features = sqlx::query_as::<_, Feature>("SELECT * FROM features ORDER BY sort_hint")
+        .fetch_all(&state.db)
+        .await?;
 
     // Fetch user's enabled features
     let enabled_ids: Vec<i32> = sqlx::query_scalar(
@@ -48,12 +46,11 @@ pub async fn list_features(
     .await?;
 
     // Fetch user's unlocked features
-    let unlocked_ids: Vec<i32> = sqlx::query_scalar(
-        "SELECT feature_id FROM user_features WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_all(&state.db)
-    .await?;
+    let unlocked_ids: Vec<i32> =
+        sqlx::query_scalar("SELECT feature_id FROM user_features WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_all(&state.db)
+            .await?;
 
     let features_with_status = features
         .into_iter()
@@ -120,13 +117,11 @@ pub async fn enable_feature(
         .ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
 
     // Look up the feature
-    let feature = sqlx::query_as::<_, Feature>(
-        "SELECT * FROM features WHERE slug = $1",
-    )
-    .bind(&slug)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("Feature '{slug}' not found")))?;
+    let feature = sqlx::query_as::<_, Feature>("SELECT * FROM features WHERE slug = $1")
+        .bind(&slug)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Feature '{slug}' not found")))?;
 
     // Check if unlocked
     let uf = sqlx::query_as::<_, crate::progression::UserFeature>(
@@ -166,25 +161,21 @@ pub async fn disable_feature(
         .ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
 
     // Look up the feature
-    let feature = sqlx::query_as::<_, Feature>(
-        "SELECT * FROM features WHERE slug = $1",
-    )
-    .bind(&slug)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("Feature '{slug}' not found")))?;
+    let feature = sqlx::query_as::<_, Feature>("SELECT * FROM features WHERE slug = $1")
+        .bind(&slug)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Feature '{slug}' not found")))?;
 
     if !feature.is_revocable {
         return Err(AppError::Forbidden("Feature cannot be disabled".into()));
     }
 
-    sqlx::query(
-        "UPDATE user_features SET enabled = false WHERE user_id = $1 AND feature_id = $2",
-    )
-    .bind(user_id)
-    .bind(feature.id)
-    .execute(&state.db)
-    .await?;
+    sqlx::query("UPDATE user_features SET enabled = false WHERE user_id = $1 AND feature_id = $2")
+        .bind(user_id)
+        .bind(feature.id)
+        .execute(&state.db)
+        .await?;
 
     Ok(Json(json!({"ok": true, "slug": slug})))
 }
@@ -209,25 +200,44 @@ pub async fn update_feature(
         .unwrap_or(0);
 
     if trust < 4 {
-        return Err(AppError::Forbidden("Admin access required (trust >= 4)".into()));
+        return Err(AppError::Forbidden(
+            "Admin access required (trust >= 4)".into(),
+        ));
     }
 
     // Look up the feature
-    let feature = sqlx::query_as::<_, Feature>(
-        "SELECT * FROM features WHERE slug = $1",
-    )
-    .bind(&slug)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("Feature '{slug}' not found")))?;
+    let feature = sqlx::query_as::<_, Feature>("SELECT * FROM features WHERE slug = $1")
+        .bind(&slug)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("Feature '{slug}' not found")))?;
 
     // Build dynamic UPDATE — only touch fields present in the body
-    let gate_type = body.get("gate_type").and_then(|v| v.as_str()).unwrap_or(&feature.gate_type);
-    let gate_value = body.get("gate_value").and_then(|v| v.as_i64()).map(|v| v as i32).unwrap_or(feature.gate_value);
-    let description = body.get("description").and_then(|v| v.as_str()).unwrap_or(&feature.description);
-    let name = body.get("name").and_then(|v| v.as_str()).unwrap_or(&feature.name);
-    let is_default = body.get("is_default").and_then(|v| v.as_bool()).unwrap_or(feature.is_default);
-    let is_revocable = body.get("is_revocable").and_then(|v| v.as_bool()).unwrap_or(feature.is_revocable);
+    let gate_type = body
+        .get("gate_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&feature.gate_type);
+    let gate_value = body
+        .get("gate_value")
+        .and_then(|v| v.as_i64())
+        .map(|v| v as i32)
+        .unwrap_or(feature.gate_value);
+    let description = body
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&feature.description);
+    let name = body
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&feature.name);
+    let is_default = body
+        .get("is_default")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(feature.is_default);
+    let is_revocable = body
+        .get("is_revocable")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(feature.is_revocable);
 
     sqlx::query(
         "UPDATE features
@@ -266,7 +276,9 @@ pub async fn feature_stats(
         .unwrap_or(0);
 
     if trust < 4 {
-        return Err(AppError::Forbidden("Admin access required (trust >= 4)".into()));
+        return Err(AppError::Forbidden(
+            "Admin access required (trust >= 4)".into(),
+        ));
     }
 
     let stats = sqlx::query_as::<_, (String, i64)>(
@@ -303,14 +315,12 @@ pub async fn delete_user_view(
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
 
-    let deleted = sqlx::query(
-        "DELETE FROM user_views WHERE id = $1 AND user_id = $2",
-    )
-    .bind(id)
-    .bind(user_id)
-    .execute(&state.db)
-    .await
-    .map_err(|e| AppError::Database(format!("Failed to delete view: {e}")))?;
+    let deleted = sqlx::query("DELETE FROM user_views WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user_id)
+        .execute(&state.db)
+        .await
+        .map_err(|e| AppError::Database(format!("Failed to delete view: {e}")))?;
 
     if deleted.rows_affected() == 0 {
         return Err(AppError::NotFound("View not found".into()));
@@ -365,14 +375,14 @@ pub async fn admin_features(
         .unwrap_or(0);
 
     if trust < 4 {
-        return Err(AppError::Forbidden("Admin access required (trust >= 4)".into()));
+        return Err(AppError::Forbidden(
+            "Admin access required (trust >= 4)".into(),
+        ));
     }
 
-    let features = sqlx::query_as::<_, Feature>(
-        "SELECT * FROM features ORDER BY sort_hint",
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let features = sqlx::query_as::<_, Feature>("SELECT * FROM features ORDER BY sort_hint")
+        .fetch_all(&state.db)
+        .await?;
 
     // For admin, return features without user-specific status
     let result = features

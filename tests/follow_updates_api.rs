@@ -12,12 +12,12 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
-    body::Body,
-    http::{header, Request, StatusCode},
-    routing::{get, post},
     Router,
+    body::Body,
+    http::{Request, StatusCode, header},
+    routing::{get, post},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -47,8 +47,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -69,21 +69,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -102,13 +110,34 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/follows", post(fichub::routes::follows::follow_handler))
-        .route("/api/follows/{id}", axum::routing::delete(fichub::routes::follows::unfollow_handler))
-        .route("/api/follows", get(fichub::routes::follows::list_follows_handler))
-        .route("/api/follows/check/{target_type}/{target_id}", get(fichub::routes::follows::check_follow_handler))
-        .route("/api/v1/updates", get(fichub::routes::updates::updates_handler))
-        .route("/api/v1/follows/{id}/seen", post(fichub::routes::updates::mark_seen_handler))
-        .route("/api/v1/works/{url_id}/refresh", post(fichub::routes::updates::refresh_fic_handler))
+        .route(
+            "/api/follows",
+            post(fichub::routes::follows::follow_handler),
+        )
+        .route(
+            "/api/follows/{id}",
+            axum::routing::delete(fichub::routes::follows::unfollow_handler),
+        )
+        .route(
+            "/api/follows",
+            get(fichub::routes::follows::list_follows_handler),
+        )
+        .route(
+            "/api/follows/check/{target_type}/{target_id}",
+            get(fichub::routes::follows::check_follow_handler),
+        )
+        .route(
+            "/api/v1/updates",
+            get(fichub::routes::updates::updates_handler),
+        )
+        .route(
+            "/api/v1/follows/{id}/seen",
+            post(fichub::routes::updates::mark_seen_handler),
+        )
+        .route(
+            "/api/v1/works/{url_id}/refresh",
+            post(fichub::routes::updates::refresh_fic_handler),
+        )
         .with_state(state)
 }
 
@@ -257,8 +286,13 @@ async fn get_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCode, 
     let req = builder.body(Body::empty()).unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 async fn post_json(
@@ -277,8 +311,13 @@ async fn post_json(
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────
@@ -290,7 +329,14 @@ async fn follow_unfollow_roundtrip() {
     let db = pool().await;
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME).await;
-    let (work_id, _url_id) = seed_work(&db, "fu-follow-1", &format!("{TITLE_PREFIX} One"), "Author One", 3).await;
+    let (work_id, _url_id) = seed_work(
+        &db,
+        "fu-follow-1",
+        &format!("{TITLE_PREFIX} One"),
+        "Author One",
+        3,
+    )
+    .await;
     let app = app().await;
     let token = auth_header(user_id);
 
@@ -300,13 +346,19 @@ async fn follow_unfollow_roundtrip() {
         "/api/follows",
         json!({ "target_type": "work", "target_id": work_id }),
         Some(&token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "follow failed: {body}");
     assert_eq!(body["err"], 0);
     let follow_id = body["follow_id"].as_i64().expect("follow_id in response");
 
     // 2. check endpoint says following + returns the same follow id
-    let (status, body) = get_json(&app, &format!("/api/follows/check/work/{work_id}"), Some(&token)).await;
+    let (status, body) = get_json(
+        &app,
+        &format!("/api/follows/check/work/{work_id}"),
+        Some(&token),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["is_following"], true);
     assert_eq!(body["follow_id"].as_i64(), Some(follow_id));
@@ -317,16 +369,18 @@ async fn follow_unfollow_roundtrip() {
         "/api/follows",
         json!({ "target_type": "work", "target_id": work_id }),
         Some(&token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["err"], 0);
 
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM follows WHERE follower_id = $1 AND work_id = $2")
-        .bind(user_id)
-        .bind(work_id)
-        .fetch_one(&db)
-        .await
-        .expect("count follows");
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM follows WHERE follower_id = $1 AND work_id = $2")
+            .bind(user_id)
+            .bind(work_id)
+            .fetch_one(&db)
+            .await
+            .expect("count follows");
     assert_eq!(count, 1, "double-follow must not create duplicates");
 
     // 4. Follow the author too
@@ -335,7 +389,8 @@ async fn follow_unfollow_roundtrip() {
         "/api/follows",
         json!({ "target_type": "author", "author_name": "Author One" }),
         Some(&token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     let author_follow_id = body["follow_id"].as_i64().expect("author follow_id");
 
@@ -348,19 +403,30 @@ async fn follow_unfollow_roundtrip() {
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
     let body: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(body["removed"], true);
 
     // 6. Check reflects unfollow
-    let (_, body) = get_json(&app, &format!("/api/follows/check/work/{work_id}"), Some(&token)).await;
+    let (_, body) = get_json(
+        &app,
+        &format!("/api/follows/check/work/{work_id}"),
+        Some(&token),
+    )
+    .await;
     assert_eq!(body["is_following"], false);
     assert!(body["follow_id"].is_null());
 
     // 7. Author follow is still there
     let (_, body) = get_json(&app, "/api/follows", Some(&token)).await;
     let items = body["follows"].as_array().expect("follows array");
-    assert!(items.iter().any(|f| f["id"].as_i64() == Some(author_follow_id)));
+    assert!(
+        items
+            .iter()
+            .any(|f| f["id"].as_i64() == Some(author_follow_id))
+    );
 
     cleanup(&db).await;
 }
@@ -372,8 +438,22 @@ async fn updates_feed_returns_followed_works_with_new_badge() {
     let db = pool().await;
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME).await;
-    let (work_a, url_a) = seed_work(&db, "fu-updates-a", &format!("{TITLE_PREFIX} Alpha"), "Author A", 1).await;
-    let (work_b, url_b) = seed_work(&db, "fu-updates-b", &format!("{TITLE_PREFIX} Beta"), "Author B", 30).await;
+    let (work_a, url_a) = seed_work(
+        &db,
+        "fu-updates-a",
+        &format!("{TITLE_PREFIX} Alpha"),
+        "Author A",
+        1,
+    )
+    .await;
+    let (work_b, url_b) = seed_work(
+        &db,
+        "fu-updates-b",
+        &format!("{TITLE_PREFIX} Beta"),
+        "Author B",
+        30,
+    )
+    .await;
     let app = app().await;
     let token = auth_header(user_id);
 
@@ -384,7 +464,8 @@ async fn updates_feed_returns_followed_works_with_new_badge() {
             "/api/follows",
             json!({ "target_type": "work", "target_id": wid }),
             Some(&token),
-        ).await;
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["err"], 0);
     }
@@ -403,7 +484,13 @@ async fn updates_feed_returns_followed_works_with_new_badge() {
 
     // Mark work A seen
     let follow_a_id = items[0]["follow_id"].as_i64().expect("follow_id");
-    let (status, body) = post_json(&app, &format!("/api/v1/follows/{follow_a_id}/seen"), json!({}), Some(&token)).await;
+    let (status, body) = post_json(
+        &app,
+        &format!("/api/v1/follows/{follow_a_id}/seen"),
+        json!({}),
+        Some(&token),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["updated"], true);
 
@@ -443,11 +530,17 @@ async fn refresh_fic_bumps_version_and_notifies_followers() {
         "/api/follows",
         json!({ "target_type": "work", "target_id": work_id }),
         Some(&token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
 
     // Baseline: no version bump, no notifications
-    assert_eq!(fichub::db::queries::get_fic_version_bump(&db, &url_id).await.unwrap(), None);
+    assert_eq!(
+        fichub::db::queries::get_fic_version_bump(&db, &url_id)
+            .await
+            .unwrap(),
+        None
+    );
 
     // Simulate an upstream update: the fic was seeded with fic_updated 10
     // days ago; bump the seed's fic_updated to "now" and re-point the source
@@ -477,8 +570,13 @@ async fn refresh_fic_bumps_version_and_notifies_followers() {
         &format!("/api/v1/works/{url_id}/refresh"),
         json!({}),
         Some(&token),
-    ).await;
-    assert_eq!(status, StatusCode::OK, "refresh must respond 200, got {body}");
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "refresh must respond 200, got {body}"
+    );
     assert_eq!(body["err"], 0);
 
     if body["status"] == "ok" {
@@ -486,7 +584,9 @@ async fn refresh_fic_bumps_version_and_notifies_followers() {
         assert!(bump >= 1);
         // Version bump is persisted
         assert_eq!(
-            fichub::db::queries::get_fic_version_bump(&db, &url_id).await.unwrap(),
+            fichub::db::queries::get_fic_version_bump(&db, &url_id)
+                .await
+                .unwrap(),
             Some(bump as i32)
         );
     } else {
@@ -522,8 +622,13 @@ async fn refresh_fic_bumps_version_and_notifies_followers() {
         &format!("/api/v1/works/{url_id}/refresh"),
         json!({}),
         Some(&token),
-    ).await;
-    assert_eq!(status, StatusCode::OK, "second refresh must respond 200, got {body}");
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "second refresh must respond 200, got {body}"
+    );
     assert_eq!(body["err"], 0, "second refresh must not error: {body}");
 
     cleanup(&db).await;

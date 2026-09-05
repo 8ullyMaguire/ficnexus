@@ -79,12 +79,13 @@ async fn main() -> ExitCode {
 
     println!("\n1) Reports needing a click ({} shown):", contested.len());
     for (id, ttype, status, auto) in &contested {
-        println!(
-            "   #[{id}] target={ttype} status={status} auto={auto}"
-        );
+        println!("   #[{id}] target={ttype} status={status} auto={auto}");
     }
 
-    println!("\n2) Community Moderator candidates ({}):", candidates.len());
+    println!(
+        "\n2) Community Moderator candidates ({}):",
+        candidates.len()
+    );
     for (uid, m) in &candidates {
         println!(
             "   user #{uid}: TL4 → promote to TL5? {} posts, {} works read, {} reports filed",
@@ -122,7 +123,10 @@ async fn main() -> ExitCode {
         } else {
             let mut body = String::new();
             body.push_str("FicNexus Weekly Moderation Digest\r\n\r\n");
-            body.push_str(&format!("Reports open/auto-hidden: {}\r\n", contested.len()));
+            body.push_str(&format!(
+                "Reports open/auto-hidden: {}\r\n",
+                contested.len()
+            ));
             for (id, ttype, status, auto) in &contested {
                 body.push_str(&format!("  #{id} {ttype} status={status} auto={auto}\r\n"));
             }
@@ -132,7 +136,10 @@ async fn main() -> ExitCode {
                 promotions.len(),
                 demotions.len()
             ));
-            body.push_str(&format!("\r\nSpam (7d): {} auto / {} total\r\n", spam_auto, spam_total));
+            body.push_str(&format!(
+                "\r\nSpam (7d): {} auto / {} total\r\n",
+                spam_auto, spam_total
+            ));
 
             let to = smtp.digest_recipient();
             match send_digest_email(&smtp, &to, "FicNexus Weekly Moderation Digest", &body) {

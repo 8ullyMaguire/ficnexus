@@ -15,10 +15,10 @@ use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
 use serde_json::Value;
 use tower::ServiceExt; // oneshot
@@ -65,8 +65,8 @@ async fn app(body_dir: PathBuf) -> Router {
 
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -94,15 +94,17 @@ async fn app(body_dir: PathBuf) -> Router {
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false, // dynamic rate limiting off in tests
-        )
-        .await
-        .expect("rate limiter")),
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false, // dynamic rate limiting off in tests
+            )
+            .await
+            .expect("rate limiter"),
+        ),
         recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
         strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
             vec![std::sync::Arc::new(
@@ -170,14 +172,22 @@ async fn write_body_blob(body_dir: &std::path::Path, url_id: &str, content: &str
 async fn get_json(app: &Router, uri: &str) -> (StatusCode, Value) {
     let resp = app
         .clone()
-        .oneshot(Request::builder().method("GET").uri(uri).body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
-        serde_json::json!({ "raw": String::from_utf8_lossy(&bytes).to_string() })
-    });
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes).unwrap_or_else(
+        |_| serde_json::json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }),
+    );
     (status, v)
 }
 
@@ -250,7 +260,9 @@ async fn body_search_no_match_returns_zero() {
 
     let body_dir = temp_body_dir("nomatch");
     seed_fic(&db, url_id, "Gardening For Wizards", "bodysrch_author2").await;
-    write_body_blob(&body_dir, url_id,
+    write_body_blob(
+        &body_dir,
+        url_id,
         "<p>Tomatoes and roses, tended with quiet patience under the greenhouse glass.</p>",
     )
     .await;

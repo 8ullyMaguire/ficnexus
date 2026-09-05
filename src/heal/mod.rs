@@ -33,7 +33,10 @@ pub struct HealService {
 
 impl HealService {
     pub fn new(db: PgPool, config: Config) -> Self {
-        HealService { db, config: Arc::new(config) }
+        HealService {
+            db,
+            config: Arc::new(config),
+        }
     }
 
     /// Record a scrape failure with classification + fingerprint applied.

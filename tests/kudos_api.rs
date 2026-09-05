@@ -12,12 +12,12 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
-    body::Body,
-    http::{header, Request, StatusCode},
-    routing::{delete, get, post},
     Router,
+    body::Body,
+    http::{Request, StatusCode, header},
+    routing::{delete, get, post},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -44,8 +44,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -66,22 +66,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
         recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
         strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -100,9 +107,18 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/kudos/{work_id}", get(fichub::routes::social::get_kudos_handler))
-        .route("/api/kudos/{work_id}", post(fichub::routes::social::give_kudos_handler))
-        .route("/api/kudos/{work_id}", delete(fichub::routes::social::remove_kudos_handler))
+        .route(
+            "/api/kudos/{work_id}",
+            get(fichub::routes::social::get_kudos_handler),
+        )
+        .route(
+            "/api/kudos/{work_id}",
+            post(fichub::routes::social::give_kudos_handler),
+        )
+        .route(
+            "/api/kudos/{work_id}",
+            delete(fichub::routes::social::remove_kudos_handler),
+        )
         .route("/api/search", get(fichub::search::routes::search_handler))
         .with_state(state)
 }
@@ -243,8 +259,13 @@ async fn post_json(
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 async fn get_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCode, Value) {
@@ -255,8 +276,13 @@ async fn get_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCode, 
     let req = builder.body(Body::empty()).unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 async fn delete_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCode, Value) {
@@ -267,8 +293,13 @@ async fn delete_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCod
     let req = builder.body(Body::empty()).unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────
@@ -285,7 +316,13 @@ async fn kudos_post_creates_and_get_shows() {
     let wid = seed_work(&db, "kdurl-create", "KdTest Create", "KdTest Author").await;
     let app = app().await;
 
-    let (status, body) = post_json(&app, &format!("/api/kudos/{wid}"), json!({}), Some(&auth_header(uid))).await;
+    let (status, body) = post_json(
+        &app,
+        &format!("/api/kudos/{wid}"),
+        json!({}),
+        Some(&auth_header(uid)),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "give kudos: {body}");
     assert_eq!(body["err"], 0);
     assert_eq!(body["work_id"], wid);
@@ -297,7 +334,10 @@ async fn kudos_post_creates_and_get_shows() {
     let (_, got) = get_json(&app, &format!("/api/kudos/{wid}"), None).await;
     assert_eq!(got["err"], 0);
     assert_eq!(got["kudos_count"], 1);
-    assert_eq!(got["my_kudos"], false, "anonymous viewer must not see my_kudos: {got}");
+    assert_eq!(
+        got["my_kudos"], false,
+        "anonymous viewer must not see my_kudos: {got}"
+    );
 
     // GET with auth — my_kudos true.
     let (_, got2) = get_json(&app, &format!("/api/kudos/{wid}"), Some(&auth_header(uid))).await;
@@ -318,10 +358,22 @@ async fn kudos_post_is_idempotent() {
     let wid = seed_work(&db, "kdurl-idem", "KdTest Idem", "KdTest Author").await;
     let app = app().await;
 
-    let (s1, b1) = post_json(&app, &format!("/api/kudos/{wid}"), json!({}), Some(&auth_header(uid))).await;
+    let (s1, b1) = post_json(
+        &app,
+        &format!("/api/kudos/{wid}"),
+        json!({}),
+        Some(&auth_header(uid)),
+    )
+    .await;
     assert_eq!(s1, StatusCode::OK, "{b1}");
     assert_eq!(b1["kudos_count"], 1);
-    let (s2, b2) = post_json(&app, &format!("/api/kudos/{wid}"), json!({}), Some(&auth_header(uid))).await;
+    let (s2, b2) = post_json(
+        &app,
+        &format!("/api/kudos/{wid}"),
+        json!({}),
+        Some(&auth_header(uid)),
+    )
+    .await;
     assert_eq!(s2, StatusCode::OK, "second POST must not error: {b2}");
     assert_eq!(b2["kudos_count"], 1, "idempotent: {b2}");
     assert_eq!(b2["my_kudos"], true);
@@ -348,10 +400,17 @@ async fn kudos_delete_removes() {
     let wid = seed_work(&db, "kdurl-del", "KdTest Del", "KdTest Author").await;
     let app = app().await;
 
-    let (_, b) = post_json(&app, &format!("/api/kudos/{wid}"), json!({}), Some(&auth_header(uid))).await;
+    let (_, b) = post_json(
+        &app,
+        &format!("/api/kudos/{wid}"),
+        json!({}),
+        Some(&auth_header(uid)),
+    )
+    .await;
     assert_eq!(b["kudos_count"], 1);
 
-    let (status, body) = delete_json(&app, &format!("/api/kudos/{wid}"), Some(&auth_header(uid))).await;
+    let (status, body) =
+        delete_json(&app, &format!("/api/kudos/{wid}"), Some(&auth_header(uid))).await;
     assert_eq!(status, StatusCode::OK, "remove kudos: {body}");
     assert_eq!(body["err"], 0);
     assert_eq!(body["kudos_count"], 0);
@@ -402,8 +461,18 @@ async fn kudos_404_on_missing_work() {
     let uid = seed_user(&db, username).await;
     let app = app().await;
 
-    let (status, body) = post_json(&app, "/api/kudos/999999999", json!({}), Some(&auth_header(uid))).await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "missing work must 404: {body}");
+    let (status, body) = post_json(
+        &app,
+        "/api/kudos/999999999",
+        json!({}),
+        Some(&auth_header(uid)),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "missing work must 404: {body}"
+    );
     assert_eq!(body["err"], -5, "AppError::NotFound body: {body}");
 
     cleanup(&db, username).await;
@@ -431,15 +500,30 @@ async fn guest_kudos_one_per_work() {
         .bind(wid)
         .execute(&db)
         .await;
-    assert!(second.is_err(), "second guest kudos must violate idx_kudos_guest_one_per_work");
+    assert!(
+        second.is_err(),
+        "second guest kudos must violate idx_kudos_guest_one_per_work"
+    );
 
     let app = app().await;
     let (_, got) = get_json(&app, &format!("/api/kudos/{wid}"), None).await;
-    assert_eq!(got["guest_count"], 1, "guest kudos counted separately: {got}");
-    assert_eq!(got["kudos_count"], 0, "guest kudos must NOT count as signed-in kudos: {got}");
+    assert_eq!(
+        got["guest_count"], 1,
+        "guest kudos counted separately: {got}"
+    );
+    assert_eq!(
+        got["kudos_count"], 0,
+        "guest kudos must NOT count as signed-in kudos: {got}"
+    );
 
     // A signed-in user kudos on top → kudos_count 1, guest_count stays 1.
-    let (_, b) = post_json(&app, &format!("/api/kudos/{wid}"), json!({}), Some(&auth_header(uid))).await;
+    let (_, b) = post_json(
+        &app,
+        &format!("/api/kudos/{wid}"),
+        json!({}),
+        Some(&auth_header(uid)),
+    )
+    .await;
     assert_eq!(b["kudos_count"], 1);
     assert_eq!(b["guest_count"], 1);
     assert_eq!(b["my_kudos"], true);
@@ -479,38 +563,42 @@ async fn search_min_kudos_uses_real_kudos() {
 
     // Verify the seeding actually landed (self-heal cleanup in a previous
     // failed run must not have eaten the rows the assertions depend on).
-    let signed: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM kudos WHERE work_id = $1 AND user_id IS NOT NULL",
-    )
-    .bind(wid_a)
-    .fetch_one(&db)
-    .await
-    .expect("kudos count");
+    let signed: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM kudos WHERE work_id = $1 AND user_id IS NOT NULL")
+            .bind(wid_a)
+            .fetch_one(&db)
+            .await
+            .expect("kudos count");
     assert_eq!(signed, 2, "work A must have 2 signed-in kudos at seed time");
 
     // Search by exact title to isolate the two seeded fics.
     // (A bare q here would trip the zero-result fuzzy fallback, which would
     // treat the fics as unmatched and return both regardless of min_kudos.)
     let app = app().await;
-    let (status, body) = get_json(
-        &app,
-        "/api/search?q=KdTest&min_kudos=2",
-        None,
-    )
-    .await;
+    let (status, body) = get_json(&app, "/api/search?q=KdTest&min_kudos=2", None).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["total"], 1, "only work A has 2+ signed-in kudos: {body}");
+    assert_eq!(
+        body["total"], 1,
+        "only work A has 2+ signed-in kudos: {body}"
+    );
     let ids: Vec<String> = body["results"]
         .as_array()
         .unwrap_or(&vec![])
         .iter()
         .filter_map(|r| r["url_id"].as_str().map(|s| s.to_string()))
         .collect();
-    assert_eq!(ids, vec!["kdurl-search-a".to_string()], "guest kudos must not count: {body}");
+    assert_eq!(
+        ids,
+        vec!["kdurl-search-a".to_string()],
+        "guest kudos must not count: {body}"
+    );
 
     // min_kudos=3 → nothing matches (work A has 2 signed-in, guest excluded).
     let (_, body3) = get_json(&app, "/api/search?q=KdTest&min_kudos=3", None).await;
-    assert_eq!(body3["total"], 0, "min_kudos must exclude guest kudos: {body3}");
+    assert_eq!(
+        body3["total"], 0,
+        "min_kudos must exclude guest kudos: {body3}"
+    );
 
     // No min_kudos → both fics returned.
     let (_, both) = get_json(&app, "/api/search?q=KdTest", None).await;

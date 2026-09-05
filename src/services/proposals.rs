@@ -12,7 +12,7 @@
 //! `source='llm'` rows for human review; dismissing one marks the machine
 //! draft `dismissed` so it stops rendering.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 
 use crate::config::Config;
@@ -73,7 +73,9 @@ pub async fn submit(
     source: &str,
 ) -> Result<i64, AppError> {
     if !valid_kind(kind) {
-        return Err(AppError::BadRequest(format!("unknown proposal kind: {kind}")));
+        return Err(AppError::BadRequest(format!(
+            "unknown proposal kind: {kind}"
+        )));
     }
     let id: i64 = sqlx::query_scalar(
         r#"INSERT INTO proposals (kind, target_type, target_id, payload, proposer_id, source)
@@ -84,7 +86,15 @@ pub async fn submit(
     .bind(target_id)
     .bind(&payload)
     .bind(proposer)
-    .bind(if source == "llm" { "llm" } else if source == "system" { "system" } else if source == "moderator" { "moderator" } else { "user" })
+    .bind(if source == "llm" {
+        "llm"
+    } else if source == "system" {
+        "system"
+    } else if source == "moderator" {
+        "moderator"
+    } else {
+        "user"
+    })
     .fetch_one(db)
     .await
     .map_err(|e| AppError::Internal(format!("proposal insert: {e}")))?;
@@ -141,7 +151,9 @@ pub async fn record_vote(
         return Err(AppError::Forbidden("Curator access required".into()));
     }
     if decision != "approve" && decision != "dismiss" {
-        return Err(AppError::BadRequest("decision must be approve|dismiss".into()));
+        return Err(AppError::BadRequest(
+            "decision must be approve|dismiss".into(),
+        ));
     }
     let row: Option<(String, String, String, Option<i32>, String)> = sqlx::query_as(
         "SELECT kind, target_type, target_id, proposer_id, status FROM proposals WHERE id = $1",
@@ -185,7 +197,10 @@ pub async fn record_vote(
 
     // Modest curator incentive per vote (daily-capped in xp_source_defs).
     let _ = crate::services::progression::award_xp(
-        db, curator_id, "translation_reviewed", Some(&proposal_id.to_string()),
+        db,
+        curator_id,
+        "translation_reviewed",
+        Some(&proposal_id.to_string()),
     )
     .await;
 
@@ -202,11 +217,27 @@ pub async fn record_vote(
 
     let new_status = decide_status(approves, dismisses, quorum_for(config, &kind));
     if new_status == "pending" {
-        return Ok(json!({"err": 0, "status": "pending", "approves": approves, "dismisses": dismisses, "resolved": false}));
+        return Ok(
+            json!({"err": 0, "status": "pending", "approves": approves, "dismisses": dismisses, "resolved": false}),
+        );
     }
 
-    finalize(db, config, proposal_id, &kind, &target_type, &target_id, new_status, Some(curator_id), Some(curator_name), None).await?;
-    Ok(json!({"err": 0, "status": new_status, "approves": approves, "dismisses": dismisses, "resolved": true}))
+    finalize(
+        db,
+        config,
+        proposal_id,
+        &kind,
+        &target_type,
+        &target_id,
+        new_status,
+        Some(curator_id),
+        Some(curator_name),
+        None,
+    )
+    .await?;
+    Ok(
+        json!({"err": 0, "status": new_status, "approves": approves, "dismisses": dismisses, "resolved": true}),
+    )
 }
 
 /// Fast-path: a curator decides now, skipping quorum.
@@ -226,21 +257,36 @@ pub async fn decide(
     let final_status = match decision {
         "approve" => "approved",
         "dismiss" => "dismissed",
-        _ => return Err(AppError::BadRequest("decision must be approve|dismiss".into())),
+        _ => {
+            return Err(AppError::BadRequest(
+                "decision must be approve|dismiss".into(),
+            ));
+        }
     };
-    let row: Option<(String, String, String, String)> = sqlx::query_as(
-        "SELECT kind, target_type, target_id, status FROM proposals WHERE id = $1",
-    )
-    .bind(proposal_id)
-    .fetch_optional(db)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    let row: Option<(String, String, String, String)> =
+        sqlx::query_as("SELECT kind, target_type, target_id, status FROM proposals WHERE id = $1")
+            .bind(proposal_id)
+            .fetch_optional(db)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
     let (kind, target_type, target_id, status) =
         row.ok_or_else(|| AppError::NotFound("proposal not found".into()))?;
     if status != "pending" {
         return Err(AppError::Conflict(format!("proposal already {status}")));
     }
-    finalize(db, config, proposal_id, &kind, &target_type, &target_id, final_status, Some(curator_id), Some(curator_name), note).await?;
+    finalize(
+        db,
+        config,
+        proposal_id,
+        &kind,
+        &target_type,
+        &target_id,
+        final_status,
+        Some(curator_id),
+        Some(curator_name),
+        note,
+    )
+    .await?;
     Ok(json!({"err": 0, "status": final_status, "resolved": true}))
 }
 
@@ -274,7 +320,11 @@ async fn finalize(
         db,
         decided_by,
         actor_name.map(|s| s.to_string()),
-        if status == "approved" { "proposal_approve" } else { "proposal_dismiss" },
+        if status == "approved" {
+            "proposal_approve"
+        } else {
+            "proposal_dismiss"
+        },
         kind,
         &format!("{target_type}:{target_id}"),
         json!({"proposal_id": proposal_id, "note": note}),
@@ -285,7 +335,14 @@ async fn finalize(
 
 /// Apply an approved (or dismissed) proposal to its target. Best-effort:
 /// an apply failure never blocks the queue bookkeeping, it only logs.
-async fn apply(db: &PgPool, proposal_id: i64, kind: &str, target_type: &str, target_id: &str, status: &str) {
+async fn apply(
+    db: &PgPool,
+    proposal_id: i64,
+    kind: &str,
+    target_type: &str,
+    target_id: &str,
+    status: &str,
+) {
     let payload: Option<Value> = sqlx::query_scalar("SELECT payload FROM proposals WHERE id = $1")
         .bind(proposal_id)
         .fetch_optional(db)
@@ -295,7 +352,9 @@ async fn apply(db: &PgPool, proposal_id: i64, kind: &str, target_type: &str, tar
     let Some(pl) = payload else { return };
 
     match (kind, status) {
-        ("translate", "approved") => apply_translate(db, proposal_id, target_type, target_id, &pl).await,
+        ("translate", "approved") => {
+            apply_translate(db, proposal_id, target_type, target_id, &pl).await
+        }
         ("translate", "dismissed") => {
             // Rejecting an LLM draft (or a bad human one) hides machine text.
             let r = sqlx::query(
@@ -316,15 +375,29 @@ async fn apply(db: &PgPool, proposal_id: i64, kind: &str, target_type: &str, tar
         (k, s) => {
             // M6: these legacy kinds will move their apply here; for now the
             // decision is recorded and the original endpoint still applies it.
-            tracing::warn!("proposal {proposal_id} ({k} {target_type}:{target_id}) => {s}: legacy apply path");
+            tracing::warn!(
+                "proposal {proposal_id} ({k} {target_type}:{target_id}) => {s}: legacy apply path"
+            );
         }
     }
 }
 
-async fn apply_translate(db: &PgPool, proposal_id: i64, target_type: &str, target_id: &str, pl: &Value) {
-    let Some(field) = pl.get("field").and_then(|v| v.as_str()) else { return };
-    let Some(locale) = pl.get("locale").and_then(|v| v.as_str()) else { return };
-    let Some(text) = pl.get("text").and_then(|v| v.as_str()) else { return };
+async fn apply_translate(
+    db: &PgPool,
+    proposal_id: i64,
+    target_type: &str,
+    target_id: &str,
+    pl: &Value,
+) {
+    let Some(field) = pl.get("field").and_then(|v| v.as_str()) else {
+        return;
+    };
+    let Some(locale) = pl.get("locale").and_then(|v| v.as_str()) else {
+        return;
+    };
+    let Some(text) = pl.get("text").and_then(|v| v.as_str()) else {
+        return;
+    };
     let source_hash = pl.get("source_hash").and_then(|v| v.as_str()).unwrap_or("");
 
     // Supersede an existing approved translation for this exact slot.
@@ -342,28 +415,31 @@ async fn apply_translate(db: &PgPool, proposal_id: i64, target_type: &str, targe
     .flatten();
     let mut superseded = false;
     if let Some((prior_id, prior_proposal)) = prior {
-        let _ = sqlx::query("UPDATE translation_strings SET status='outdated', updated_at=NOW() WHERE id=$1")
-            .bind(prior_id)
+        let _ = sqlx::query(
+            "UPDATE translation_strings SET status='outdated', updated_at=NOW() WHERE id=$1",
+        )
+        .bind(prior_id)
+        .execute(db)
+        .await;
+        if let Some(old_pid) = prior_proposal {
+            let _ = sqlx::query(
+                "UPDATE proposals SET status='superseded' WHERE id=$1 AND status='approved'",
+            )
+            .bind(old_pid)
             .execute(db)
             .await;
-        if let Some(old_pid) = prior_proposal {
-            let _ = sqlx::query("UPDATE proposals SET status='superseded' WHERE id=$1 AND status='approved'")
-                .bind(old_pid)
-                .execute(db)
-                .await;
             superseded = true;
         }
     }
 
-    let (proposer, source): (Option<i32>, String) = sqlx::query_as(
-        "SELECT proposer_id, source FROM proposals WHERE id=$1",
-    )
-    .bind(proposal_id)
-    .fetch_optional(db)
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or((None, "user".into()));
+    let (proposer, source): (Option<i32>, String) =
+        sqlx::query_as("SELECT proposer_id, source FROM proposals WHERE id=$1")
+            .bind(proposal_id)
+            .fetch_optional(db)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or((None, "user".into()));
 
     let origin = if source == "llm" { "llm" } else { "user" };
     let up = sqlx::query(
@@ -391,8 +467,14 @@ async fn apply_translate(db: &PgPool, proposal_id: i64, target_type: &str, targe
         return;
     }
     if let Some(uid) = proposer {
-        let event = if superseded { "translation_improved" } else { "translation_approved" };
-        let _ = crate::services::progression::award_xp(db, uid, event, Some(&proposal_id.to_string())).await;
+        let event = if superseded {
+            "translation_improved"
+        } else {
+            "translation_approved"
+        };
+        let _ =
+            crate::services::progression::award_xp(db, uid, event, Some(&proposal_id.to_string()))
+                .await;
     }
 }
 
@@ -428,7 +510,13 @@ async fn apply_ui_string(db: &PgPool, proposal_id: i64, pl: &Value) {
         .flatten()
         .flatten();
     if let Some(uid) = proposer {
-        let _ = crate::services::progression::award_xp(db, uid, "translation_approved", Some(&proposal_id.to_string())).await;
+        let _ = crate::services::progression::award_xp(
+            db,
+            uid,
+            "translation_approved",
+            Some(&proposal_id.to_string()),
+        )
+        .await;
     }
 }
 

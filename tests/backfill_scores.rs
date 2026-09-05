@@ -14,11 +14,15 @@ use sqlx::Row;
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
-    DB_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+    DB_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
 }
 
 async fn pool() -> sqlx::PgPool {
-    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
+    let url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
     sqlx::PgPool::connect(&url).await.expect("connect pool")
 }
 
@@ -39,12 +43,14 @@ async fn seed_fic(pool: &sqlx::PgPool, id: &str) {
 /// idempotent (tags are shared, so this never deletes them — cleanup only
 /// removes the fic_tags links).
 async fn seed_tag(pool: &sqlx::PgPool, name: &str, type_id: i16) -> i32 {
-    sqlx::query("INSERT INTO tags (name, tag_type_id) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING")
-        .bind(name)
-        .bind(type_id)
-        .execute(pool)
-        .await
-        .expect("seed_tag failed");
+    sqlx::query(
+        "INSERT INTO tags (name, tag_type_id) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING",
+    )
+    .bind(name)
+    .bind(type_id)
+    .execute(pool)
+    .await
+    .expect("seed_tag failed");
     sqlx::query_scalar("SELECT id FROM tags WHERE name = $1")
         .bind(name)
         .fetch_one(pool)
@@ -78,8 +84,12 @@ async fn score_of(pool: &sqlx::PgPool, url_id: &str, tag_id: i32) -> i16 {
 }
 
 async fn cleanup(pool: &sqlx::PgPool) {
-    let _ = sqlx::query("DELETE FROM fic_tags WHERE url_id LIKE 'backfill_%'").execute(pool).await;
-    let _ = sqlx::query("DELETE FROM fic_info WHERE id LIKE 'backfill_%'").execute(pool).await;
+    let _ = sqlx::query("DELETE FROM fic_tags WHERE url_id LIKE 'backfill_%'")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM fic_info WHERE id LIKE 'backfill_%'")
+        .execute(pool)
+        .await;
 }
 
 /// Two character tags both score 0 → first-listed (by created_at, then
@@ -109,19 +119,34 @@ async fn backfill_sets_main_and_side_character() {
         .await
         .expect("make char1 first-listed");
 
-    let summaries = fichub::tags::backfill::backfill_scores(&db).await.expect("backfill ran");
-    let s = summaries.iter().find(|s| s.url_id == url_id).expect("fic a backfilled");
+    let summaries = fichub::tags::backfill::backfill_scores(&db)
+        .await
+        .expect("backfill ran");
+    let s = summaries
+        .iter()
+        .find(|s| s.url_id == url_id)
+        .expect("fic a backfilled");
 
-    assert_eq!(s.main_char.as_deref(), Some("backfill_char_a1"), "first-listed char is main: {s:?}");
+    assert_eq!(
+        s.main_char.as_deref(),
+        Some("backfill_char_a1"),
+        "first-listed char is main: {s:?}"
+    );
     assert_eq!(s.other_chars, vec!["backfill_char_a2".to_string()]);
     assert!(s.primary_ship.is_none(), "no ships seeded: {s:?}");
 
     assert_eq!(score_of(&db, url_id, char1).await, 10, "main char → 10");
     assert_eq!(score_of(&db, url_id, char2).await, 1, "side char → 1");
-    assert_eq!(score_of(&db, url_id, freeform).await, 0, "freeform untouched (0)");
+    assert_eq!(
+        score_of(&db, url_id, freeform).await,
+        0,
+        "freeform untouched (0)"
+    );
 
     // Idempotency: second run is a no-op, scores unchanged.
-    let second = fichub::tags::backfill::backfill_scores(&db).await.expect("second run");
+    let second = fichub::tags::backfill::backfill_scores(&db)
+        .await
+        .expect("second run");
     assert!(
         second.iter().all(|s| s.url_id != url_id),
         "fic already backfilled must be skipped: {second:?}"
@@ -155,9 +180,18 @@ async fn backfill_single_character_and_skips_scored_fic() {
     link_tag(&db, url_c, char_c1, 3).await;
     link_tag(&db, url_c, char_c2, 0).await;
 
-    let summaries = fichub::tags::backfill::backfill_scores(&db).await.expect("backfill ran");
-    let s_b = summaries.iter().find(|s| s.url_id == url_b).expect("fic b backfilled");
-    assert_eq!(s_b.main_char.as_deref(), Some("backfill_char_b1"), "{s_b:?}");
+    let summaries = fichub::tags::backfill::backfill_scores(&db)
+        .await
+        .expect("backfill ran");
+    let s_b = summaries
+        .iter()
+        .find(|s| s.url_id == url_b)
+        .expect("fic b backfilled");
+    assert_eq!(
+        s_b.main_char.as_deref(),
+        Some("backfill_char_b1"),
+        "{s_b:?}"
+    );
     assert!(s_b.other_chars.is_empty(), "{s_b:?}");
     assert_eq!(score_of(&db, url_b, char_b).await, 10, "single char → 10");
 
@@ -165,8 +199,16 @@ async fn backfill_single_character_and_skips_scored_fic() {
         summaries.iter().all(|s| s.url_id != url_c),
         "fic with nonzero char score must be skipped: {summaries:?}"
     );
-    assert_eq!(score_of(&db, url_c, char_c1).await, 3, "existing score untouched");
-    assert_eq!(score_of(&db, url_c, char_c2).await, 0, "zero-scored sibling untouched");
+    assert_eq!(
+        score_of(&db, url_c, char_c1).await,
+        3,
+        "existing score untouched"
+    );
+    assert_eq!(
+        score_of(&db, url_c, char_c2).await,
+        0,
+        "zero-scored sibling untouched"
+    );
 
     cleanup(&db).await;
 }
@@ -192,16 +234,26 @@ async fn backfill_ships_primary_and_side() {
         .await
         .expect("make ship1 first-listed");
 
-    let summaries = fichub::tags::backfill::backfill_scores(&db).await.expect("backfill ran");
-    let s = summaries.iter().find(|s| s.url_id == url_id).expect("fic d backfilled");
+    let summaries = fichub::tags::backfill::backfill_scores(&db)
+        .await
+        .expect("backfill ran");
+    let s = summaries
+        .iter()
+        .find(|s| s.url_id == url_id)
+        .expect("fic d backfilled");
     assert_eq!(s.primary_ship.as_deref(), Some("backfill_ship_d1"), "{s:?}");
     assert_eq!(s.other_ships, vec!["backfill_ship_d2".to_string()]);
 
     assert_eq!(score_of(&db, url_id, ship1).await, 5, "primary ship → 5");
     assert_eq!(score_of(&db, url_id, ship2).await, 1, "side ship → 1");
 
-    let second = fichub::tags::backfill::backfill_scores(&db).await.expect("second run");
-    assert!(second.iter().all(|s| s.url_id != url_id), "already backfilled: {second:?}");
+    let second = fichub::tags::backfill::backfill_scores(&db)
+        .await
+        .expect("second run");
+    assert!(
+        second.iter().all(|s| s.url_id != url_id),
+        "already backfilled: {second:?}"
+    );
     assert_eq!(score_of(&db, url_id, ship1).await, 5);
     assert_eq!(score_of(&db, url_id, ship2).await, 1);
 

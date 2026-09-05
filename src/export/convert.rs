@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use md5::{Digest, Md5};
 use tokio::process::Command;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
 use crate::export::ExportError;
@@ -41,9 +41,7 @@ pub async fn convert_epub(
         Ok(()) => {}
         Err(e) => {
             // ---- retry once -----------------------------------------------
-            tracing::warn!(
-                "First conversion attempt failed: {e}. Retrying once ..."
-            );
+            tracing::warn!("First conversion attempt failed: {e}. Retrying once ...");
             run_conversion(epub_path, &output_path, calibre_container)
                 .await
                 .map_err(|retry_err| {

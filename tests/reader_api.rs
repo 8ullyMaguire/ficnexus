@@ -9,11 +9,11 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
-    body::Body,
-    http::{header, Request, StatusCode},
     Router,
+    body::Body,
+    http::{Request, StatusCode, header},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -67,18 +67,22 @@ async fn app() -> Router {
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
         recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
         strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
         collection_worker: fichub::recommender::worker::CollectionWorker::new(
@@ -118,11 +122,19 @@ async fn app() -> Router {
 async fn get_json(app: &Router, uri: &str) -> (StatusCode, Value) {
     let resp = app
         .clone()
-        .oneshot(Request::builder().method("GET").uri(uri).body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(uri)
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&bytes)
         .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
@@ -157,18 +169,16 @@ async fn seed_work(pool: &sqlx::PgPool, url_id: &str, title: &str, author: &str)
 
     let work_id = match existing {
         Some(id) => id,
-        None => {
-            sqlx::query_scalar(
-                "INSERT INTO works (canonical_title, canonical_author, default_source_id)
+        None => sqlx::query_scalar(
+            "INSERT INTO works (canonical_title, canonical_author, default_source_id)
                  VALUES ($1, $2, $3) RETURNING id",
-            )
-            .bind(title)
-            .bind(author)
-            .bind(url_id)
-            .fetch_one(pool)
-            .await
-            .expect("seed work failed")
-        }
+        )
+        .bind(title)
+        .bind(author)
+        .bind(url_id)
+        .fetch_one(pool)
+        .await
+        .expect("seed work failed"),
     };
 
     sqlx::query("UPDATE fic_info SET work_id = $1 WHERE id = $2")
@@ -211,12 +221,11 @@ async fn sequel_via_series_and_fallback() {
         .execute(&db)
         .await
         .ok();
-    let sid: i32 = sqlx::query_scalar(
-        "INSERT INTO series (name) VALUES ('Seq Series') RETURNING id",
-    )
-    .fetch_one(&db)
-    .await
-    .expect("series insert failed");
+    let sid: i32 =
+        sqlx::query_scalar("INSERT INTO series (name) VALUES ('Seq Series') RETURNING id")
+            .fetch_one(&db)
+            .await
+            .expect("series insert failed");
     sqlx::query("INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, 1)")
         .bind(sid)
         .bind(w1)
@@ -248,10 +257,26 @@ async fn sequel_via_series_and_fallback() {
     assert_eq!(s, StatusCode::NOT_FOUND);
 
     // Cleanup
-    sqlx::query("DELETE FROM series_works WHERE series_id = $1").bind(sid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM series WHERE id = $1").bind(sid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM works WHERE id = $1 OR id = $2").bind(w1).bind(w2).execute(&db).await.ok();
-    sqlx::query("DELETE FROM fic_info WHERE id = 'seq-p1' OR id = 'seq-p2'").execute(&db).await.ok();
+    sqlx::query("DELETE FROM series_works WHERE series_id = $1")
+        .bind(sid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM series WHERE id = $1")
+        .bind(sid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM works WHERE id = $1 OR id = $2")
+        .bind(w1)
+        .bind(w2)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM fic_info WHERE id = 'seq-p1' OR id = 'seq-p2'")
+        .execute(&db)
+        .await
+        .ok();
 }
 
 #[tokio::test]
@@ -277,11 +302,7 @@ async fn related_via_shared_bookmarks() {
         .ok();
 
     // Both users bookmarked rel-main AND rel-a; only u1 bookmarked rel-b.
-    for (uid, other) in [
-        (id1, "rel-a"),
-        (id2, "rel-a"),
-        (id1, "rel-b"),
-    ] {
+    for (uid, other) in [(id1, "rel-a"), (id2, "rel-a"), (id1, "rel-b")] {
         sqlx::query(
             "INSERT INTO bookmarks (user_id, url_id) VALUES ($1, $2) ON CONFLICT (user_id, url_id) DO NOTHING",
         )
@@ -307,20 +328,40 @@ async fn related_via_shared_bookmarks() {
     assert_eq!(s, StatusCode::OK, "related: {b}");
     assert_eq!(b["err"], 0);
     let related = b["related"].as_array().unwrap();
-    assert!(related.iter().any(|r| r["url_id"] == "rel-a"), "rel-a present: {b}");
+    assert!(
+        related.iter().any(|r| r["url_id"] == "rel-a"),
+        "rel-a present: {b}"
+    );
     // rel-a has 2 shared bookmarkers → higher rank than rel-b (1).
     let ra = related.iter().find(|r| r["url_id"] == "rel-a").unwrap();
     let rb = related.iter().find(|r| r["url_id"] == "rel-b").unwrap();
-    assert!(ra["shared"].as_i64() >= rb["shared"].as_i64(), "rank order: {b}");
+    assert!(
+        ra["shared"].as_i64() >= rb["shared"].as_i64(),
+        "rank order: {b}"
+    );
 
     // Cleanup
-    sqlx::query("DELETE FROM bookmarks WHERE user_id = $1 OR user_id = $2").bind(id1).bind(id2).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
-    sqlx::query("DELETE FROM works WHERE canonical_author = 'Rel Author'").execute(&db).await.ok();
-    sqlx::query("DELETE FROM fic_info WHERE id IN ('rel-main','rel-a','rel-b')").execute(&db).await.ok();
+    sqlx::query("DELETE FROM bookmarks WHERE user_id = $1 OR user_id = $2")
+        .bind(id1)
+        .bind(id2)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM works WHERE canonical_author = 'Rel Author'")
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM fic_info WHERE id IN ('rel-main','rel-a','rel-b')")
+        .execute(&db)
+        .await
+        .ok();
 }
-
-
 
 fn auth_header(user_id: i32, username: &str, role: i16) -> String {
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
@@ -348,7 +389,9 @@ async fn get_json_auth(app: &Router, uri: &str, token: Option<&str>) -> (StatusC
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&bytes)
         .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
@@ -385,7 +428,11 @@ async fn sequential_anonymous_empty_and_logged_in_returns_transitions() {
     // Anonymous caller: sequential is gated on logged-in → empty list.
     let (_, a) = get_json(&app, "/api/reader/seqtrans-main/sequential").await;
     assert_eq!(a["err"], 0, "anonymous sequential: {a}");
-    assert_eq!(a["sequential"].as_array().unwrap().len(), 0, "anonymous sequential empty: {a}");
+    assert_eq!(
+        a["sequential"].as_array().unwrap().len(),
+        0,
+        "anonymous sequential empty: {a}"
+    );
 
     // Logged-in caller: transition surfaces, ranked by decayed weight desc.
     let user = seed_user(&db, "seqtrans_user").await;
@@ -398,7 +445,10 @@ async fn sequential_anonymous_empty_and_logged_in_returns_transitions() {
     assert_eq!(s, StatusCode::OK, "logged-in sequential: {b}");
     assert_eq!(b["err"], 0, "err: {b}");
     let seq = b["sequential"].as_array().unwrap();
-    assert!(seq.iter().any(|r| r["url_id"] == "seqtrans-tgt"), "target present: {b}");
+    assert!(
+        seq.iter().any(|r| r["url_id"] == "seqtrans-tgt"),
+        "target present: {b}"
+    );
     // Scores are positive and sorted desc (single pick here).
     let scores: Vec<f64> = seq.iter().filter_map(|r| r["score"].as_f64()).collect();
     assert!(scores.windows(2).all(|w| w[0] >= w[1]), "scores desc: {b}");
@@ -409,8 +459,17 @@ async fn sequential_anonymous_empty_and_logged_in_returns_transitions() {
         .execute(&db)
         .await
         .ok();
-    sqlx::query("DELETE FROM users WHERE username = $1").bind("seqtrans_user").execute(&db).await.ok();
-    sqlx::query("DELETE FROM works WHERE id = $1 OR id = $2").bind(w_main).bind(w_tgt).execute(&db).await.ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind("seqtrans_user")
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM works WHERE id = $1 OR id = $2")
+        .bind(w_main)
+        .bind(w_tgt)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM fic_info WHERE id IN ('seqtrans-main','seqtrans-tgt')")
         .execute(&db)
         .await
@@ -438,10 +497,11 @@ async fn next_up_aggregates_sequel_sequential_related_dedup() {
         .execute(&db)
         .await
         .ok();
-    let sid: i32 = sqlx::query_scalar("INSERT INTO series (name) VALUES ('NextUp Series') RETURNING id")
-        .fetch_one(&db)
-        .await
-        .expect("series insert");
+    let sid: i32 =
+        sqlx::query_scalar("INSERT INTO series (name) VALUES ('NextUp Series') RETURNING id")
+            .fetch_one(&db)
+            .await
+            .expect("series insert");
     sqlx::query("INSERT INTO series_works (series_id, work_id, position) VALUES ($1, $2, 1)")
         .bind(sid)
         .bind(w_main)
@@ -505,9 +565,15 @@ async fn next_up_aggregates_sequel_sequential_related_dedup() {
     assert_eq!(s, StatusCode::OK, "next-up anon: {b}");
     assert_eq!(b["err"], 0, "err: {b}");
     assert_eq!(b["sequel"]["url_id"], "nup-seq", "anon sequel: {b}");
-    assert!(b["sequential"].as_array().unwrap().is_empty(), "anon sequential empty: {b}");
+    assert!(
+        b["sequential"].as_array().unwrap().is_empty(),
+        "anon sequential empty: {b}"
+    );
     let related = b["related"].as_array().unwrap();
-    assert!(related.iter().any(|r| r["url_id"] == "nup-trans"), "anon related: {b}");
+    assert!(
+        related.iter().any(|r| r["url_id"] == "nup-trans"),
+        "anon related: {b}"
+    );
 
     // Authenticated Next Up: sequel > sequential > related and fully deduped.
     let (s, b) = get_json_auth(
@@ -527,25 +593,64 @@ async fn next_up_aggregates_sequel_sequential_related_dedup() {
 
     // Sequential appears (logged in) and is the decayed-weight ranked target.
     let seq = b["sequential"].as_array().unwrap();
-    assert!(seq.iter().any(|r| r["url_id"] == "nup-trans"), "auth sequential: {b}");
+    assert!(
+        seq.iter().any(|r| r["url_id"] == "nup-trans"),
+        "auth sequential: {b}"
+    );
 
     // Dedup: nup-trans must appear in next_up only ONCE (as sequential, not
     // also as related).
-    let trans_entries: Vec<&Value> = next_up.iter().filter(|i| i["url_id"] == "nup-trans").collect();
+    let trans_entries: Vec<&Value> = next_up
+        .iter()
+        .filter(|i| i["url_id"] == "nup-trans")
+        .collect();
     assert_eq!(trans_entries.len(), 1, "deduped to once: {b}");
-    assert_eq!(trans_entries[0]["source"], "sequential", "trans source: {b}");
-    assert!(trans_entries[0]["score"].as_f64().unwrap() > 0.0, "score present: {b}");
+    assert_eq!(
+        trans_entries[0]["source"], "sequential",
+        "trans source: {b}"
+    );
+    assert!(
+        trans_entries[0]["score"].as_f64().unwrap() > 0.0,
+        "score present: {b}"
+    );
 
     // Cleanup
-    sqlx::query("DELETE FROM bookmarks WHERE user_id = $1 OR user_id = $2").bind(id1).bind(id2).execute(&db).await.ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2").bind(u1).bind(u2).execute(&db).await.ok();
-    sqlx::query("DELETE FROM rec_transitions WHERE from_work = $1 OR to_work = $1").bind("nup-main").execute(&db).await.ok();
-    sqlx::query("DELETE FROM series_works WHERE series_id = $1").bind(sid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM series WHERE id = $1").bind(sid).execute(&db).await.ok();
-    sqlx::query("DELETE FROM works WHERE id = $1 OR id = $2 OR id = $3").bind(w_main).bind(w_seq).bind(w_trans).execute(&db).await.ok();
+    sqlx::query("DELETE FROM bookmarks WHERE user_id = $1 OR user_id = $2")
+        .bind(id1)
+        .bind(id2)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u1)
+        .bind(u2)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM rec_transitions WHERE from_work = $1 OR to_work = $1")
+        .bind("nup-main")
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM series_works WHERE series_id = $1")
+        .bind(sid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM series WHERE id = $1")
+        .bind(sid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM works WHERE id = $1 OR id = $2 OR id = $3")
+        .bind(w_main)
+        .bind(w_seq)
+        .bind(w_trans)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM fic_info WHERE id IN ('nup-main','nup-seq','nup-trans')")
         .execute(&db)
         .await
         .ok();
 }
-

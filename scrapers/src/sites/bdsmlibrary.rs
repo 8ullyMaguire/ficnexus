@@ -17,8 +17,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 
 pub struct BdsmLibraryScraper {
     adult_ok: AtomicBool,
@@ -58,15 +58,22 @@ impl SiteScraper for BdsmLibraryScraper {
             self.adult_ok.store(true, Ordering::Relaxed);
             Ok(())
         } else {
-            Err(ScrapeError::AuthRequired("bdsmlibrary: is_adult not set".into()))
+            Err(ScrapeError::AuthRequired(
+                "bdsmlibrary: is_adult not set".into(),
+            ))
         }
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         if !self.adult_ok.load(Ordering::Relaxed) {
             return Err(ScrapeError::AuthRequired("bdsmlibrary: adult gate".into()));
         }
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("bdsmlibrary: bad url".into()))?;
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("bdsmlibrary: bad url".into()))?;
         let html = http::fetch(client, url).await?;
 
         if html.contains("The story does not exist") {
@@ -134,7 +141,15 @@ impl SiteScraper for BdsmLibraryScraper {
                 }
             }
 
-            (title, author, author_url, author_local_id, desc, published, tags)
+            (
+                title,
+                author,
+                author_url,
+                author_local_id,
+                desc,
+                published,
+                tags,
+            )
         };
 
         if title.is_empty() {
@@ -142,14 +157,22 @@ impl SiteScraper for BdsmLibraryScraper {
         }
 
         // Chapters.
-        let chap_re = Regex::new(&format!(r"/stories/chapter\.php\?storyid={story_id}&chapterid=\d+$")).unwrap();
+        let chap_re = Regex::new(&format!(
+            r"/stories/chapter\.php\?storyid={story_id}&chapterid=\d+$"
+        ))
+        .unwrap();
         let mut chapters = 0i32;
         {
             let doc = Html::parse_document(&html);
             if let Ok(a_sel) = Selector::parse("a[href]") {
                 chapters = doc
                     .select(&a_sel)
-                    .filter(|a| a.value().attr("href").map(|h| chap_re.is_match(h)).unwrap_or(false))
+                    .filter(|a| {
+                        a.value()
+                            .attr("href")
+                            .map(|h| chap_re.is_match(h))
+                            .unwrap_or(false)
+                    })
                     .count() as i32;
             }
         }
@@ -184,14 +207,18 @@ impl SiteScraper for BdsmLibraryScraper {
         client: &reqwest::Client,
         meta: &FicMetadata,
     ) -> Result<Vec<Chapter>, ScrapeError> {
-        let story_id = Self::story_id(&meta.source).ok_or_else(|| ScrapeError::ParseError("bdsmlibrary: bad url".into()))?;
+        let story_id = Self::story_id(&meta.source)
+            .ok_or_else(|| ScrapeError::ParseError("bdsmlibrary: bad url".into()))?;
         let html = http::fetch(client, &meta.source).await?;
 
         let links: Vec<(String, String)> = {
             let doc = Html::parse_document(&html);
-            let sel = Selector::parse("a[href]")
-                .map_err(|e| ScrapeError::ParseError(e.to_string()))?;
-            let chap_re = Regex::new(&format!(r"/stories/chapter\.php\?storyid={story_id}&chapterid=\d+$")).unwrap();
+            let sel =
+                Selector::parse("a[href]").map_err(|e| ScrapeError::ParseError(e.to_string()))?;
+            let chap_re = Regex::new(&format!(
+                r"/stories/chapter\.php\?storyid={story_id}&chapterid=\d+$"
+            ))
+            .unwrap();
             doc.select(&sel)
                 .filter_map(|a| {
                     let href = a.value().attr("href")?;
@@ -276,7 +303,12 @@ mod tests {
 
     #[test]
     fn parses_story_id() {
-        assert_eq!(BdsmLibraryScraper::story_id("https://www.bdsmlibrary.com/stories/story.php?storyid=1234"), Some("1234".to_string()));
+        assert_eq!(
+            BdsmLibraryScraper::story_id(
+                "https://www.bdsmlibrary.com/stories/story.php?storyid=1234"
+            ),
+            Some("1234".to_string())
+        );
         assert_eq!(BdsmLibraryScraper::story_id("https://x.com/foo"), None);
     }
 
@@ -291,7 +323,11 @@ mod tests {
         let html = r#"<html><body><div class="storyblock"><p>Story text.</p></div></body></html>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("div.storyblock").unwrap();
-        let s = doc.select(&sel).next().map(|el| el.inner_html()).unwrap_or_default();
+        let s = doc
+            .select(&sel)
+            .next()
+            .map(|el| el.inner_html())
+            .unwrap_or_default();
         assert!(s.contains("Story text."));
     }
 }

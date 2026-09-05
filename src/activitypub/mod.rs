@@ -11,22 +11,30 @@
 //! Signatures: draft cavage + RFC 9421 style parsed from Signature / Signature-Input.
 //! No background delivery yet — outbox enqueues in ap_outbox + logs in ap_inbox_log.
 
-pub mod keys;
 pub mod actors;
-pub mod webfinger;
-pub mod signatures;
 pub mod inbox;
+pub mod keys;
 pub mod outbox;
+pub mod signatures;
+pub mod webfinger;
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use crate::server::AppState;
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde_json::json;
 use std::sync::Arc;
-use crate::server::AppState;
 
 /// Health probe for AP feature flag.
 pub async fn ap_status(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     if !state.config.activitypub_enabled {
-        return (StatusCode::NOT_FOUND, Json(json!({"err": -5, "msg": "activitypub disabled"})) ).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"err": -5, "msg": "activitypub disabled"})),
+        )
+            .into_response();
     }
-    (StatusCode::OK, Json(json!({"err": 0, "enabled": true, "domain": state.config.activitypub_domain.clone()}))).into_response()
+    (
+        StatusCode::OK,
+        Json(json!({"err": 0, "enabled": true, "domain": state.config.activitypub_domain.clone()})),
+    )
+        .into_response()
 }

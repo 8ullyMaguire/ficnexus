@@ -11,10 +11,10 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
-    body::Body,
-    http::{header, Request, StatusCode},
-    routing::get,
     Router,
+    body::Body,
+    http::{Request, StatusCode, header},
+    routing::get,
 };
 use tower::ServiceExt; // oneshot
 
@@ -49,8 +49,8 @@ async fn app() -> Router {
     let config = test_config();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -71,21 +71,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -105,14 +113,8 @@ async fn app() -> Router {
 
     Router::new()
         .route("/feed.xml", get(fichub::routes::rss::new_arrivals_feed))
-        .route(
-            "/feed/follows.xml",
-            get(fichub::routes::rss::follows_feed),
-        )
-        .route(
-            "/feed/works/{url_id}",
-            get(fichub::routes::rss::work_feed),
-        )
+        .route("/feed/follows.xml", get(fichub::routes::rss::follows_feed))
+        .route("/feed/works/{url_id}", get(fichub::routes::rss::work_feed))
         .with_state(state)
 }
 
@@ -288,7 +290,14 @@ async fn new_arrivals_feed_renders_atom() {
     let db = pool().await;
     cleanup(&db).await;
     seed_user(&db, USERNAME).await;
-    seed_work(&db, "rss-new-1", &format!("{TITLE_PREFIX} New One"), "Rss Author", 3).await;
+    seed_work(
+        &db,
+        "rss-new-1",
+        &format!("{TITLE_PREFIX} New One"),
+        "Rss Author",
+        3,
+    )
+    .await;
 
     let app = app().await;
     let (status, ct, body) = get_raw(&app, "/feed.xml").await;
@@ -298,7 +307,11 @@ async fn new_arrivals_feed_renders_atom() {
         ct.starts_with("application/atom+xml"),
         "content-type must be atom+xml, got: {ct}"
     );
-    assert!(body.starts_with("<?xml"), "must be XML: {}", &body[..body.len().min(60)]);
+    assert!(
+        body.starts_with("<?xml"),
+        "must be XML: {}",
+        &body[..body.len().min(60)]
+    );
     assert!(body.contains("<feed xmlns=\"http://www.w3.org/2005/Atom\""));
     assert!(body.contains("rel=\"self\""));
     assert!(body.contains("/feed.xml"));
@@ -324,7 +337,14 @@ async fn per_fic_feed_renders_single_entry() {
     let db = pool().await;
     cleanup(&db).await;
     seed_user(&db, USERNAME).await;
-    seed_work(&db, "rss-perfic-1", &format!("{TITLE_PREFIX} Solo"), "Rss Author", 5).await;
+    seed_work(
+        &db,
+        "rss-perfic-1",
+        &format!("{TITLE_PREFIX} Solo"),
+        "Rss Author",
+        5,
+    )
+    .await;
 
     let app = app().await;
     let (status, ct, body) = get_raw(&app, "/feed/works/rss-perfic-1.xml").await;
@@ -355,7 +375,11 @@ async fn per_fic_feed_unknown_fic_404() {
     let app = app().await;
     let (status, _ct, body) = get_raw(&app, "/feed/works/does-not-exist-xyz.xml").await;
 
-    assert_eq!(status, StatusCode::NOT_FOUND, "expected 404, got {status}: {body}");
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "expected 404, got {status}: {body}"
+    );
     assert!(body.contains("\"err\""));
 }
 
@@ -370,12 +394,19 @@ async fn follows_feed_requires_token() {
     let app = app().await;
     let (status, _ct, body) = get_raw(&app, "/feed/follows.xml").await;
 
-    assert_eq!(status, StatusCode::UNAUTHORIZED, "expected 401, got {status}: {body}");
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "expected 401, got {status}: {body}"
+    );
     assert!(
         body.contains("401"),
         "auth-required returns err 401: {body}"
     );
-    assert!(!body.starts_with("<?xml"), "must NOT be an XML feed: {body}");
+    assert!(
+        !body.starts_with("<?xml"),
+        "must NOT be an XML feed: {body}"
+    );
 }
 
 /// /feed/follows.xml with an invalid token → 401 as well.
@@ -389,7 +420,11 @@ async fn follows_feed_rejects_bad_token() {
     let app = app().await;
     let (status, _ct, body) = get_raw(&app, "/feed/follows.xml?token=not-a-real-token").await;
 
-    assert_eq!(status, StatusCode::UNAUTHORIZED, "expected 401, got {status}: {body}");
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "expected 401, got {status}: {body}"
+    );
     assert!(body.contains("401"));
 }
 

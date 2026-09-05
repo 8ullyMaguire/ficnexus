@@ -75,11 +75,19 @@ pub fn current_version(config: &Config, url_id: &str) -> i32 {
 }
 
 /// Save raw HTML for a fic at the given version (atomic tmp+rename).
-pub fn save_html(config: &Config, url_id: &str, html: &str, version: i32) -> std::io::Result<PathBuf> {
+pub fn save_html(
+    config: &Config,
+    url_id: &str,
+    html: &str,
+    version: i32,
+) -> std::io::Result<PathBuf> {
     let dir = shard_dir(&config.body_cache_dir, url_id);
     std::fs::create_dir_all(&dir)?;
     let path = html_path(&config.body_cache_dir, url_id, version);
-    let tmp = dir.join(format!("{url_id}.v{version}.html.tmp.{}", std::process::id()));
+    let tmp = dir.join(format!(
+        "{url_id}.v{version}.html.tmp.{}",
+        std::process::id()
+    ));
     std::fs::write(&tmp, html)?;
     std::fs::rename(&tmp, &path)?;
     Ok(path)
@@ -101,7 +109,13 @@ pub fn load_html(config: &Config, url_id: &str) -> Option<String> {
 }
 
 /// Save (or overwrite) the extracted chapters for a fic at a version.
-pub fn save_body(config: &Config, url_id: &str, chapters: &[Chapter], source: Option<String>, version: i32) -> std::io::Result<PathBuf> {
+pub fn save_body(
+    config: &Config,
+    url_id: &str,
+    chapters: &[Chapter],
+    source: Option<String>,
+    version: i32,
+) -> std::io::Result<PathBuf> {
     let dir = shard_dir(&config.body_cache_dir, url_id);
     std::fs::create_dir_all(&dir)?;
     let blob = BodyBlob {
@@ -111,7 +125,10 @@ pub fn save_body(config: &Config, url_id: &str, chapters: &[Chapter], source: Op
         source,
     };
     let path = json_path(&config.body_cache_dir, url_id, version);
-    let tmp = dir.join(format!("{url_id}.v{version}.json.tmp.{}", std::process::id()));
+    let tmp = dir.join(format!(
+        "{url_id}.v{version}.json.tmp.{}",
+        std::process::id()
+    ));
     let bytes = serde_json::to_vec_pretty(&blob).map_err(std::io::Error::other)?;
     std::fs::write(&tmp, bytes)?;
     std::fs::rename(&tmp, &path)?;
@@ -171,7 +188,12 @@ pub fn delete_body(config: &Config, url_id: &str) -> std::io::Result<()> {
 
 /// True when a body blob exists for the fic.
 pub fn has_body(config: &Config, url_id: &str) -> bool {
-    json_path(&config.body_cache_dir, url_id, current_version(config, url_id)).exists()
+    json_path(
+        &config.body_cache_dir,
+        url_id,
+        current_version(config, url_id),
+    )
+    .exists()
 }
 
 /// The directory containing body blobs.
@@ -275,10 +297,8 @@ mod tests {
         static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut c = Config::from_env();
-        let dir = std::env::temp_dir().join(format!(
-            "fichub-body-cache-test-{}-{n}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("fichub-body-cache-test-{}-{n}", std::process::id()));
         c.body_cache_dir = dir.clone();
         let _ = std::fs::remove_dir_all(&dir);
         c
@@ -288,7 +308,11 @@ mod tests {
     fn shard_path_is_two_level() {
         let c = tmp_config();
         let p = html_path(&c.body_cache_dir, "3fa2c891b04e", 1);
-        let rel = p.strip_prefix(&c.body_cache_dir).unwrap().to_string_lossy().to_string();
+        let rel = p
+            .strip_prefix(&c.body_cache_dir)
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         assert_eq!(rel, "3f/a2/3fa2c891b04e.v1.html");
     }
 
@@ -296,7 +320,11 @@ mod tests {
     fn short_url_id_falls_back() {
         let c = tmp_config();
         let p = html_path(&c.body_cache_dir, "ab", 1);
-        let rel = p.strip_prefix(&c.body_cache_dir).unwrap().to_string_lossy().to_string();
+        let rel = p
+            .strip_prefix(&c.body_cache_dir)
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         assert_eq!(rel, "_/_/ab.v1.html");
     }
 
@@ -304,13 +332,31 @@ mod tests {
     fn save_load_roundtrip() {
         let c = tmp_config();
         let chapters = vec![
-            Chapter { chapter_id: 1, title: "One".into(), content: "<p>body</p>".into() },
-            Chapter { chapter_id: 2, title: "Two".into(), content: "<p>body2</p>".into() },
+            Chapter {
+                chapter_id: 1,
+                title: "One".into(),
+                content: "<p>body</p>".into(),
+            },
+            Chapter {
+                chapter_id: 2,
+                title: "Two".into(),
+                content: "<p>body2</p>".into(),
+            },
         ];
         save_html(&c, "xenforo_50062326", "<html><body>raw</body></html>", 1).unwrap();
-        let path = save_body(&c, "xenforo_50062326", &chapters, Some("https://example.com".to_string()), 1).unwrap();
+        let path = save_body(
+            &c,
+            "xenforo_50062326",
+            &chapters,
+            Some("https://example.com".to_string()),
+            1,
+        )
+        .unwrap();
         assert!(path.exists());
-        assert_eq!(load_html(&c, "xenforo_50062326").as_deref(), Some("<html><body>raw</body></html>"));
+        assert_eq!(
+            load_html(&c, "xenforo_50062326").as_deref(),
+            Some("<html><body>raw</body></html>")
+        );
         let loaded = load_body(&c, "xenforo_50062326").unwrap();
         assert_eq!(loaded.len(), 2);
         assert_eq!(loaded[0].content, "<p>body</p>");
@@ -330,7 +376,10 @@ mod tests {
         save_html(&c, "aaaabbbb", "<html>v2</html>", 2).unwrap();
         // old v1 should be gone
         assert!(!html_path(&c.body_cache_dir, "aaaabbbb", 1).exists());
-        assert_eq!(load_html(&c, "aaaabbbb").as_deref(), Some("<html>v2</html>"));
+        assert_eq!(
+            load_html(&c, "aaaabbbb").as_deref(),
+            Some("<html>v2</html>")
+        );
     }
 
     #[test]

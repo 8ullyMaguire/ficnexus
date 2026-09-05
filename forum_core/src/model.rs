@@ -229,7 +229,10 @@ mod tests {
 
     #[test]
     fn status_serde_is_lowercase() {
-        assert_eq!(serde_json::to_string(&Status::Locked).unwrap(), "\"locked\"");
+        assert_eq!(
+            serde_json::to_string(&Status::Locked).unwrap(),
+            "\"locked\""
+        );
         let back: Status = serde_json::from_str("\"archived\"").unwrap();
         assert_eq!(back, Status::Archived);
     }
@@ -290,8 +293,7 @@ mod tests {
             is_hidden: false,
             created_at: None,
         };
-        let back: Post<i32> =
-            serde_json::from_str(&serde_json::to_string(&post).unwrap()).unwrap();
+        let back: Post<i32> = serde_json::from_str(&serde_json::to_string(&post).unwrap()).unwrap();
         assert_eq!(back.payload, serde_json::Value::Null);
     }
 

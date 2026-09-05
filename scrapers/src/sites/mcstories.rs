@@ -17,8 +17,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 
 pub struct MCStoriesScraper {
     adult_ok: AtomicBool,
@@ -43,8 +43,10 @@ impl MCStoriesScraper {
 impl SiteScraper for MCStoriesScraper {
     fn can_handle(&self, url: &str) -> bool {
         let host_ok = url.contains("mcstories.com/");
-        let not_index = !url.contains("/Titles/") && !url.contains("/Authors/")
-            && !url.contains("/Tags/") && !url.contains("/ReadersPicks/");
+        let not_index = !url.contains("/Titles/")
+            && !url.contains("/Authors/")
+            && !url.contains("/Tags/")
+            && !url.contains("/ReadersPicks/");
         host_ok && not_index
     }
 
@@ -61,15 +63,22 @@ impl SiteScraper for MCStoriesScraper {
             self.adult_ok.store(true, Ordering::Relaxed);
             Ok(())
         } else {
-            Err(ScrapeError::AuthRequired("mcstories: is_adult not set".into()))
+            Err(ScrapeError::AuthRequired(
+                "mcstories: is_adult not set".into(),
+            ))
         }
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         if !self.adult_ok.load(Ordering::Relaxed) {
             return Err(ScrapeError::AuthRequired("mcstories: adult gate".into()));
         }
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("mcstories: bad url".into()))?;
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("mcstories: bad url".into()))?;
         // Normalize to index.html.
         let index_url = if url.ends_with("/index.html") {
             url.to_string()
@@ -78,7 +87,10 @@ impl SiteScraper for MCStoriesScraper {
             let last_seg = base.rsplit('/').next().unwrap_or("");
             if last_seg.contains(".html") {
                 // StoryTitle1.html → index.
-                format!("{}/index.html", base.trim_end_matches(last_seg).trim_end_matches('/'))
+                format!(
+                    "{}/index.html",
+                    base.trim_end_matches(last_seg).trim_end_matches('/')
+                )
             } else {
                 format!("{}/index.html", base)
             }
@@ -301,7 +313,10 @@ mod tests {
 
     #[test]
     fn parses_story_id() {
-        assert_eq!(MCStoriesScraper::story_id("https://mcstories.com/StoryTitle/index.html"), Some("StoryTitle".to_string()));
+        assert_eq!(
+            MCStoriesScraper::story_id("https://mcstories.com/StoryTitle/index.html"),
+            Some("StoryTitle".to_string())
+        );
         assert_eq!(MCStoriesScraper::story_id("https://x.com/foo"), None);
     }
 
@@ -314,10 +329,15 @@ mod tests {
 
     #[test]
     fn extracts_chapter_body() {
-        let html = r#"<html><body><article id="mcstories"><p>Story text.</p></article></body></html>"#;
+        let html =
+            r#"<html><body><article id="mcstories"><p>Story text.</p></article></body></html>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("article#mcstories").unwrap();
-        let s = doc.select(&sel).next().map(|el| el.inner_html()).unwrap_or_default();
+        let s = doc
+            .select(&sel)
+            .next()
+            .map(|el| el.inner_html())
+            .unwrap_or_default();
         assert!(s.contains("Story text."));
     }
 }

@@ -12,12 +12,12 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
-    body::Body,
-    http::{header, Request, StatusCode},
-    routing::{get, patch, post, delete},
     Router,
+    body::Body,
+    http::{Request, StatusCode, header},
+    routing::{delete, get, patch, post},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -52,8 +52,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -74,21 +74,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -107,13 +115,31 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/lists", post(fichub::routes::lists::create_list_handler))
+        .route(
+            "/api/lists",
+            post(fichub::routes::lists::create_list_handler),
+        )
         .route("/api/lists", get(fichub::routes::lists::list_lists_handler))
-        .route("/api/lists/{id}", get(fichub::routes::lists::get_list_handler))
-        .route("/api/lists/{id}", patch(fichub::routes::lists::update_list_handler))
-        .route("/api/lists/{id}", delete(fichub::routes::lists::delete_list_handler))
-        .route("/api/lists/{id}/items", post(fichub::routes::lists::add_item_handler))
-        .route("/api/lists/{id}/items/{work_id}", delete(fichub::routes::lists::remove_item_handler))
+        .route(
+            "/api/lists/{id}",
+            get(fichub::routes::lists::get_list_handler),
+        )
+        .route(
+            "/api/lists/{id}",
+            patch(fichub::routes::lists::update_list_handler),
+        )
+        .route(
+            "/api/lists/{id}",
+            delete(fichub::routes::lists::delete_list_handler),
+        )
+        .route(
+            "/api/lists/{id}/items",
+            post(fichub::routes::lists::add_item_handler),
+        )
+        .route(
+            "/api/lists/{id}/items/{work_id}",
+            delete(fichub::routes::lists::remove_item_handler),
+        )
         .with_state(state)
 }
 
@@ -151,12 +177,7 @@ async fn seed_user(pool: &sqlx::PgPool, username: &str) -> i32 {
 
 /// Seed a work + fic_info pair (title prefixed with TITLE_PREFIX); returns
 /// (work_id, url_id). Idempotent like feedback_api::seed_work.
-async fn seed_work(
-    pool: &sqlx::PgPool,
-    url_id: &str,
-    title: &str,
-    author: &str,
-) -> (i32, String) {
+async fn seed_work(pool: &sqlx::PgPool, url_id: &str, title: &str, author: &str) -> (i32, String) {
     sqlx::query(
         r#"INSERT INTO fic_info (
             id, title, author, author_url, author_local_id,
@@ -262,8 +283,13 @@ async fn get_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCode, 
     let req = builder.body(Body::empty()).unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 async fn send_json(
@@ -283,8 +309,13 @@ async fn send_json(
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 async fn post_json(
@@ -318,7 +349,13 @@ async fn lists_crud_roundtrip() {
     let db = pool().await;
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME).await;
-    let (work_a, _) = seed_work(&db, "lists-crud-a", &format!("{TITLE_PREFIX} Crud A"), "Author A").await;
+    let (work_a, _) = seed_work(
+        &db,
+        "lists-crud-a",
+        &format!("{TITLE_PREFIX} Crud A"),
+        "Author A",
+    )
+    .await;
     let app = app().await;
     let token = auth_header(user_id, 0, USERNAME);
 
@@ -333,7 +370,8 @@ async fn lists_crud_roundtrip() {
         "/api/lists",
         json!({ "title": "My favorites", "description": "The good stuff", "is_public": false }),
         Some(&token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "create failed: {body}");
     assert_eq!(body["err"], 0);
     let list_id = body["list"]["id"].as_i64().expect("list id") as i32;
@@ -342,15 +380,25 @@ async fn lists_crud_roundtrip() {
     assert_eq!(body["list"]["item_count"], 0);
 
     // 3. Empty title rejected
-    let (status, body) = post_json(&app, "/api/lists", json!({ "title": "   " }), Some(&token)).await;
+    let (status, body) =
+        post_json(&app, "/api/lists", json!({ "title": "   " }), Some(&token)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body["msg"].as_str().unwrap_or("").contains("cannot be empty"), "msg: {body}");
+    assert!(
+        body["msg"]
+            .as_str()
+            .unwrap_or("")
+            .contains("cannot be empty"),
+        "msg: {body}"
+    );
 
     // 4. List appears in GET /api/lists with item count
     let (status, body) = get_json(&app, "/api/lists", Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
     let lists = body["lists"].as_array().expect("lists array");
-    let mine = lists.iter().find(|l| l["id"].as_i64() == Some(list_id as i64)).expect("list present");
+    let mine = lists
+        .iter()
+        .find(|l| l["id"].as_i64() == Some(list_id as i64))
+        .expect("list present");
     assert_eq!(mine["item_count"], 0);
 
     // 5. Add an item, then verify ordering via GET /api/lists/{id}
@@ -359,7 +407,8 @@ async fn lists_crud_roundtrip() {
         &format!("/api/lists/{list_id}/items"),
         json!({ "work_id": work_a, "blurb": "First read" }),
         Some(&token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "add item: {body}");
     assert_eq!(body["position"], 1);
 
@@ -380,7 +429,8 @@ async fn lists_crud_roundtrip() {
         &format!("/api/lists/{list_id}"),
         json!({ "title": "Renamed list", "is_public": true }),
         Some(&token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "patch: {body}");
     assert_eq!(body["err"], 0);
 
@@ -392,7 +442,8 @@ async fn lists_crud_roundtrip() {
         &format!("/api/lists/{list_id}"),
         json!({ "title": "Hijack" }),
         Some(&other_token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND, "non-owner patch must 404");
     let (status, _) = delete_json(&app, &format!("/api/lists/{list_id}"), Some(&other_token)).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "non-owner delete must 404");
@@ -404,9 +455,19 @@ async fn lists_crud_roundtrip() {
 
     // 9. Deleted list no longer listed and owner GET 404s
     let (_, body) = get_json(&app, "/api/lists", Some(&token)).await;
-    assert!(!body["lists"].as_array().unwrap().iter().any(|l| l["id"].as_i64() == Some(list_id as i64)));
+    assert!(
+        !body["lists"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l["id"].as_i64() == Some(list_id as i64))
+    );
     let (status, _) = get_json(&app, &format!("/api/lists/{list_id}"), Some(&token)).await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "deleted list must 404 for owner");
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "deleted list must 404 for owner"
+    );
 }
 
 #[tokio::test]
@@ -416,13 +477,37 @@ async fn lists_item_ordering_and_duplicates() {
     let db = pool().await;
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME).await;
-    let (work_a, _) = seed_work(&db, "lists-ord-a", &format!("{TITLE_PREFIX} Ord A"), "Author Ord").await;
-    let (work_b, _) = seed_work(&db, "lists-ord-b", &format!("{TITLE_PREFIX} Ord B"), "Author Ord").await;
-    let (work_c, _) = seed_work(&db, "lists-ord-c", &format!("{TITLE_PREFIX} Ord C"), "Author Ord").await;
+    let (work_a, _) = seed_work(
+        &db,
+        "lists-ord-a",
+        &format!("{TITLE_PREFIX} Ord A"),
+        "Author Ord",
+    )
+    .await;
+    let (work_b, _) = seed_work(
+        &db,
+        "lists-ord-b",
+        &format!("{TITLE_PREFIX} Ord B"),
+        "Author Ord",
+    )
+    .await;
+    let (work_c, _) = seed_work(
+        &db,
+        "lists-ord-c",
+        &format!("{TITLE_PREFIX} Ord C"),
+        "Author Ord",
+    )
+    .await;
     let app = app().await;
     let token = auth_header(user_id, 0, USERNAME);
 
-    let (_, body) = post_json(&app, "/api/lists", json!({ "title": "Ordered" }), Some(&token)).await;
+    let (_, body) = post_json(
+        &app,
+        "/api/lists",
+        json!({ "title": "Ordered" }),
+        Some(&token),
+    )
+    .await;
     let list_id = body["list"]["id"].as_i64().expect("list id") as i32;
 
     // Append three works in order A, B, C.
@@ -432,7 +517,8 @@ async fn lists_item_ordering_and_duplicates() {
             &format!("/api/lists/{list_id}/items"),
             json!({ "work_id": work, "blurb": blurb }),
             Some(&token),
-        ).await;
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "add {blurb}: {body}");
     }
 
@@ -440,8 +526,15 @@ async fn lists_item_ordering_and_duplicates() {
     let (status, body) = get_json(&app, &format!("/api/lists/{list_id}"), Some(&token)).await;
     assert_eq!(status, StatusCode::OK);
     let items = body["items"].as_array().expect("items");
-    let positions: Vec<i64> = items.iter().map(|i| i["position"].as_i64().unwrap()).collect();
-    assert_eq!(positions, vec![1, 2, 3], "positions in insertion order: {items:?}");
+    let positions: Vec<i64> = items
+        .iter()
+        .map(|i| i["position"].as_i64().unwrap())
+        .collect();
+    assert_eq!(
+        positions,
+        vec![1, 2, 3],
+        "positions in insertion order: {items:?}"
+    );
     assert_eq!(items[0]["work_id"].as_i64(), Some(work_a as i64));
     assert_eq!(items[2]["work_id"].as_i64(), Some(work_c as i64));
 
@@ -451,16 +544,25 @@ async fn lists_item_ordering_and_duplicates() {
         &format!("/api/lists/{list_id}/items"),
         json!({ "work_id": work_b }),
         Some(&token),
-    ).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "duplicate must be rejected: {body}");
-    assert!(body["msg"].as_str().unwrap_or("").contains("already"), "msg: {body}");
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "duplicate must be rejected: {body}"
+    );
+    assert!(
+        body["msg"].as_str().unwrap_or("").contains("already"),
+        "msg: {body}"
+    );
 
     // Removing the middle item keeps the rest in order.
     let (status, body) = delete_json(
         &app,
         &format!("/api/lists/{list_id}/items/{work_b}"),
         Some(&token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "remove: {body}");
     assert_eq!(body["removed"], true);
 
@@ -475,7 +577,8 @@ async fn lists_item_ordering_and_duplicates() {
         &app,
         &format!("/api/lists/{list_id}/items/{work_b}"),
         Some(&token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     // Adding a non-existent work 404s.
@@ -484,7 +587,8 @@ async fn lists_item_ordering_and_duplicates() {
         &format!("/api/lists/{list_id}/items"),
         json!({ "work_id": 999_999_999 }),
         Some(&token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
@@ -496,13 +600,25 @@ async fn lists_public_shared_view() {
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME).await;
     let other_id = seed_user(&db, OTHER_USERNAME).await;
-    let (work_a, _) = seed_work(&db, "lists-pub-a", &format!("{TITLE_PREFIX} Pub A"), "Author Pub").await;
+    let (work_a, _) = seed_work(
+        &db,
+        "lists-pub-a",
+        &format!("{TITLE_PREFIX} Pub A"),
+        "Author Pub",
+    )
+    .await;
     let app = app().await;
     let token = auth_header(user_id, 0, USERNAME);
     let other_token = auth_header(other_id, 0, OTHER_USERNAME);
 
     // Private list by default.
-    let (_, body) = post_json(&app, "/api/lists", json!({ "title": "Secret stash" }), Some(&token)).await;
+    let (_, body) = post_json(
+        &app,
+        "/api/lists",
+        json!({ "title": "Secret stash" }),
+        Some(&token),
+    )
+    .await;
     let private_id = body["list"]["id"].as_i64().expect("list id") as i32;
 
     // Public list.
@@ -511,14 +627,16 @@ async fn lists_public_shared_view() {
         "/api/lists",
         json!({ "title": "Shared picks", "is_public": true }),
         Some(&token),
-    ).await;
+    )
+    .await;
     let public_id = body["list"]["id"].as_i64().expect("list id") as i32;
     post_json(
         &app,
         &format!("/api/lists/{public_id}/items"),
         json!({ "work_id": work_a, "blurb": "for everyone" }),
         Some(&token),
-    ).await;
+    )
+    .await;
 
     // Anonymous: public list visible, private 404.
     let (status, body) = get_json(&app, &format!("/api/lists/{public_id}"), None).await;
@@ -529,18 +647,29 @@ async fn lists_public_shared_view() {
     assert_eq!(status, StatusCode::NOT_FOUND, "anon private must 404");
 
     // Another logged-in user: public visible, private 404, cannot mutate.
-    let (status, body) = get_json(&app, &format!("/api/lists/{public_id}"), Some(&other_token)).await;
+    let (status, body) =
+        get_json(&app, &format!("/api/lists/{public_id}"), Some(&other_token)).await;
     assert_eq!(status, StatusCode::OK, "other user public view: {body}");
     assert_eq!(body["is_owner"], false);
-    let (status, _) = get_json(&app, &format!("/api/lists/{private_id}"), Some(&other_token)).await;
+    let (status, _) = get_json(
+        &app,
+        &format!("/api/lists/{private_id}"),
+        Some(&other_token),
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND, "other user private must 404");
     let (status, _) = post_json(
         &app,
         &format!("/api/lists/{public_id}/items"),
         json!({ "work_id": work_a }),
         Some(&other_token),
-    ).await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "non-owner cannot add items to someone else's list");
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "non-owner cannot add items to someone else's list"
+    );
 
     // Owner can still see the private list and its items.
     let (status, body) = get_json(&app, &format!("/api/lists/{private_id}"), Some(&token)).await;
@@ -556,7 +685,13 @@ async fn lists_curator_can_remove_and_delete() {
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME).await;
     let curator_id = seed_user(&db, CURATOR_USERNAME).await;
-    let (work_a, _) = seed_work(&db, "lists-cur-a", &format!("{TITLE_PREFIX} Cur A"), "Author Cur").await;
+    let (work_a, _) = seed_work(
+        &db,
+        "lists-cur-a",
+        &format!("{TITLE_PREFIX} Cur A"),
+        "Author Cur",
+    )
+    .await;
     let app = app().await;
     let token = auth_header(user_id, 0, USERNAME);
     let curator_token = auth_header(curator_id, 5, CURATOR_USERNAME);
@@ -566,23 +701,32 @@ async fn lists_curator_can_remove_and_delete() {
         "/api/lists",
         json!({ "title": "Curated", "is_public": true }),
         Some(&token),
-    ).await;
+    )
+    .await;
     let list_id = body["list"]["id"].as_i64().expect("list id") as i32;
     post_json(
         &app,
         &format!("/api/lists/{list_id}/items"),
         json!({ "work_id": work_a }),
         Some(&token),
-    ).await;
+    )
+    .await;
 
     // Curator (role >= 5) may add items.
-    let (work_b, _) = seed_work(&db, "lists-cur-b", &format!("{TITLE_PREFIX} Cur B"), "Author Cur").await;
+    let (work_b, _) = seed_work(
+        &db,
+        "lists-cur-b",
+        &format!("{TITLE_PREFIX} Cur B"),
+        "Author Cur",
+    )
+    .await;
     let (status, body) = post_json(
         &app,
         &format!("/api/lists/{list_id}/items"),
         json!({ "work_id": work_b }),
         Some(&curator_token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "curator add: {body}");
 
     // Curator may remove items.
@@ -590,12 +734,14 @@ async fn lists_curator_can_remove_and_delete() {
         &app,
         &format!("/api/lists/{list_id}/items/{work_b}"),
         Some(&curator_token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "curator remove: {body}");
     assert_eq!(body["removed"], true);
 
     // Curator may soft-delete the list.
-    let (status, body) = delete_json(&app, &format!("/api/lists/{list_id}"), Some(&curator_token)).await;
+    let (status, body) =
+        delete_json(&app, &format!("/api/lists/{list_id}"), Some(&curator_token)).await;
     assert_eq!(status, StatusCode::OK, "curator delete: {body}");
     assert_eq!(body["removed"], true);
 
@@ -611,27 +757,52 @@ async fn lists_auth_gates() {
     let db = pool().await;
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME).await;
-    let (work_a, _) = seed_work(&db, "lists-auth-a", &format!("{TITLE_PREFIX} Auth A"), "Author Auth").await;
+    let (work_a, _) = seed_work(
+        &db,
+        "lists-auth-a",
+        &format!("{TITLE_PREFIX} Auth A"),
+        "Author Auth",
+    )
+    .await;
     let app = app().await;
     let token = auth_header(user_id, 0, USERNAME);
 
-    let (_, body) = post_json(&app, "/api/lists", json!({ "title": "Gated" }), Some(&token)).await;
+    let (_, body) = post_json(
+        &app,
+        "/api/lists",
+        json!({ "title": "Gated" }),
+        Some(&token),
+    )
+    .await;
     let list_id = body["list"]["id"].as_i64().expect("list id") as i32;
 
     // Anonymous: list-mine, patch, delete, add/remove item all rejected 401.
     let (status, body) = get_json(&app, "/api/lists", None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["err"], 401);
-    let (status, body) = patch_json(&app, &format!("/api/lists/{list_id}"), json!({ "title": "x" }), None).await;
+    let (status, body) = patch_json(
+        &app,
+        &format!("/api/lists/{list_id}"),
+        json!({ "title": "x" }),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["err"], 401);
     let (status, body) = delete_json(&app, &format!("/api/lists/{list_id}"), None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["err"], 401);
-    let (status, body) = post_json(&app, &format!("/api/lists/{list_id}/items"), json!({ "work_id": work_a }), None).await;
+    let (status, body) = post_json(
+        &app,
+        &format!("/api/lists/{list_id}/items"),
+        json!({ "work_id": work_a }),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["err"], 401);
-    let (status, body) = delete_json(&app, &format!("/api/lists/{list_id}/items/{work_a}"), None).await;
+    let (status, body) =
+        delete_json(&app, &format!("/api/lists/{list_id}/items/{work_a}"), None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(body["err"], 401);
 
@@ -641,6 +812,7 @@ async fn lists_auth_gates() {
         &format!("/api/lists/{list_id}/items"),
         json!({ "work_id": 999_999_999 }),
         Some(&token),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }

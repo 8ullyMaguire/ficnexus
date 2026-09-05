@@ -16,11 +16,11 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Query, State},
     Json,
+    extract::{Query, State},
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::heal::{agent, classifier};
@@ -83,9 +83,10 @@ pub async fn heal_handler(
     }
 
     let window = chrono::Duration::hours(24);
-    let failures = crate::heal::store::recent_failures(&state.db, domain, chrono::Utc::now() - window)
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+    let failures =
+        crate::heal::store::recent_failures(&state.db, domain, chrono::Utc::now() - window)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
     let should_heal = classifier::should_heal(&failures, 60);
 
     // ── Agent diagnose (single call, diagnose-only) ─────────────────
@@ -125,7 +126,8 @@ pub async fn heal_handler(
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
 
-        let reply = agent::diagnose_remote(&state.http_client, cfg, &system_prompt, &user_prompt).await;
+        let reply =
+            agent::diagnose_remote(&state.http_client, cfg, &system_prompt, &user_prompt).await;
         match reply {
             Ok(text) => {
                 let _ = crate::heal::store::update_agent_run(
@@ -162,21 +164,23 @@ pub async fn heal_handler(
     };
 
     agent_response["should_heal"] = json!(should_heal);
-    agent_response["failures"] = json!(failures
-        .iter()
-        .take(25)
-        .map(|f| {
-            json!({
-                "id": f.id,
-                "url": f.url,
-                "url_id": f.url_id,
-                "error_kind": f.error_kind,
-                "message": f.message,
-                "fingerprint": f.fingerprint,
-                "created_at": f.created_at.to_rfc3339(),
+    agent_response["failures"] = json!(
+        failures
+            .iter()
+            .take(25)
+            .map(|f| {
+                json!({
+                    "id": f.id,
+                    "url": f.url,
+                    "url_id": f.url_id,
+                    "error_kind": f.error_kind,
+                    "message": f.message,
+                    "fingerprint": f.fingerprint,
+                    "created_at": f.created_at.to_rfc3339(),
+                })
             })
-        })
-        .collect::<Vec<_>>());
+            .collect::<Vec<_>>()
+    );
     agent_response["plan"] = json!(format!(
         "diagnose-only: {} failures, class {}",
         failures.len(),
@@ -275,12 +279,11 @@ pub async fn replay_pending_handler(
         let scraper = state.scraper_registry.find_specific_or_fff(&row.url);
         let outcome = match scraper {
             None => {
-                let _ = sqlx::query(
-                    "UPDATE pending_exports SET attempts = attempts + 1 WHERE id = $1",
-                )
-                .bind(row.id)
-                .execute(&state.db)
-                .await;
+                let _ =
+                    sqlx::query("UPDATE pending_exports SET attempts = attempts + 1 WHERE id = $1")
+                        .bind(row.id)
+                        .execute(&state.db)
+                        .await;
                 "pending"
             }
             Some(s) => {

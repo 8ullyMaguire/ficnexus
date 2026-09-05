@@ -11,13 +11,13 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     extract::connect_info::MockConnectInfo,
     http::{Request, StatusCode},
     routing::{get, post},
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -58,8 +58,8 @@ async fn app() -> Router {
     let config = test_config();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -87,17 +87,22 @@ async fn app() -> Router {
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -120,16 +125,24 @@ async fn app() -> Router {
         .route("/api/tags/vote", post(fichub::tags::routes::vote_tag))
         .route("/api/tags/flag", post(fichub::tags::routes::flag_tag))
         .route("/api/tags", get(fichub::tags::routes::get_tags))
-        .route("/api/tags/resolve", get(fichub::tags::routes::resolve_tag_handler))
+        .route(
+            "/api/tags/resolve",
+            get(fichub::tags::routes::resolve_tag_handler),
+        )
         .route("/api/tags/search", get(fichub::tags::routes::search_tags))
-        .route("/api/tags/autocomplete", get(fichub::tags::routes::tag_autocomplete))
+        .route(
+            "/api/tags/autocomplete",
+            get(fichub::tags::routes::tag_autocomplete),
+        )
         .route("/api/tags/{id}", get(fichub::tags::routes::get_tag_detail))
         .route("/api/curator/flags", get(fichub::tags::curator::list_flags))
         .route(
             "/api/curator/flags/{id}/resolve",
             post(fichub::tags::curator::resolve_flag),
         )
-        .layer(MockConnectInfo("127.0.0.1:54321".parse::<std::net::SocketAddr>().unwrap()))
+        .layer(MockConnectInfo(
+            "127.0.0.1:54321".parse::<std::net::SocketAddr>().unwrap(),
+        ))
         .with_state(state)
 }
 
@@ -261,8 +274,11 @@ async fn post_json(app: &Router, uri: &str, body: Value) -> (StatusCode, Value) 
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -271,10 +287,17 @@ async fn get_json(app: &Router, uri: &str, auth: Option<&str>) -> (StatusCode, V
     if let Some(a) = auth {
         builder = builder.header("Authorization", a);
     }
-    let resp = app.clone().oneshot(builder.body(Body::empty()).unwrap()).await.unwrap();
+    let resp = app
+        .clone()
+        .oneshot(builder.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -290,36 +313,66 @@ async fn submit_vote_flag_list_flow() {
     let app = app().await;
 
     // Submit a new tag (type 4 = freeform).
-    let (s, b) = post_json(&app, "/api/tags/submit", json!({ "url_id": "tagapi_flow", "tag_name": "TagApiTest Flow Tag", "tag_type_id": 4 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/tags/submit",
+        json!({ "url_id": "tagapi_flow", "tag_name": "TagApiTest Flow Tag", "tag_type_id": 4 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "submit: {b}");
     assert_eq!(b["err"], 0, "submit err: {b}");
     let tag_id = b["tag_id"].as_i64().expect("tag_id") as i32;
     assert_eq!(b["is_new"], true);
 
     // Re-submit is idempotent (resolves to the same canonical tag).
-    let (s, b) = post_json(&app, "/api/tags/submit", json!({ "url_id": "tagapi_flow", "tag_name": "TagApiTest Flow Tag", "tag_type_id": 4 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/tags/submit",
+        json!({ "url_id": "tagapi_flow", "tag_name": "TagApiTest Flow Tag", "tag_type_id": 4 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "re-submit: {b}");
     assert_eq!(b["tag_id"], json!(tag_id), "same canonical tag: {b}");
     assert_eq!(b["is_new"], false);
 
     // Validation errors → err -1.
-    let (s, b) = post_json(&app, "/api/tags/submit", json!({ "url_id": "tagapi_flow", "tag_name": "x", "tag_type_id": 99 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/tags/submit",
+        json!({ "url_id": "tagapi_flow", "tag_name": "x", "tag_type_id": 99 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "bad type: {b}");
     assert_eq!(b["err"], -1, "bad type err: {b}");
 
     // Submit to a missing fic → err -5.
-    let (s, b) = post_json(&app, "/api/tags/submit", json!({ "url_id": "tagapi_nope", "tag_name": "TagApiTest Flow Tag", "tag_type_id": 4 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/tags/submit",
+        json!({ "url_id": "tagapi_nope", "tag_name": "TagApiTest Flow Tag", "tag_type_id": 4 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "missing fic: {b}");
     assert_eq!(b["err"], -5, "missing fic err: {b}");
 
     // Vote up → score 1.
-    let (s, b) = post_json(&app, "/api/tags/vote", json!({ "url_id": "tagapi_flow", "tag_id": tag_id, "value": 1 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/tags/vote",
+        json!({ "url_id": "tagapi_flow", "tag_id": tag_id, "value": 1 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "vote: {b}");
     assert_eq!(b["new_score"], 1, "vote score: {b}");
     assert_eq!(b["hidden"], false);
 
     // Vote down (same IP toggles the vote) → score back to 0.
-    let (s, b) = post_json(&app, "/api/tags/vote", json!({ "url_id": "tagapi_flow", "tag_id": tag_id, "value": -1 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/tags/vote",
+        json!({ "url_id": "tagapi_flow", "tag_id": tag_id, "value": -1 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "downvote: {b}");
     // The trigger math: +1 vote then -1 vote on the SAME ip row updates the
     // vote value (score += new - old = -1 - 1 = -2 relative to the +1), so
@@ -337,7 +390,12 @@ async fn submit_vote_flag_list_flow() {
     assert_eq!(vote_val, -1, "vote row toggled to -1");
 
     // Flag the tag for curator review.
-    let (s, b) = post_json(&app, "/api/tags/flag", json!({ "url_id": "tagapi_flow", "tag_id": tag_id, "reason": "wrong fandom" })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/tags/flag",
+        json!({ "url_id": "tagapi_flow", "tag_id": tag_id, "reason": "wrong fandom" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "flag: {b}");
     assert_eq!(b["err"], 0, "flag err: {b}");
 
@@ -346,7 +404,10 @@ async fn submit_vote_flag_list_flow() {
     let (s, b) = get_json(&app, "/api/tags?url_id=tagapi_flow", None).await;
     assert_eq!(s, StatusCode::OK, "list: {b}");
     let tags = b["tags"].as_array().unwrap();
-    let mine = tags.iter().find(|t| t["id"] == json!(tag_id)).expect("tag present");
+    let mine = tags
+        .iter()
+        .find(|t| t["id"] == json!(tag_id))
+        .expect("tag present");
     assert_eq!(mine["score"], -1, "list score matches toggled vote: {b}");
 
     // Detail endpoint resolves synonyms + usage.
@@ -380,8 +441,16 @@ async fn search_autocomplete_resolve() {
     assert_eq!(s, StatusCode::OK, "search: {b}");
     let results = b["results"].as_array().unwrap();
     assert_eq!(results.len(), 2, "two character tags: {b}");
-    assert!(results.iter().any(|r| r["name"] == "TagApiTest Character A"));
-    assert!(results.iter().any(|r| r["name"] == "TagApiTest Character B"));
+    assert!(
+        results
+            .iter()
+            .any(|r| r["name"] == "TagApiTest Character A")
+    );
+    assert!(
+        results
+            .iter()
+            .any(|r| r["name"] == "TagApiTest Character B")
+    );
 
     // Filter by type_id.
     let (s, b) = get_json(&app, "/api/tags/search?q=TagApiTest&type=4", None).await;
@@ -391,16 +460,33 @@ async fn search_autocomplete_resolve() {
     // so `type=4` still returns the character rows too — the type filter
     // narrows but the q match wins. Assert the freeform row is PRESENT
     // (pollution-tolerant), never an exact count.
-    assert!(results.iter().any(|r| r["name"] == "TagApiTest Freeform X"), "freeform present: {b}");
+    assert!(
+        results.iter().any(|r| r["name"] == "TagApiTest Freeform X"),
+        "freeform present: {b}"
+    );
 
     // Autocomplete requires 2+ chars; canonical-only (no alias rows yet).
     let (s, b) = get_json(&app, "/api/tags/autocomplete?q=T", None).await;
     assert_eq!(s, StatusCode::OK, "autocomplete short: {b}");
-    assert_eq!(b["results"].as_array().unwrap().len(), 0, "short query empty: {b}");
-    let (s, b) = get_json(&app, "/api/tags/autocomplete?q=TagApiTest%20Character", None).await;
+    assert_eq!(
+        b["results"].as_array().unwrap().len(),
+        0,
+        "short query empty: {b}"
+    );
+    let (s, b) = get_json(
+        &app,
+        "/api/tags/autocomplete?q=TagApiTest%20Character",
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "autocomplete: {b}");
     let results = b["results"].as_array().unwrap();
-    assert!(results.iter().any(|r| r["name"] == "TagApiTest Character A"), "ac results: {b}");
+    assert!(
+        results
+            .iter()
+            .any(|r| r["name"] == "TagApiTest Character A"),
+        "ac results: {b}"
+    );
 
     // Resolve a canonical tag name → returns the tag id.
     // NOTE: the handler's resolve runs `search::tags::resolve_tag`, whose
@@ -454,7 +540,12 @@ async fn curator_flags_workflow() {
     assert_eq!(b["err"], -403, "low role err: {b}");
 
     // Flag via the public endpoint.
-    let (s, b) = post_json(&app, "/api/tags/flag", json!({ "url_id": "tagapi_flag", "tag_id": c1, "reason": "duplicate of another tag" })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/tags/flag",
+        json!({ "url_id": "tagapi_flag", "tag_id": c1, "reason": "duplicate of another tag" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "flag: {b}");
     assert_eq!(b["err"], 0);
 
@@ -479,15 +570,22 @@ async fn curator_flags_workflow() {
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let b: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let b: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     assert_eq!(status, StatusCode::OK, "resolve flag: {b}");
     assert_eq!(b["err"], 0, "resolve err: {b}");
 
     // Resolved list no longer shows it; resolved=true filter does.
     let (s, b) = get_json(&app, "/api/curator/flags?resolved=false", Some(&ta)).await;
     assert_eq!(s, StatusCode::OK, "unresolved list: {b}");
-    assert_eq!(b["flags"].as_array().unwrap().len(), 0, "no unresolved left: {b}");
+    assert_eq!(
+        b["flags"].as_array().unwrap().len(),
+        0,
+        "no unresolved left: {b}"
+    );
     let (s, b) = get_json(&app, "/api/curator/flags?resolved=true", Some(&ta)).await;
     assert_eq!(s, StatusCode::OK, "resolved list: {b}");
     let flags = b["flags"].as_array().unwrap();
@@ -504,8 +602,11 @@ async fn curator_flags_workflow() {
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let b: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let b: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     assert_eq!(status, StatusCode::OK, "resolve missing: {b}");
     assert_eq!(b["err"], -5, "missing flag err: {b}");
 

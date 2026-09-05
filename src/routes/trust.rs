@@ -1,16 +1,16 @@
 //! Trust API — per-user trust status + admin trust management + the weekly
 //! moderation digest endpoint.
 
-use std::sync::Arc;
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
+use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
 use crate::server::AppState;
-use crate::services::trust::{self, TlMetrics, TRUST_NAMES};
+use crate::services::trust::{self, TRUST_NAMES, TlMetrics};
 
 /// GET /api/me/trust — the caller's trust level, metrics, and what is needed
 /// to reach the next level.
@@ -38,10 +38,16 @@ pub async fn my_trust(
 fn next_level(_metrics: &TlMetrics, level: i16) -> Value {
     match level {
         0 => json!({ "target": 1, "hint": "read 5+ distinct works and 30k+ words" }),
-        1 => json!({ "target": 2, "hint": "be active 5+ days, read 100k+ words, and post once in the forum" }),
-        2 => json!({ "target": 3, "hint": "be consistently active (15+ days), 100+ works read, 10+ forum posts" }),
+        1 => {
+            json!({ "target": 2, "hint": "be active 5+ days, read 100k+ words, and post once in the forum" })
+        }
+        2 => {
+            json!({ "target": 3, "hint": "be consistently active (15+ days), 100+ works read, 10+ forum posts" })
+        }
         3 => json!({ "target": 4, "hint": "400k+ words, 500+ works read, 50+ forum posts" }),
-        4 => json!({ "target": 5, "hint": "TL5 (Community Moderator) is granted from the weekly digest by an admin", "staff": true }),
+        4 => {
+            json!({ "target": 5, "hint": "TL5 (Community Moderator) is granted from the weekly digest by an admin", "staff": true })
+        }
         _ => json!({ "target": null, "hint": "Top trust level." }),
     }
 }
@@ -89,7 +95,9 @@ pub async fn admin_set_trust(
         auth.username.clone(),
     )
     .await?;
-    Ok(Json(json!({ "ok": true, "user_id": user_id, "level": level })))
+    Ok(Json(
+        json!({ "ok": true, "user_id": user_id, "level": level }),
+    ))
 }
 
 /// GET /api/admin/digest — render the weekly moderation digest as JSON for

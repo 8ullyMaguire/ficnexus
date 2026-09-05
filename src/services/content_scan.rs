@@ -139,11 +139,7 @@ pub fn html_to_text(html: &str) -> String {
 }
 
 /// Scan a single body blob and return the parsed result.
-pub async fn scan_blob(
-    ollama: &OllamaClient,
-    chat_model: &str,
-    blob: &BodyBlob,
-) -> ContentScanRow {
+pub async fn scan_blob(ollama: &OllamaClient, chat_model: &str, blob: &BodyBlob) -> ContentScanRow {
     let mut row = ContentScanRow {
         url_id: blob.url_id.clone(),
         classification: CLASS_UNCLEAR.to_string(),
@@ -151,10 +147,7 @@ pub async fn scan_blob(
         detected_warnings: String::new(),
         reason: String::new(),
     };
-    match ollama
-        .generate(&build_prompt(blob), chat_model)
-        .await
-    {
+    match ollama.generate(&build_prompt(blob), chat_model).await {
         Ok(reply) => {
             let parsed = parse_scan_response(&reply);
             row.classification = parsed.classification;
@@ -208,11 +201,12 @@ pub async fn upsert_scan_with_deletion(
     modlog_actor: Option<i32>,
     modlog_actor_name: Option<&str>,
 ) {
-    let deletion_scheduled = if row.classification == CLASS_NOISE && row.confidence >= NOISE_CONFIDENCE_THRESHOLD {
-        Some(chrono::Utc::now() + chrono::Duration::hours(DELETION_GRACE_PERIOD_HOURS))
-    } else {
-        None
-    };
+    let deletion_scheduled =
+        if row.classification == CLASS_NOISE && row.confidence >= NOISE_CONFIDENCE_THRESHOLD {
+            Some(chrono::Utc::now() + chrono::Duration::hours(DELETION_GRACE_PERIOD_HOURS))
+        } else {
+            None
+        };
 
     let res = sqlx::query(
         r#"INSERT INTO content_scan (url_id, classification, confidence, detected_warnings, reason, deletion_scheduled_at)
@@ -260,7 +254,9 @@ pub async fn upsert_scan_with_deletion(
         .await;
         tracing::info!(
             "Auto-moderator flagged {} as noise (conf={:.2}) — deletion scheduled in {}h",
-            row.url_id, row.confidence, DELETION_GRACE_PERIOD_HOURS
+            row.url_id,
+            row.confidence,
+            DELETION_GRACE_PERIOD_HOURS
         );
     }
 }
@@ -290,16 +286,15 @@ pub async fn scan_single_fic(
 
     tracing::info!(
         "content scan (auto) {}: {:?} conf={:.2}",
-        url_id, row.classification, row.confidence
+        url_id,
+        row.classification,
+        row.confidence
     );
 }
 
 /// Pending noise entries whose grace period has expired → auto-delete.
 /// Returns the number of fics deleted.
-pub async fn process_expired_deletions(
-    db: &sqlx::PgPool,
-    config: &Config,
-) -> usize {
+pub async fn process_expired_deletions(db: &sqlx::PgPool, config: &Config) -> usize {
     let expired: Vec<(String,)> = match sqlx::query_as(
         r#"SELECT url_id FROM content_scan
            WHERE review_status = 'pending'
@@ -375,7 +370,11 @@ pub async fn scan_cache(
             }
         }
         // url_id from the .v{N}.json filename
-        let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let file_name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         let Some((url_id, _ver)) = parse_blob_filename(&file_name) else {
             continue;
         };
@@ -392,7 +391,10 @@ pub async fn scan_cache(
                 scanned += 1;
                 tracing::info!(
                     "content scan {}: {:?} warnings={:?} conf={:.2}",
-                    blob.url_id, row.classification, row.detected_warnings, row.confidence
+                    blob.url_id,
+                    row.classification,
+                    row.detected_warnings,
+                    row.confidence
                 );
             }
             None => {
@@ -409,7 +411,9 @@ fn walk_json_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for e in entries.flatten() {
             let p = e.path();
             if p.is_dir() {
@@ -459,14 +463,18 @@ mod tests {
 
     #[test]
     fn parses_trailing_prose_after_first_line() {
-        let r = parse_scan_response("story | none | 0.9 | fine\nhere is more text the model appended");
+        let r =
+            parse_scan_response("story | none | 0.9 | fine\nhere is more text the model appended");
         assert_eq!(r.classification, CLASS_STORY);
         assert_eq!(r.reason, "fine");
     }
 
     #[test]
     fn html_to_text_strips_tags() {
-        assert_eq!(html_to_text("<p>Hello &amp; goodbye</p>"), " Hello & goodbye ");
+        assert_eq!(
+            html_to_text("<p>Hello &amp; goodbye</p>"),
+            " Hello & goodbye "
+        );
     }
 
     #[test]

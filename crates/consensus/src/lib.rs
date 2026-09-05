@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod store;
-pub use store::{RatingStore, SqlxStore, MemoryStore};
+pub use store::{MemoryStore, RatingStore, SqlxStore};
 
 /// Error types for the consensus engine.
 #[derive(Debug, Error)]
@@ -168,28 +168,100 @@ impl ConsensusConfig {
     /// Default stages matching StoryGraph order (generic preset: freeze non-idea).
     pub fn default_stages() -> Vec<Stage> {
         vec![
-            Stage { id: "up_next".into(), label: "Up Next".into(), color: "#f59e0b".into(), roadmaps_position: 1.0, frozen_for_arena: true },
-            Stage { id: "in_progress".into(), label: "In Progress".into(), color: "#f97316".into(), roadmaps_position: 2.0, frozen_for_arena: true },
-            Stage { id: "finished".into(), label: "Finished (Not Shipped)".into(), color: "#22c55e".into(), roadmaps_position: 3.0, frozen_for_arena: true },
-            Stage { id: "shipped".into(), label: "Shipped".into(), color: "#10b981".into(), roadmaps_position: 4.0, frozen_for_arena: true },
-            Stage { id: "medium_term".into(), label: "Medium-term".into(), color: "#ec4899".into(), roadmaps_position: 5.0, frozen_for_arena: true },
-            Stage { id: "long_term".into(), label: "Long-term".into(), color: "#7c3aed".into(), roadmaps_position: 6.0, frozen_for_arena: true },
-            Stage { id: "idea".into(), label: "Ideas".into(), color: "#3b82f6".into(), roadmaps_position: 7.0, frozen_for_arena: false },
-            Stage { id: "rejected".into(), label: "Rejected".into(), color: "#9ca3af".into(), roadmaps_position: 8.0, frozen_for_arena: true },
+            Stage {
+                id: "up_next".into(),
+                label: "Up Next".into(),
+                color: "#f59e0b".into(),
+                roadmaps_position: 1.0,
+                frozen_for_arena: true,
+            },
+            Stage {
+                id: "in_progress".into(),
+                label: "In Progress".into(),
+                color: "#f97316".into(),
+                roadmaps_position: 2.0,
+                frozen_for_arena: true,
+            },
+            Stage {
+                id: "finished".into(),
+                label: "Finished (Not Shipped)".into(),
+                color: "#22c55e".into(),
+                roadmaps_position: 3.0,
+                frozen_for_arena: true,
+            },
+            Stage {
+                id: "shipped".into(),
+                label: "Shipped".into(),
+                color: "#10b981".into(),
+                roadmaps_position: 4.0,
+                frozen_for_arena: true,
+            },
+            Stage {
+                id: "medium_term".into(),
+                label: "Medium-term".into(),
+                color: "#ec4899".into(),
+                roadmaps_position: 5.0,
+                frozen_for_arena: true,
+            },
+            Stage {
+                id: "long_term".into(),
+                label: "Long-term".into(),
+                color: "#7c3aed".into(),
+                roadmaps_position: 6.0,
+                frozen_for_arena: true,
+            },
+            Stage {
+                id: "idea".into(),
+                label: "Ideas".into(),
+                color: "#3b82f6".into(),
+                roadmaps_position: 7.0,
+                frozen_for_arena: false,
+            },
+            Stage {
+                id: "rejected".into(),
+                label: "Rejected".into(),
+                color: "#9ca3af".into(),
+                roadmaps_position: 8.0,
+                frozen_for_arena: true,
+            },
         ]
     }
 
     /// Default categories.
     pub fn default_categories() -> Vec<Category> {
         vec![
-            Category { id: "all".into(), label: "All".into() },
-            Category { id: "search".into(), label: "Search".into() },
-            Category { id: "scraper".into(), label: "Scrapers".into() },
-            Category { id: "social".into(), label: "Social".into() },
-            Category { id: "reader".into(), label: "Reader".into() },
-            Category { id: "admin".into(), label: "Admin".into() },
-            Category { id: "recs".into(), label: "Recs".into() },
-            Category { id: "general".into(), label: "General".into() },
+            Category {
+                id: "all".into(),
+                label: "All".into(),
+            },
+            Category {
+                id: "search".into(),
+                label: "Search".into(),
+            },
+            Category {
+                id: "scraper".into(),
+                label: "Scrapers".into(),
+            },
+            Category {
+                id: "social".into(),
+                label: "Social".into(),
+            },
+            Category {
+                id: "reader".into(),
+                label: "Reader".into(),
+            },
+            Category {
+                id: "admin".into(),
+                label: "Admin".into(),
+            },
+            Category {
+                id: "recs".into(),
+                label: "Recs".into(),
+            },
+            Category {
+                id: "general".into(),
+                label: "General".into(),
+            },
         ]
     }
 
@@ -265,11 +337,14 @@ pub struct Consensus<S: RatingStore> {
 impl<S: RatingStore> Consensus<S> {
     /// Create a new consensus engine.
     pub fn new(config: ConsensusConfig, store: S) -> Self {
-        let voter_policy: Arc<dyn VoterPolicy> = if let Some(min) = config.min_trust_level_for_voting {
-            Arc::new(TrustLevelPolicy { min_trust_level: min })
-        } else {
-            Arc::new(AllowAllPolicy)
-        };
+        let voter_policy: Arc<dyn VoterPolicy> =
+            if let Some(min) = config.min_trust_level_for_voting {
+                Arc::new(TrustLevelPolicy {
+                    min_trust_level: min,
+                })
+            } else {
+                Arc::new(AllowAllPolicy)
+            };
         Self {
             config,
             store: Arc::new(store),
@@ -326,20 +401,27 @@ impl<S: RatingStore> Consensus<S> {
     ) -> Result<Vec<(i32, f64)>> {
         // Check voter eligibility
         if !self.voter_policy.can_vote(voter).await {
-            return Err(ConsensusError::VoterNotEligible(
-                format!("trust level {} below minimum", voter.trust_level),
-            ));
+            return Err(ConsensusError::VoterNotEligible(format!(
+                "trust level {} below minimum",
+                voter.trust_level
+            )));
         }
 
         // Validate cluster_ids
         if cluster_ids.len() != 4 {
-            return Err(ConsensusError::InvalidVote("expected exactly 4 cluster ids".into()));
+            return Err(ConsensusError::InvalidVote(
+                "expected exactly 4 cluster ids".into(),
+            ));
         }
         if !cluster_ids.contains(&best_id) || !cluster_ids.contains(&worst_id) {
-            return Err(ConsensusError::InvalidVote("best and worst must be in cluster_ids".into()));
+            return Err(ConsensusError::InvalidVote(
+                "best and worst must be in cluster_ids".into(),
+            ));
         }
         if best_id == worst_id {
-            return Err(ConsensusError::InvalidVote("best and worst must be distinct".into()));
+            return Err(ConsensusError::InvalidVote(
+                "best and worst must be distinct".into(),
+            ));
         }
 
         // Load current ratings
@@ -373,7 +455,9 @@ impl<S: RatingStore> Consensus<S> {
         for id in cluster_ids {
             let is_best = *id == best_id;
             let is_worst = *id == worst_id;
-            self.store.increment_counters(*id, is_best, is_worst).await?;
+            self.store
+                .increment_counters(*id, is_best, is_worst)
+                .await?;
         }
 
         Ok(updates)
@@ -470,7 +554,8 @@ mod tests {
     #[test]
     fn maxdiff_best_soars_worst_tanks_neutrals_shift_little() {
         let ids = vec![1, 2, 3, 4];
-        let ratings: HashMap<i32, f64> = [(1, 1500.0), (2, 1500.0), (3, 1500.0), (4, 1500.0)].into();
+        let ratings: HashMap<i32, f64> =
+            [(1, 1500.0), (2, 1500.0), (3, 1500.0), (4, 1500.0)].into();
         let out = maxdiff_elo_updates(&ids, &ratings, 1, 4, 32.0);
         let r1 = out.iter().find(|(i, _)| *i == 1).unwrap().1;
         let r4 = out.iter().find(|(i, _)| *i == 4).unwrap().1;
@@ -485,7 +570,8 @@ mod tests {
     #[test]
     fn maxdiff_rating_gap_reduces_transfer() {
         let ids = vec![1, 2, 3, 4];
-        let ratings: HashMap<i32, f64> = [(1, 1800.0), (2, 1500.0), (3, 1500.0), (4, 1200.0)].into();
+        let ratings: HashMap<i32, f64> =
+            [(1, 1800.0), (2, 1500.0), (3, 1500.0), (4, 1200.0)].into();
         let out = maxdiff_elo_updates(&ids, &ratings, 1, 4, 32.0);
         let r1 = out.iter().find(|(i, _)| *i == 1).unwrap().1;
         assert!(r1 > 1800.0, "still gains");
@@ -509,14 +595,20 @@ mod tests {
     #[tokio::test]
     async fn trust_level_policy_rejects_low() {
         let policy = TrustLevelPolicy { min_trust_level: 2 };
-        let voter = VoterRef { id: Some("u1".into()), trust_level: 1 };
+        let voter = VoterRef {
+            id: Some("u1".into()),
+            trust_level: 1,
+        };
         assert!(!policy.can_vote(&voter).await);
     }
 
     #[tokio::test]
     async fn trust_level_policy_allows_high() {
         let policy = TrustLevelPolicy { min_trust_level: 2 };
-        let voter = VoterRef { id: Some("u2".into()), trust_level: 3 };
+        let voter = VoterRef {
+            id: Some("u2".into()),
+            trust_level: 3,
+        };
         assert!(policy.can_vote(&voter).await);
     }
 }

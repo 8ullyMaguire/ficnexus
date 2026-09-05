@@ -58,6 +58,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .rows_affected();
 
-    println!("bot_scores aggregated for last 24h (hourly windows); pruned {pruned} request_log rows > 30d");
+    println!(
+        "bot_scores aggregated for last 24h (hourly windows); pruned {pruned} request_log rows > 30d"
+    );
     Ok(())
 }

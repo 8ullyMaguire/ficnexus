@@ -1,7 +1,7 @@
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;
@@ -147,12 +147,10 @@ pub async fn also_bookmarked(
 
         // fic_info.id may not be linked to a work yet; the UI links via
         // /fic/{url_id} when present.
-        let work_id: Option<i32> = sqlx::query_scalar(
-            "SELECT work_id FROM fic_info WHERE id = $1",
-        )
-        .bind(&partner_id)
-        .fetch_optional(&state.db)
-        .await?;
+        let work_id: Option<i32> = sqlx::query_scalar("SELECT work_id FROM fic_info WHERE id = $1")
+            .bind(&partner_id)
+            .fetch_optional(&state.db)
+            .await?;
 
         items.push(json!({
             "url_id": partner_id,
@@ -180,23 +178,31 @@ pub async fn also_bookmarked(
 /// pick is `ORDER BY random() LIMIT 1` with a `work_id`-optional shape so
 /// the frontend can link via `/fic/{url_id}`. 200 with `fic: null` when the
 /// archive is empty.
-pub async fn random_work(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, AppError> {
-    let row: Option<(String, Option<i32>, String, String, String, i64, i32, String, String)> =
-        sqlx::query_as(
-            r#"
+pub async fn random_work(State(state): State<Arc<AppState>>) -> Result<Json<Value>, AppError> {
+    let row: Option<(
+        String,
+        Option<i32>,
+        String,
+        String,
+        String,
+        i64,
+        i32,
+        String,
+        String,
+    )> = sqlx::query_as(
+        r#"
             SELECT id, work_id, title, author, source, words, chapters, status, description
             FROM fic_info
             WHERE btrim(description) <> ''
             ORDER BY random()
             LIMIT 1
             "#,
-        )
-        .fetch_optional(&state.db)
-        .await?;
+    )
+    .fetch_optional(&state.db)
+    .await?;
 
-    let Some((id, work_id, title, author, source, words, chapters, status, description)) = row else {
+    let Some((id, work_id, title, author, source, words, chapters, status, description)) = row
+    else {
         return Ok(Json(json!({ "err": 0, "fic": null })));
     };
 

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::db::queries;
 use crate::error::AppError;
@@ -13,7 +13,7 @@ use crate::server::AppState;
 /// Request body for creating a proposal
 #[derive(Debug, Deserialize)]
 pub struct ProposalBody {
-    pub action_type: String,        // "merge" or "split"
+    pub action_type: String,         // "merge" or "split"
     pub source_work_id: Option<i32>, // for merge
     pub target_work_id: Option<i32>, // for merge
     pub work_id: Option<i32>,        // for split
@@ -23,7 +23,7 @@ pub struct ProposalBody {
 /// Request body for voting
 #[derive(Debug, Deserialize)]
 pub struct VoteBody {
-    pub vote: i16,  // 1, 0, or -1
+    pub vote: i16, // 1, 0, or -1
 }
 
 /// POST /api/work-proposals — create a new proposal
@@ -32,7 +32,9 @@ pub async fn create_proposal_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ProposalBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     // Validate user is at least a curator (role >= 1)
     let user_role = get_user_role(&state.db, user_id).await?;
@@ -42,13 +44,19 @@ pub async fn create_proposal_handler(
 
     // Validate action type
     if body.action_type != "merge" && body.action_type != "split" {
-        return Err(AppError::BadRequest("action_type must be 'merge' or 'split'".to_string()));
+        return Err(AppError::BadRequest(
+            "action_type must be 'merge' or 'split'".to_string(),
+        ));
     }
 
     // Validate works exist
     if body.action_type == "merge" {
-        let source_id = body.source_work_id.ok_or_else(|| AppError::BadRequest("source_work_id required for merge".to_string()))?;
-        let target_id = body.target_work_id.ok_or_else(|| AppError::BadRequest("target_work_id required for merge".to_string()))?;
+        let source_id = body
+            .source_work_id
+            .ok_or_else(|| AppError::BadRequest("source_work_id required for merge".to_string()))?;
+        let target_id = body
+            .target_work_id
+            .ok_or_else(|| AppError::BadRequest("target_work_id required for merge".to_string()))?;
 
         if queries::get_work(&state.db, source_id).await?.is_none() {
             return Err(AppError::NotFound("Source work not found".into()));
@@ -57,10 +65,14 @@ pub async fn create_proposal_handler(
             return Err(AppError::NotFound("Target work not found".into()));
         }
         if source_id == target_id {
-            return Err(AppError::BadRequest("Cannot merge a work with itself".to_string()));
+            return Err(AppError::BadRequest(
+                "Cannot merge a work with itself".to_string(),
+            ));
         }
     } else {
-        let work_id = body.work_id.ok_or_else(|| AppError::BadRequest("work_id required for split".to_string()))?;
+        let work_id = body
+            .work_id
+            .ok_or_else(|| AppError::BadRequest("work_id required for split".to_string()))?;
         if queries::get_work(&state.db, work_id).await?.is_none() {
             return Err(AppError::NotFound("Work not found".into()));
         }
@@ -90,19 +102,22 @@ pub async fn list_proposals_handler(
 ) -> Result<Json<Value>, AppError> {
     let proposals = queries::list_pending_proposals(&state.db).await?;
 
-    let entries: Vec<Value> = proposals.into_iter().map(|p| {
-        json!({
-            "id": p.id,
-            "proposer_id": p.proposer_id,
-            "action_type": p.action_type,
-            "source_work_id": p.source_work_id,
-            "target_work_id": p.target_work_id,
-            "work_id": p.work_id,
-            "details": p.details,
-            "status": p.status,
-            "created_at": p.created_at.to_rfc3339(),
+    let entries: Vec<Value> = proposals
+        .into_iter()
+        .map(|p| {
+            json!({
+                "id": p.id,
+                "proposer_id": p.proposer_id,
+                "action_type": p.action_type,
+                "source_work_id": p.source_work_id,
+                "target_work_id": p.target_work_id,
+                "work_id": p.work_id,
+                "details": p.details,
+                "status": p.status,
+                "created_at": p.created_at.to_rfc3339(),
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({ "err": 0, "proposals": entries })))
 }
@@ -144,7 +159,9 @@ pub async fn vote_proposal_handler(
     Path(proposal_id): Path<i32>,
     Json(body): Json<VoteBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     // Validate user is at least a curator
     let user_role = get_user_role(&state.db, user_id).await?;
@@ -163,7 +180,9 @@ pub async fn vote_proposal_handler(
         .ok_or_else(|| AppError::NotFound("Proposal not found".into()))?;
 
     if proposal.status != "pending" {
-        return Err(AppError::BadRequest("Proposal is no longer pending".to_string()));
+        return Err(AppError::BadRequest(
+            "Proposal is no longer pending".to_string(),
+        ));
     }
 
     // Cast vote
@@ -187,15 +206,20 @@ pub async fn vote_proposal_handler(
     if vote_sum >= 3 && voter_count >= 2 {
         // Execute the proposal
         if proposal.action_type == "merge" {
-            let source_id = proposal.source_work_id.ok_or_else(|| AppError::Internal("Missing source_work_id".into()))?;
-            let target_id = proposal.target_work_id.ok_or_else(|| AppError::Internal("Missing target_work_id".into()))?;
+            let source_id = proposal
+                .source_work_id
+                .ok_or_else(|| AppError::Internal("Missing source_work_id".into()))?;
+            let target_id = proposal
+                .target_work_id
+                .ok_or_else(|| AppError::Internal("Missing target_work_id".into()))?;
             queries::execute_merge(&state.db, source_id, target_id).await?;
         }
         queries::update_proposal_status(&state.db, proposal_id, "accepted").await?;
 
         // Award reputation: +5 to proposer, +2 to each approving voter
         let event_type = format!("work_{}_accepted", proposal.action_type);
-        queries::update_reputation_and_promote(&state.db, proposal.proposer_id, 5, &event_type).await?;
+        queries::update_reputation_and_promote(&state.db, proposal.proposer_id, 5, &event_type)
+            .await?;
 
         // Award +2 to each approving voter (who voted +1)
         let approvers: Vec<(i32,)> = sqlx::query_as(
@@ -206,7 +230,8 @@ pub async fn vote_proposal_handler(
         .await?;
 
         for (voter_id,) in approvers {
-            queries::update_reputation_and_promote(&state.db, voter_id, 2, "proposal_approved").await?;
+            queries::update_reputation_and_promote(&state.db, voter_id, 2, "proposal_approved")
+                .await?;
         }
 
         return Ok(Json(json!({
@@ -223,7 +248,8 @@ pub async fn vote_proposal_handler(
 
         // Penalty: -1 to proposer
         let event_type = format!("work_{}_rejected", proposal.action_type);
-        queries::update_reputation_and_promote(&state.db, proposal.proposer_id, -1, &event_type).await?;
+        queries::update_reputation_and_promote(&state.db, proposal.proposer_id, -1, &event_type)
+            .await?;
 
         return Ok(Json(json!({
             "err": 0,
@@ -259,7 +285,9 @@ async fn get_user_role(pool: &sqlx::PgPool, user_id: i32) -> Result<i32, AppErro
         Some("admin") => Ok(3),
         Some("moderator") => Ok(2),
         Some("curator") => Ok(1),
-        Some(other) => other.parse::<i32>().map_err(|_| AppError::Internal(format!("unexpected role value {other:?}"))),
+        Some(other) => other
+            .parse::<i32>()
+            .map_err(|_| AppError::Internal(format!("unexpected role value {other:?}"))),
         None => Ok(0),
     }
 }

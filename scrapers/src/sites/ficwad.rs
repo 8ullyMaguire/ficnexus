@@ -14,8 +14,8 @@ use chrono::TimeZone;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct FicwadScraper;
 
@@ -25,7 +25,11 @@ impl SiteScraper for FicwadScraper {
         url.contains("ficwad.com/story/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
 
         if html.contains("<h4>Featured Story</h4>") {
@@ -88,14 +92,31 @@ impl SiteScraper for FicwadScraper {
                 if let Some(m) = Regex::new(r"Rating: (.+?) -").unwrap().captures(&metastr) {
                     rating = m.get(1).unwrap().as_str().trim().to_string();
                 }
-                if let Some(m) = Regex::new(r"Published: ([0-9-]+?) -").unwrap().captures(&metastr) {
+                if let Some(m) = Regex::new(r"Published: ([0-9-]+?) -")
+                    .unwrap()
+                    .captures(&metastr)
+                {
                     published = parse_dt(m.get(1).unwrap().as_str());
                 }
-                if let Some(m) = Regex::new(r"Updated: ([0-9-]+?) +-").unwrap().captures(&metastr) {
+                if let Some(m) = Regex::new(r"Updated: ([0-9-]+?) +-")
+                    .unwrap()
+                    .captures(&metastr)
+                {
                     updated = parse_dt(m.get(1).unwrap().as_str());
                 }
-                if let Some(m) = Regex::new(r" - ([0-9,]+?) words").unwrap().captures(&metastr) {
-                    words = m.get(1).unwrap().as_str().chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap_or(0);
+                if let Some(m) = Regex::new(r" - ([0-9,]+?) words")
+                    .unwrap()
+                    .captures(&metastr)
+                {
+                    words = m
+                        .get(1)
+                        .unwrap()
+                        .as_str()
+                        .chars()
+                        .filter(|c| c.is_ascii_digit())
+                        .collect::<String>()
+                        .parse()
+                        .unwrap_or(0);
                 }
                 if metastr.trim_end().ends_with("Complete") {
                     status = "complete".to_string();
@@ -236,8 +257,19 @@ mod tests {
     #[test]
     fn parses_words() {
         let raw = " - 12,345 words";
-        let m = Regex::new(r" - ([0-9,]+?) words").unwrap().captures(raw).unwrap();
-        let words: i64 = m.get(1).unwrap().as_str().chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap();
+        let m = Regex::new(r" - ([0-9,]+?) words")
+            .unwrap()
+            .captures(raw)
+            .unwrap();
+        let words: i64 = m
+            .get(1)
+            .unwrap()
+            .as_str()
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .parse()
+            .unwrap();
         assert_eq!(words, 12345);
     }
 

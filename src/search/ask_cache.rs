@@ -180,13 +180,12 @@ pub async fn get_cached_translation_pg(
     model: &str,
 ) -> Option<Value> {
     let normalized = normalize_nl_query(nl_query);
-    let row: Option<(sqlx::types::Json<Value>, String)> = sqlx::query_as(
-        "SELECT params, model FROM ask_translation_cache WHERE nl_query = $1",
-    )
-    .bind(&normalized)
-    .fetch_optional(db)
-    .await
-    .ok()?;
+    let row: Option<(sqlx::types::Json<Value>, String)> =
+        sqlx::query_as("SELECT params, model FROM ask_translation_cache WHERE nl_query = $1")
+            .bind(&normalized)
+            .fetch_optional(db)
+            .await
+            .ok()?;
     match row {
         Some((params, cached_model)) if cached_model == model => Some(params.0),
         _ => None,
@@ -271,7 +270,10 @@ mod tests {
 
     #[test]
     fn normalization_is_trim_lowercase() {
-        assert_eq!(normalize_nl_query("  Dark Harry Potter  "), "dark harry potter");
+        assert_eq!(
+            normalize_nl_query("  Dark Harry Potter  "),
+            "dark harry potter"
+        );
         assert_eq!(normalize_nl_query("same"), normalize_nl_query("SAME"));
     }
 
@@ -339,14 +341,20 @@ mod tests {
             .await
             .expect("cleanup delete");
 
-        assert!(get_cached_translation_pg(&pool, q, "test-model").await.is_none());
+        assert!(
+            get_cached_translation_pg(&pool, q, "test-model")
+                .await
+                .is_none()
+        );
         set_cached_translation_pg(&pool, q, "test-model", &params).await;
         let got = get_cached_translation_pg(&pool, q, "test-model").await;
         assert_eq!(got, Some(params.clone()), "PG cache must round-trip");
 
         // model mismatch = miss (a different model's translation is not reused)
         assert!(
-            get_cached_translation_pg(&pool, q, "other-model").await.is_none(),
+            get_cached_translation_pg(&pool, q, "other-model")
+                .await
+                .is_none(),
             "different model must miss"
         );
 

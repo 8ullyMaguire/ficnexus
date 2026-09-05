@@ -19,8 +19,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 
 pub struct HentaiFoundryScraper {
     adult_ok: AtomicBool,
@@ -65,13 +65,21 @@ impl SiteScraper for HentaiFoundryScraper {
             self.adult_ok.store(true, Ordering::Relaxed);
             Ok(())
         } else {
-            Err(ScrapeError::AuthRequired("hentaifoundry: is_adult not set".into()))
+            Err(ScrapeError::AuthRequired(
+                "hentaifoundry: is_adult not set".into(),
+            ))
         }
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         if !self.adult_ok.load(Ordering::Relaxed) {
-            return Err(ScrapeError::AuthRequired("hentaifoundry: adult gate".into()));
+            return Err(ScrapeError::AuthRequired(
+                "hentaifoundry: adult gate".into(),
+            ));
         }
         let (author_id, story_id, _title_part) = Self::story_parts(url)
             .ok_or_else(|| ScrapeError::ParseError("hentaifoundry: bad url".into()))?;
@@ -290,13 +298,18 @@ mod tests {
     #[test]
     fn can_handle_matches() {
         let s = HentaiFoundryScraper::default();
-        assert!(s.can_handle("https://www.hentai-foundry.com/stories/user/Author/12345/Story-Title"));
+        assert!(
+            s.can_handle("https://www.hentai-foundry.com/stories/user/Author/12345/Story-Title")
+        );
         assert!(!s.can_handle("https://www.fanfiction.net/s/123"));
     }
 
     #[test]
     fn parses_story_parts() {
-        let (a, id, t) = HentaiFoundryScraper::story_parts("https://www.hentai-foundry.com/stories/user/Author/12345/Story-Title").unwrap();
+        let (a, id, t) = HentaiFoundryScraper::story_parts(
+            "https://www.hentai-foundry.com/stories/user/Author/12345/Story-Title",
+        )
+        .unwrap();
         assert_eq!(a, "Author");
         assert_eq!(id, "12345");
         assert_eq!(t, "Story-Title");
@@ -314,7 +327,11 @@ mod tests {
         let html = r#"<html><body><section id="viewChapter"><div class="boxbody"><p>Story text.</p></div></section></body></html>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("section#viewChapter div.boxbody").unwrap();
-        let s = doc.select(&sel).next().map(|el| el.inner_html()).unwrap_or_default();
+        let s = doc
+            .select(&sel)
+            .next()
+            .map(|el| el.inner_html())
+            .unwrap_or_default();
         assert!(s.contains("Story text."));
     }
 }

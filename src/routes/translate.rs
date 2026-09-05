@@ -6,8 +6,8 @@
 //! - GET  /api/translate/status  coverage summary for a target
 //! - GET  /api/translate/coverage  global per-locale coverage matrix
 
-use axum::extract::{Query, State};
 use axum::Json;
+use axum::extract::{Query, State};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -89,8 +89,11 @@ pub async fn enqueue(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    if honeypot::inspect_submission(body.website.as_deref(), body.form_opened_at.as_deref(), now_ms)
-        == honeypot::TrapVerdict::RejectSilently
+    if honeypot::inspect_submission(
+        body.website.as_deref(),
+        body.form_opened_at.as_deref(),
+        now_ms,
+    ) == honeypot::TrapVerdict::RejectSilently
     {
         return Ok(Json(json!({ "err": 0, "queued": 0 })));
     }
@@ -163,7 +166,13 @@ pub async fn status(
         let best = rows
             .iter()
             .filter(|(loc, _)| loc == l)
-            .map(|(_, st)| if st == "approved" { "approved" } else { "machine" })
+            .map(|(_, st)| {
+                if st == "approved" {
+                    "approved"
+                } else {
+                    "machine"
+                }
+            })
             .next()
             .unwrap_or("none");
         coverage.insert(l.clone(), json!(best));
@@ -230,4 +239,3 @@ pub async fn coverage(
         "total_targets": total_targets
     })))
 }
-

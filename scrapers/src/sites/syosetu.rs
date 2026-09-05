@@ -18,8 +18,8 @@ use chrono::TimeZone;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct SyosetuScraper;
 
@@ -38,10 +38,18 @@ impl SiteScraper for SyosetuScraper {
             && (url.contains("/n") || url.contains("novelview"))
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let story_id = Self::story_id_from_url(url)
             .ok_or_else(|| ScrapeError::ParseError("no syosetu id".into()))?;
-        let host = if url.contains("novel18") { "novel18.syosetu.com" } else { "ncode.syosetu.com" };
+        let host = if url.contains("novel18") {
+            "novel18.syosetu.com"
+        } else {
+            "ncode.syosetu.com"
+        };
 
         // Adult gate for novel18.
         if host == "novel18.syosetu.com" {
@@ -51,7 +59,9 @@ impl SiteScraper for SyosetuScraper {
         let info_url = format!("https://{host}/novelview/infotop/ncode/{story_id}/");
         let html = http::fetch(client, &info_url).await?;
 
-        if html.contains("投稿済作品が見つかりません") || html.contains("この作品は作者によって削除されました") {
+        if html.contains("投稿済作品が見つかりません")
+            || html.contains("この作品は作者によって削除されました")
+        {
             return Err(ScrapeError::NotFound);
         }
 
@@ -189,7 +199,9 @@ impl SiteScraper for SyosetuScraper {
         let pages = (meta.chapters as f64 / 100.0).ceil() as i32;
         for page in 1..=pages.max(1) {
             let toc_url = format!("{}?p={}", meta.source, page);
-            let Ok(toc_html) = http::fetch(client, &toc_url).await else { continue };
+            let Ok(toc_html) = http::fetch(client, &toc_url).await else {
+                continue;
+            };
 
             // Collect (title, url) per page into owned data, dropping the
             // non-Send doc before the per-chapter body fetch.
@@ -295,7 +307,10 @@ async fn fetch_chapter_text(client: &reqwest::Client, url: &str) -> String {
         for el in doc.select(&sel) {
             let class = el.value().attr("class").unwrap_or("");
             if class.contains("preface") || class.contains("afterword") {
-                out.push_str(&format!("<div class=\"fff_chapter_notes\">{}</div>", el.inner_html()));
+                out.push_str(&format!(
+                    "<div class=\"fff_chapter_notes\">{}</div>",
+                    el.inner_html()
+                ));
             } else {
                 out.push_str(&el.inner_html());
             }
@@ -310,8 +325,17 @@ mod tests {
 
     #[test]
     fn extracts_story_id() {
-        assert_eq!(SyosetuScraper::story_id_from_url("https://ncode.syosetu.com/n1234ab/").as_deref(), Some("n1234ab"));
-        assert_eq!(SyosetuScraper::story_id_from_url("https://ncode.syosetu.com/novelview/infotop/ncode/n1234ab/").as_deref(), Some("n1234ab"));
+        assert_eq!(
+            SyosetuScraper::story_id_from_url("https://ncode.syosetu.com/n1234ab/").as_deref(),
+            Some("n1234ab")
+        );
+        assert_eq!(
+            SyosetuScraper::story_id_from_url(
+                "https://ncode.syosetu.com/novelview/infotop/ncode/n1234ab/"
+            )
+            .as_deref(),
+            Some("n1234ab")
+        );
     }
 
     #[test]
@@ -330,7 +354,8 @@ mod tests {
 
     #[test]
     fn extracts_chapter_body() {
-        let html = r#"<html><body><div class="p-novel__text"><p>Japanese text.</p></div></body></html>"#;
+        let html =
+            r#"<html><body><div class="p-novel__text"><p>Japanese text.</p></div></body></html>"#;
         let doc = Html::parse_document(html);
         let mut s = String::new();
         if let Ok(sel) = Selector::parse("div.p-novel__text") {

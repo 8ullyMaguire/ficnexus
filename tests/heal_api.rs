@@ -13,10 +13,10 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
-    body::Body,
-    http::{header, Request, StatusCode},
-    routing::post,
     Router,
+    body::Body,
+    http::{Request, StatusCode, header},
+    routing::post,
 };
 use serde_json::Value;
 use sqlx::Row;
@@ -24,7 +24,10 @@ use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
-    DB_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+    DB_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
 }
 
 const USERNAME: &str = "heal_test_admin";
@@ -51,8 +54,8 @@ async fn build_app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -93,7 +96,9 @@ async fn build_app() -> Router {
         ),
         recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
         strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
         collection_worker: fichub::recommender::worker::CollectionWorker::new(
@@ -250,8 +255,13 @@ async fn send(
     };
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────
@@ -286,7 +296,10 @@ async fn record_failure_roundtrip() {
     assert_eq!(row.1, DOMAIN);
     assert_eq!(row.2, "parse");
     assert_eq!(row.3.as_deref(), Some("missing h1"));
-    assert_eq!(row.4.as_deref(), Some("tests/fixtures/scrape/healtest/x.html"));
+    assert_eq!(
+        row.4.as_deref(),
+        Some("tests/fixtures/scrape/healtest/x.html")
+    );
     assert_eq!(row.5.len(), 12, "fingerprint is 12 hex chars");
 }
 
@@ -300,7 +313,10 @@ async fn classifier_maps_scrape_error() {
 
     assert_eq!(ErrorKind::from(&ScrapeError::Blocked), ErrorKind::Blocked);
     assert_eq!(ErrorKind::from(&ScrapeError::NotFound), ErrorKind::NotFound);
-    assert_eq!(ErrorKind::from(&ScrapeError::ParseError("x".into())), ErrorKind::Parse);
+    assert_eq!(
+        ErrorKind::from(&ScrapeError::ParseError("x".into())),
+        ErrorKind::Parse
+    );
     assert_eq!(
         ErrorKind::from(&ScrapeError::Network("timed out".into())),
         ErrorKind::Timeout
@@ -314,8 +330,14 @@ async fn classifier_maps_scrape_error() {
         ErrorKind::Unknown
     );
 
-    assert_eq!(classify(&ErrorKind::Parse, "x.com", "no h1"), Class::Structural);
-    assert_eq!(classify(&ErrorKind::Timeout, "x.com", "timeout"), Class::Transient);
+    assert_eq!(
+        classify(&ErrorKind::Parse, "x.com", "no h1"),
+        Class::Structural
+    );
+    assert_eq!(
+        classify(&ErrorKind::Timeout, "x.com", "timeout"),
+        Class::Transient
+    );
     assert_eq!(
         classify(&ErrorKind::Blocked, "archiveofourown.org", "empty body"),
         Class::Blocked
@@ -328,13 +350,25 @@ async fn classifier_maps_scrape_error() {
 #[ignore]
 async fn fingerprint_stable() {
     let _guard = db_guard();
-    use fichub::heal::classifier::{fingerprint, ErrorKind};
-    let a = fingerprint("https://example.com/s/123", &ErrorKind::Parse, "missing h1 on chapter 5");
-    let b = fingerprint("https://example.com/s/456", &ErrorKind::Parse, "missing h1 on chapter 9");
+    use fichub::heal::classifier::{ErrorKind, fingerprint};
+    let a = fingerprint(
+        "https://example.com/s/123",
+        &ErrorKind::Parse,
+        "missing h1 on chapter 5",
+    );
+    let b = fingerprint(
+        "https://example.com/s/456",
+        &ErrorKind::Parse,
+        "missing h1 on chapter 9",
+    );
     assert_eq!(a, b, "digit-normalized messages converge");
     assert_eq!(a.len(), 12);
     assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
-    let c = fingerprint("https://example.com/s/123", &ErrorKind::Timeout, "missing h1 on chapter 5");
+    let c = fingerprint(
+        "https://example.com/s/123",
+        &ErrorKind::Timeout,
+        "missing h1 on chapter 5",
+    );
     assert_ne!(a, c, "different kind forks the fingerprint");
 }
 
@@ -409,18 +443,25 @@ async fn admin_heal_diagnose_only_returns_failures() {
     )
     .await;
     assert_eq!(status, StatusCode::OK, "heal diagnose failed: {body}");
-    assert_eq!(body["agent"], "disabled", "AGENT_ENABLED defaults false: {body}");
+    assert_eq!(
+        body["agent"], "disabled",
+        "AGENT_ENABLED defaults false: {body}"
+    );
     assert_eq!(body["failures"].as_array().map(|a| a.len()), Some(3));
-    assert_eq!(body["should_heal"], true, "3 same-domain structural → heal: {body}");
+    assert_eq!(
+        body["should_heal"], true,
+        "3 same-domain structural → heal: {body}"
+    );
     let plan = body["plan"].as_str().unwrap_or("");
     assert!(plan.contains("diagnose-only"), "plan: {plan}");
     assert!(plan.contains("3 failures"), "plan count: {plan}");
 
     // No agent_runs row was created (diagnose skipped).
-    let runs: i64 = sqlx::query_scalar("SELECT count(*) FROM agent_runs WHERE trigger_type = 'admin_heal'")
-        .fetch_one(&db)
-        .await
-        .unwrap();
+    let runs: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM agent_runs WHERE trigger_type = 'admin_heal'")
+            .fetch_one(&db)
+            .await
+            .unwrap();
     assert_eq!(runs, 0, "no agent run when agent disabled");
 }
 
@@ -437,10 +478,7 @@ async fn agent_unavailable_records_failed_run() {
     let token = auth_header(admin_id, 10, USERNAME);
 
     // Force config: enabled, no key → agent::remote_configured false.
-    let service = fichub::heal::HealService::new(
-        db.clone(),
-        fichub::config::Config::from_env(),
-    );
+    let service = fichub::heal::HealService::new(db.clone(), fichub::config::Config::from_env());
     // The endpoint reads state.config; state was built from env where
     // AGENT_ENABLED may be false. Simulate the no-key case by POSTing with
     // force and checking the "disabled" branch — the FAILED-RUN path needs the
@@ -552,15 +590,33 @@ async fn admin_heal_requires_role_10() {
     let user_id = seed_user(&db, USERNAME, 0).await;
     let app = build_app().await;
 
-    let (status, body) = send(&app, "POST", &format!("/api/admin/heal?domain={DOMAIN}"), None, None).await;
+    let (status, body) = send(
+        &app,
+        "POST",
+        &format!("/api/admin/heal?domain={DOMAIN}"),
+        None,
+        None,
+    )
+    .await;
     // admin.rs convention: anonymous → HTTP 403 with err -403 (not the
     // tag-curator 400-as-401 style). AuthUser extraction happens before the
     // handler body; the AppError::Forbidden path is the module convention.
-    assert_eq!(status, StatusCode::FORBIDDEN, "anon must be forbidden: {body}");
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "anon must be forbidden: {body}"
+    );
     assert_eq!(body["err"], -403, "anon err code: {body}");
 
     let token = auth_header(user_id, 0, USERNAME);
-    let (status, _) = send(&app, "POST", &format!("/api/admin/heal?domain={DOMAIN}"), Some(&token), None).await;
+    let (status, _) = send(
+        &app,
+        "POST",
+        &format!("/api/admin/heal?domain={DOMAIN}"),
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "role 0 must be forbidden");
 }
 
@@ -747,16 +803,10 @@ async fn pending_exports_insert_and_replay() {
     let db = pool().await;
     cleanup(&db).await;
 
-    let id = fichub::heal::extract::enqueue_pending_export(
-        &db,
-        URL_A,
-        "epub",
-        None,
-        None,
-        "timeout",
-    )
-    .await
-    .expect("enqueue pending export");
+    let id =
+        fichub::heal::extract::enqueue_pending_export(&db, URL_A, "epub", None, None, "timeout")
+            .await
+            .expect("enqueue pending export");
     assert!(id > 0);
 
     // Freshly enqueued → pending, attempts 0.
@@ -784,13 +834,12 @@ async fn pending_exports_insert_and_replay() {
         rows.iter().all(|r| r.url != URL_A),
         "completed rows are no longer pending"
     );
-    let (status, attempts): (String, i32) = sqlx::query_as(
-        "SELECT status, attempts FROM pending_exports WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_one(&db)
-    .await
-    .expect("completed row");
+    let (status, attempts): (String, i32) =
+        sqlx::query_as("SELECT status, attempts FROM pending_exports WHERE id = $1")
+            .bind(id)
+            .fetch_one(&db)
+            .await
+            .expect("completed row");
     assert_eq!(status, "completed");
     assert_eq!(attempts, 1);
 }
@@ -810,7 +859,14 @@ async fn heal_extractions_endpoint_requires_role_10() {
     assert_eq!(body["err"], -403);
 
     let token = auth_header(user_id, 0, USERNAME);
-    let (status, _) = send(&app, "GET", "/api/admin/heal/extractions", Some(&token), None).await;
+    let (status, _) = send(
+        &app,
+        "GET",
+        "/api/admin/heal/extractions",
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::FORBIDDEN, "role 0: {body}");
 }
 
@@ -838,7 +894,14 @@ async fn trust_extraction_endpoint_roundtrip() {
         .expect("store extraction");
 
     // Admin lists → sees it untrusted.
-    let (status, body) = send(&app, "GET", "/api/admin/heal/extractions", Some(&token), None).await;
+    let (status, body) = send(
+        &app,
+        "GET",
+        "/api/admin/heal/extractions",
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let arr = body["extractions"].as_array().expect("extractions array");
     assert_eq!(arr.len(), 1, "one untrusted extraction: {body}");
@@ -858,7 +921,14 @@ async fn trust_extraction_endpoint_roundtrip() {
     assert_eq!(body["trusted"], true);
 
     // Now trusted → the untrusted review queue is empty.
-    let (status, body) = send(&app, "GET", "/api/admin/heal/extractions", Some(&token), None).await;
+    let (status, body) = send(
+        &app,
+        "GET",
+        "/api/admin/heal/extractions",
+        Some(&token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["extractions"].as_array().map(|a| a.len()), Some(0));
 }

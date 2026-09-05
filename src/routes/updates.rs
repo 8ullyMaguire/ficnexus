@@ -14,9 +14,9 @@
 //!   the next export to regenerate) — we deliberately do *not* regenerate all
 //!   formats here, so the endpoint stays fast.
 
-use axum::extract::{Path, State};
 use axum::Json;
-use serde_json::{json, Value};
+use axum::extract::{Path, State};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::db::queries;
@@ -101,7 +101,9 @@ pub async fn refresh_fic_handler(
         .ok_or_else(|| AppError::NotFound(format!("fic not found: {url_id}")))?;
 
     let source_url = if existing.source.is_empty() {
-        return Err(AppError::BadRequest("fic has no source URL to refresh from".to_string()));
+        return Err(AppError::BadRequest(
+            "fic has no source URL to refresh from".to_string(),
+        ));
     } else {
         existing.source.clone()
     };
@@ -160,10 +162,8 @@ pub async fn refresh_fic_handler(
         chapters: meta.chapters,
         words: meta.words,
         description: meta.desc.clone(),
-        fic_created: chrono::DateTime::from_timestamp_millis(meta.published)
-            .unwrap_or_default(),
-        fic_updated: chrono::DateTime::from_timestamp_millis(meta.updated)
-            .unwrap_or_default(),
+        fic_created: chrono::DateTime::from_timestamp_millis(meta.published).unwrap_or_default(),
+        fic_updated: chrono::DateTime::from_timestamp_millis(meta.updated).unwrap_or_default(),
         status: meta.status.clone(),
         source: meta.source.clone(),
         extra_meta: meta.extra_meta.clone(),
@@ -179,10 +179,17 @@ pub async fn refresh_fic_handler(
     // linked; only fall back to auto-merge for fics that were never ingested.
     let work_id = match existing.work_id {
         Some(wid) => wid,
-        None => crate::works::find_or_create_work(&state.db, &meta).await?.work_id,
+        None => {
+            crate::works::find_or_create_work(&state.db, &meta)
+                .await?
+                .work_id
+        }
     };
     // Make sure the source points at the work in either case.
-    if queries::get_work_by_source(&state.db, &url_id).await?.is_none() {
+    if queries::get_work_by_source(&state.db, &url_id)
+        .await?
+        .is_none()
+    {
         queries::link_source_to_work(&state.db, &url_id, work_id).await?;
     }
 

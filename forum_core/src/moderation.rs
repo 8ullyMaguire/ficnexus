@@ -95,11 +95,7 @@ impl ModReject {
 pub trait ModerationHook<A>: Send + Sync {
     /// Called before a topic or post persists. Returning `Err` rejects the
     /// write; nothing is persisted.
-    async fn check_post(
-        &self,
-        actor: &A,
-        body: &str,
-    ) -> Result<(), ModReject>;
+    async fn check_post(&self, actor: &A, body: &str) -> Result<(), ModReject>;
 
     /// Called after a moderation action so the app can record a modlog
     /// entry (or trigger notifications).
@@ -167,20 +163,38 @@ mod tests {
 
     #[test]
     fn pinned_unpin_and_lock() {
-        assert_eq!(transition(Status::Pinned, Status::Open).unwrap(), Status::Open);
-        assert_eq!(transition(Status::Pinned, Status::Locked).unwrap(), Status::Locked);
+        assert_eq!(
+            transition(Status::Pinned, Status::Open).unwrap(),
+            Status::Open
+        );
+        assert_eq!(
+            transition(Status::Pinned, Status::Locked).unwrap(),
+            Status::Locked
+        );
     }
 
     #[test]
     fn locked_can_be_reopened_pinned_archived() {
-        assert_eq!(transition(Status::Locked, Status::Open).unwrap(), Status::Open);
-        assert_eq!(transition(Status::Locked, Status::Pinned).unwrap(), Status::Pinned);
-        assert_eq!(transition(Status::Locked, Status::Archived).unwrap(), Status::Archived);
+        assert_eq!(
+            transition(Status::Locked, Status::Open).unwrap(),
+            Status::Open
+        );
+        assert_eq!(
+            transition(Status::Locked, Status::Pinned).unwrap(),
+            Status::Pinned
+        );
+        assert_eq!(
+            transition(Status::Locked, Status::Archived).unwrap(),
+            Status::Archived
+        );
     }
 
     #[test]
     fn archived_only_reopens() {
-        assert_eq!(transition(Status::Archived, Status::Open).unwrap(), Status::Open);
+        assert_eq!(
+            transition(Status::Archived, Status::Open).unwrap(),
+            Status::Open
+        );
         // Same-status is a no-op (allowed); only forward transitions from
         // Archived are rejected.
         assert!(transition(Status::Archived, Status::Archived).is_ok());

@@ -13,22 +13,26 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::post,
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
-    DB_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+    DB_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
 }
 
 async fn pool() -> sqlx::PgPool {
-    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
+    let url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
     sqlx::PgPool::connect(&url).await.expect("connect pool")
 }
 
@@ -39,8 +43,14 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
     let redis_client = redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL");
-    let redis = redis_client.get_multiplexed_async_connection().await.expect("redis conn");
-    let http_client = reqwest::Client::builder().user_agent("fichub-test/0.1.0").build().expect("reqwest");
+    let redis = redis_client
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis conn");
+    let http_client = reqwest::Client::builder()
+        .user_agent("fichub-test/0.1.0")
+        .build()
+        .expect("reqwest");
     let scraper_registry = Arc::new(fichub::scrape::registry::ScraperRegistry::new());
 
     let ollama_client = fichub::services::ollama::OllamaClient::new(
@@ -52,20 +62,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         rate_limiter: Box::new(
             fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-                redis_client.get_multiplexed_async_connection().await.expect("redis"),
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
                 false,
             )
             .await
             .expect("rate limiter"),
         ),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -76,7 +95,7 @@ async fn app() -> Router {
             fichub::config::Config::from_env(),
             scraper_registry,
         ),
-                suggest_cache: Arc::new(tokio::sync::Mutex::new(None)),
+        suggest_cache: Arc::new(tokio::sync::Mutex::new(None)),
         heal: fichub::heal::HealService::new(db.clone(), config.clone()),
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
@@ -116,20 +135,22 @@ async fn user_count(db: &sqlx::PgPool, username: &str) -> i64 {
 }
 
 async fn comment_count(db: &sqlx::PgPool, url_id: &str, body: &str) -> i64 {
-    let (count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM comments WHERE url_id = $1 AND body = $2",
-    )
-    .bind(url_id)
-    .bind(body)
-    .fetch_one(db)
-    .await
-    .expect("count comments");
+    let (count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM comments WHERE url_id = $1 AND body = $2")
+            .bind(url_id)
+            .bind(body)
+            .fetch_one(db)
+            .await
+            .expect("count comments");
     count
 }
 
 /// Idempotently seed a user, returning its id (re-runnable).
 async fn seed_user(db: &sqlx::PgPool, username: &str) -> i32 {
-    let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(username).execute(db).await;
+    let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(username)
+        .execute(db)
+        .await;
     sqlx::query("INSERT INTO users (username, password_hash) VALUES ($1, 'x') RETURNING id")
         .bind(username)
         .fetch_one(db)
@@ -148,7 +169,10 @@ async fn honeypot_register_silently_rejected() {
     let app = app().await;
 
     let username = "honeypot_register_bot";
-    let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(username).execute(&db).await;
+    let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(username)
+        .execute(&db)
+        .await;
 
     let opened = (now_ms() - 5000).to_string();
     let res = app
@@ -176,16 +200,28 @@ async fn honeypot_register_silently_rejected() {
     // Success-looking response…
     assert_eq!(res.status(), StatusCode::OK);
     let body: Value = serde_json::from_slice(
-        &axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap(),
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
     )
     .unwrap();
     assert_eq!(body["err"], 0, "must look successful: {body}");
-    assert_eq!(body["token"], "", "no token for silently-rejected registration");
+    assert_eq!(
+        body["token"], "",
+        "no token for silently-rejected registration"
+    );
 
     // …but no account.
-    assert_eq!(user_count(&db, username).await, 0, "honeypot registration must NOT create a user");
+    assert_eq!(
+        user_count(&db, username).await,
+        0,
+        "honeypot registration must NOT create a user"
+    );
 
-    let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(username).execute(&db).await;
+    let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(username)
+        .execute(&db)
+        .await;
 }
 
 /// register normally (honeypot empty, form opened 5s ago) -> user IS created.
@@ -197,7 +233,10 @@ async fn normal_register_creates_user() {
     let app = app().await;
 
     let username = "honeypot_normal_user";
-    let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(username).execute(&db).await;
+    let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(username)
+        .execute(&db)
+        .await;
 
     let opened = (now_ms() - 5000).to_string();
     let res = app
@@ -224,15 +263,27 @@ async fn normal_register_creates_user() {
 
     assert_eq!(res.status(), StatusCode::OK);
     let body: Value = serde_json::from_slice(
-        &axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap(),
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
     )
     .unwrap();
     assert_eq!(body["err"], 0);
-    assert!(!body["token"].as_str().unwrap().is_empty(), "real registration gets a token");
+    assert!(
+        !body["token"].as_str().unwrap().is_empty(),
+        "real registration gets a token"
+    );
 
-    assert_eq!(user_count(&db, username).await, 1, "normal registration must create a user");
+    assert_eq!(
+        user_count(&db, username).await,
+        1,
+        "normal registration must create a user"
+    );
 
-    let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(username).execute(&db).await;
+    let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(username)
+        .execute(&db)
+        .await;
 }
 
 /// register without the JS-set form_opened_at (scripted/curl bot) -> 200
@@ -245,7 +296,10 @@ async fn register_without_opened_at_silently_rejected() {
     let app = app().await;
 
     let username = "honeypot_no_timestamp";
-    let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(username).execute(&db).await;
+    let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(username)
+        .execute(&db)
+        .await;
 
     let res = app
         .clone()
@@ -267,9 +321,16 @@ async fn register_without_opened_at_silently_rejected() {
         .unwrap();
 
     assert_eq!(res.status(), StatusCode::OK);
-    assert_eq!(user_count(&db, username).await, 0, "scripted registration must NOT create a user");
+    assert_eq!(
+        user_count(&db, username).await,
+        0,
+        "scripted registration must NOT create a user"
+    );
 
-    let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(username).execute(&db).await;
+    let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(username)
+        .execute(&db)
+        .await;
 }
 
 /// comment with honeypot filled -> 200 OK but no comment row.
@@ -335,7 +396,9 @@ async fn honeypot_comment_silently_rejected() {
     // Success-looking response…
     assert_eq!(res.status(), StatusCode::OK);
     let body: Value = serde_json::from_slice(
-        &axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap(),
+        &axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
     )
     .unwrap();
     assert_eq!(body["err"], 0, "must look successful: {body}");
@@ -347,9 +410,18 @@ async fn honeypot_comment_silently_rejected() {
         "honeypot comment must NOT be persisted"
     );
 
-    let _ = sqlx::query("DELETE FROM comments WHERE url_id = $1").bind(&url_id).execute(&db).await;
-    let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1").bind(&url_id).execute(&db).await;
-    let _ = sqlx::query("DELETE FROM users WHERE id = $1").bind(user_id).execute(&db).await;
+    let _ = sqlx::query("DELETE FROM comments WHERE url_id = $1")
+        .bind(&url_id)
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1")
+        .bind(&url_id)
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(user_id)
+        .execute(&db)
+        .await;
 }
 
 /// comment submitted too fast (< 500ms form-open) -> 200 OK but no row.
@@ -419,9 +491,18 @@ async fn too_fast_comment_silently_rejected() {
         "too-fast comment must NOT be persisted"
     );
 
-    let _ = sqlx::query("DELETE FROM comments WHERE url_id = $1").bind(&url_id).execute(&db).await;
-    let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1").bind(&url_id).execute(&db).await;
-    let _ = sqlx::query("DELETE FROM users WHERE id = $1").bind(user_id).execute(&db).await;
+    let _ = sqlx::query("DELETE FROM comments WHERE url_id = $1")
+        .bind(&url_id)
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1")
+        .bind(&url_id)
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(user_id)
+        .execute(&db)
+        .await;
 }
 
 /// normal comment (honeypot empty, opened 5s ago) -> comment IS created.
@@ -495,10 +576,15 @@ async fn normal_comment_created() {
         .await
         .unwrap();
 
-    let res_bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap();
+    let res_bytes = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let body: Value = serde_json::from_slice(&res_bytes).unwrap();
     assert_eq!(body["err"], 0, "comment create must succeed: {body}");
-    assert!(body["comment_id"].as_i64().unwrap() > 0, "real comment gets a real id");
+    assert!(
+        body["comment_id"].as_i64().unwrap() > 0,
+        "real comment gets a real id"
+    );
 
     assert_eq!(
         comment_count(&db, &url_id, "a genuine human comment").await,
@@ -506,9 +592,18 @@ async fn normal_comment_created() {
         "normal comment must be persisted"
     );
 
-    let _ = sqlx::query("DELETE FROM comments WHERE url_id = $1").bind(&url_id).execute(&db).await;
-    let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1").bind(&url_id).execute(&db).await;
-    let _ = sqlx::query("DELETE FROM users WHERE id = $1").bind(user_id).execute(&db).await;
+    let _ = sqlx::query("DELETE FROM comments WHERE url_id = $1")
+        .bind(&url_id)
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1")
+        .bind(&url_id)
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(user_id)
+        .execute(&db)
+        .await;
 }
 
 /// Failed login logs an auth_failed request_log row (bot stuffing signal).
@@ -520,16 +615,24 @@ async fn failed_login_logs_auth_failed_row() {
     let app = app().await;
 
     // Clean any prior rows for this probe.
-    let _ = sqlx::query("DELETE FROM request_log WHERE query = 'login' AND client_id = 'authfail_probe'").execute(&db).await;
+    let _ = sqlx::query(
+        "DELETE FROM request_log WHERE query = 'login' AND client_id = 'authfail_probe'",
+    )
+    .execute(&db)
+    .await;
 
     let res = app
-        .oneshot(Request::builder()
-            .method("POST")
-            .uri("/api/auth/login")
-            .header("content-type", "application/json")
-            .header("x-client-id", "authfail_probe")
-            .body(Body::from(r#"{"username":"no_such_user_authfail","password":"wrongpass123"}"#))
-            .unwrap())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/login")
+                .header("content-type", "application/json")
+                .header("x-client-id", "authfail_probe")
+                .body(Body::from(
+                    r#"{"username":"no_such_user_authfail","password":"wrongpass123"}"#,
+                ))
+                .unwrap(),
+        )
         .await
         .unwrap();
     // login_user returns AppError::Unauthorized which maps to HTTP 401.
@@ -541,7 +644,14 @@ async fn failed_login_logs_auth_failed_row() {
     .fetch_one(&db)
     .await
     .expect("count auth_failed");
-    assert_eq!(count, 1, "failed login should be logged with etype=auth_failed");
+    assert_eq!(
+        count, 1,
+        "failed login should be logged with etype=auth_failed"
+    );
 
-    let _ = sqlx::query("DELETE FROM request_log WHERE query = 'login' AND client_id = 'authfail_probe'").execute(&db).await;
+    let _ = sqlx::query(
+        "DELETE FROM request_log WHERE query = 'login' AND client_id = 'authfail_probe'",
+    )
+    .execute(&db)
+    .await;
 }

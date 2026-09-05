@@ -15,8 +15,8 @@
 use async_trait::async_trait;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 /// Per-domain config for the StoriesOnline family.
 #[derive(Debug, Clone, Copy)]
@@ -26,9 +26,18 @@ pub struct StoriesOnlineSite {
 }
 
 pub const STORIESONLINE_SITES: &[StoriesOnlineSite] = &[
-    StoriesOnlineSite { domain: "storiesonline.net", abbrev: "son" },
-    StoriesOnlineSite { domain: "scifistories.com", abbrev: "sfst" },
-    StoriesOnlineSite { domain: "storyroom.com", abbrev: "stryrm" },
+    StoriesOnlineSite {
+        domain: "storiesonline.net",
+        abbrev: "son",
+    },
+    StoriesOnlineSite {
+        domain: "scifistories.com",
+        abbrev: "sfst",
+    },
+    StoriesOnlineSite {
+        domain: "storyroom.com",
+        abbrev: "stryrm",
+    },
 ];
 
 /// Domain-driven scraper for the family.
@@ -38,12 +47,17 @@ pub struct StoriesOnlineScraper {
 
 impl StoriesOnlineScraper {
     pub fn from_url(url: &str) -> Option<Self> {
-        let site = STORIESONLINE_SITES.iter().find(|s| url.contains(s.domain))?;
+        let site = STORIESONLINE_SITES
+            .iter()
+            .find(|s| url.contains(s.domain))?;
         Some(StoriesOnlineScraper { site })
     }
 
     pub fn all() -> Vec<StoriesOnlineScraper> {
-        STORIESONLINE_SITES.iter().map(|s| StoriesOnlineScraper { site: s }).collect()
+        STORIESONLINE_SITES
+            .iter()
+            .map(|s| StoriesOnlineScraper { site: s })
+            .collect()
     }
 }
 
@@ -53,7 +67,11 @@ impl SiteScraper for StoriesOnlineScraper {
         url.contains(self.site.domain) && (url.contains("/s/") || url.contains("/n/"))
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         // Force the index view (?ind=1) so chapter list is present.
         let page_url = if url.contains("?ind=1") {
             url.to_string()
@@ -107,14 +125,23 @@ impl SiteScraper for StoriesOnlineScraper {
 
             // Chapters
             let mut chapters = 0i32;
-            if let Ok(sel) = Selector::parse("div#index-list a[href*='/s/'], div#index-list a[href*='/n/']") {
+            if let Ok(sel) =
+                Selector::parse("div#index-list a[href*='/s/'], div#index-list a[href*='/n/']")
+            {
                 chapters = doc.select(&sel).count() as i32;
             }
             if chapters == 0 {
                 chapters = 1;
             }
 
-            (story_id, title, author, author_url, author_local_id, chapters)
+            (
+                story_id,
+                title,
+                author,
+                author_url,
+                author_local_id,
+                chapters,
+            )
         }; // doc dropped here
 
         if title.is_empty() {
@@ -145,7 +172,12 @@ impl SiteScraper for StoriesOnlineScraper {
                     for el in adoc.select(&misc_sel) {
                         let t = el.text().collect::<String>();
                         if t.contains("words") {
-                            words = t.chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap_or(0);
+                            words = t
+                                .chars()
+                                .filter(|c| c.is_ascii_digit())
+                                .collect::<String>()
+                                .parse()
+                                .unwrap_or(0);
                         }
                         if t.contains("Completed") {
                             status = "complete".to_string();
@@ -187,8 +219,9 @@ impl SiteScraper for StoriesOnlineScraper {
         // Collect chapter links into owned data first.
         let links: Vec<(String, String)> = {
             let doc = Html::parse_document(&html);
-            let sel = Selector::parse("div#index-list a[href*='/s/'], div#index-list a[href*='/n/']")
-                .map_err(|e| ScrapeError::ParseError(e.to_string()))?;
+            let sel =
+                Selector::parse("div#index-list a[href*='/s/'], div#index-list a[href*='/n/']")
+                    .map_err(|e| ScrapeError::ParseError(e.to_string()))?;
             doc.select(&sel)
                 .filter_map(|a| {
                     let title = a.text().collect::<String>().trim().to_string();

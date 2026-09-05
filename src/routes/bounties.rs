@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::extract::{Json, Path, Query, State};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
@@ -33,22 +33,27 @@ pub async fn list_bounties(
     Query(params): Query<BountyListParams>,
 ) -> Result<Json<Vec<BountyRow>>, AppError> {
     let limit = params.limit.unwrap_or(50).min(200).max(1);
-    let rows = bounties::list_open_bounties(
-        &state.db,
-        params.target_type.as_deref(),
-        limit,
-    )
-    .await?;
-    Ok(Json(rows.into_iter().map(|(id, creator_id, tt, desc, amt, ts)| BountyRow {
-        id, creator_id, target_type: tt, goal_desc: desc, amount: amt, created_at: ts,
-    }).collect()))
+    let rows =
+        bounties::list_open_bounties(&state.db, params.target_type.as_deref(), limit).await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|(id, creator_id, tt, desc, amt, ts)| BountyRow {
+                id,
+                creator_id,
+                target_type: tt,
+                goal_desc: desc,
+                amount: amt,
+                created_at: ts,
+            })
+            .collect(),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateBountyReq {
-    pub target_type: String,     // work | series | tag | meta
-    pub target_ref: String,      // url_id / series id / tag slug / label
-    pub amount: i32,             // rep to stake
+    pub target_type: String, // work | series | tag | meta
+    pub target_ref: String,  // url_id / series id / tag slug / label
+    pub amount: i32,         // rep to stake
     pub goal_desc: Option<String>,
     pub expiry_days: Option<i32>,
 }
@@ -68,8 +73,13 @@ pub async fn create_bounty_handler(
     }
     let days = req.expiry_days.unwrap_or(30).clamp(1, 90);
     let pot_id = bounties::create_bounty(
-        &state.db, user_id, &req.target_type, &req.target_ref,
-        req.amount, req.goal_desc.as_deref(), days,
+        &state.db,
+        user_id,
+        &req.target_type,
+        &req.target_ref,
+        req.amount,
+        req.goal_desc.as_deref(),
+        days,
     )
     .await?;
     Ok(Json(json!({ "ok": true, "bounty_id": pot_id })))
@@ -119,7 +129,11 @@ pub async fn resolve_bounty_handler(
         return Err(AppError::BadRequest("bad action".into()));
     }
     let payout = bounties::resolve_bounty(
-        &state.db, resolver_id, pot_id, &req.action, req.note.as_deref(),
+        &state.db,
+        resolver_id,
+        pot_id,
+        &req.action,
+        req.note.as_deref(),
     )
     .await?;
     Ok(Json(json!({ "ok": true, "payout": payout })))

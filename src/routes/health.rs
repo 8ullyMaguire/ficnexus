@@ -1,6 +1,6 @@
 use axum::{
-    extract::{State, Query},
     Json,
+    extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -166,14 +166,11 @@ mod tests {
         // (tests/health_api.rs); here we only assert the 2s PING timeout logic
         // on a deliberately-unreachable connection, so the unit test never
         // hangs and never needs a live Redis.
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            async {
-                let client = redis::Client::open("redis://127.0.0.1:1").unwrap();
-                let mut conn = client.get_multiplexed_async_connection().await?;
-                redis::cmd("PING").query_async::<String>(&mut conn).await
-            },
-        )
+        let result = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            let client = redis::Client::open("redis://127.0.0.1:1").unwrap();
+            let mut conn = client.get_multiplexed_async_connection().await?;
+            redis::cmd("PING").query_async::<String>(&mut conn).await
+        })
         .await;
         match result {
             Ok(Err(_)) => {} // connect/PING failed → redis false: correct

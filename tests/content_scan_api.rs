@@ -8,10 +8,10 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use axum::{
-    body::Body,
-    http::{header, Request, StatusCode},
-    routing::{get, post},
     Router,
+    body::Body,
+    http::{Request, StatusCode, header},
+    routing::{get, post},
 };
 use serde_json::Value;
 use sqlx::Row;
@@ -52,13 +52,15 @@ async fn cleanup(db: &sqlx::PgPool, username: &str, url_id: &str) {
 }
 
 async fn seed_admin(db: &sqlx::PgPool, username: &str) -> i32 {
-    sqlx::query("INSERT INTO users (username, password_hash, role) VALUES ($1, 'x', 10) \
-                 ON CONFLICT (username) DO UPDATE SET role = 10 RETURNING id")
-        .bind(username)
-        .fetch_one(db)
-        .await
-        .expect("seed admin")
-        .get(0)
+    sqlx::query(
+        "INSERT INTO users (username, password_hash, role) VALUES ($1, 'x', 10) \
+                 ON CONFLICT (username) DO UPDATE SET role = 10 RETURNING id",
+    )
+    .bind(username)
+    .fetch_one(db)
+    .await
+    .expect("seed admin")
+    .get(0)
 }
 
 async fn seed_scan(db: &sqlx::PgPool, url_id: &str, classification: &str, warnings: &str) {
@@ -119,7 +121,9 @@ async fn app(db: sqlx::PgPool) -> Router {
         ),
         recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
         strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+            vec![Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
         collection_worker: fichub::recommender::worker::CollectionWorker::new(
@@ -186,14 +190,22 @@ async fn list_scan_and_review_flow() {
         .await
         .unwrap();
     let status = resp.status();
-    let body_bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let body_bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let body: Value = serde_json::from_slice(&body_bytes).unwrap_or_else(|_| {
-        panic!("status={status} bad json: {}", String::from_utf8_lossy(&body_bytes))
+        panic!(
+            "status={status} bad json: {}",
+            String::from_utf8_lossy(&body_bytes)
+        )
     });
     assert_eq!(status, StatusCode::OK, "list should be OK: {}", body);
     assert_eq!(body["err"], 0);
     let items = body["items"].as_array().unwrap();
-    assert!(items.iter().any(|i| i["url_id"] == URL_ID), "seeded row listed");
+    assert!(
+        items.iter().any(|i| i["url_id"] == URL_ID),
+        "seeded row listed"
+    );
 
     // Review: confirm the flag.
     let resp = app
@@ -210,8 +222,15 @@ async fn list_scan_and_review_flow() {
         .await
         .unwrap();
     let review_status = resp.status();
-    let review_body_bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
-    assert_eq!(review_status, StatusCode::OK, "review should be OK: {}", String::from_utf8_lossy(&review_body_bytes));
+    let review_body_bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    assert_eq!(
+        review_status,
+        StatusCode::OK,
+        "review should be OK: {}",
+        String::from_utf8_lossy(&review_body_bytes)
+    );
 
     // After review it no longer appears in pending.
     let resp = app
@@ -224,11 +243,18 @@ async fn list_scan_and_review_flow() {
         )
         .await
         .unwrap();
-    let body: Value =
-        serde_json::from_slice(&axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
-            .unwrap();
+    let body: Value = serde_json::from_slice(
+        &axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
     assert!(
-        !body["items"].as_array().unwrap().iter().any(|i| i["url_id"] == URL_ID),
+        !body["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["url_id"] == URL_ID),
         "reviewed row leaves pending"
     );
 

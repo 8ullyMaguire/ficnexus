@@ -12,8 +12,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct MassEffect2InScraper;
 
@@ -159,8 +159,13 @@ impl SiteScraper for MassEffect2InScraper {
         url.contains("masseffect2.in/publ/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let doc_id = Self::doc_id(url).ok_or_else(|| ScrapeError::ParseError("masseffect2.in: bad url".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let doc_id = Self::doc_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("masseffect2.in: bad url".into()))?;
         let html = http::fetch(client, url).await?;
         let start = parse_chapter_page(&html);
 
@@ -230,7 +235,10 @@ impl SiteScraper for MassEffect2InScraper {
         }
 
         let dates: Vec<i64> = pages.iter().filter_map(|p| p.date).collect();
-        let published = dates.first().copied().unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        let published = dates
+            .first()
+            .copied()
+            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
         let updated = dates.last().copied().unwrap_or(published);
 
         Ok(FicMetadata {
@@ -301,7 +309,9 @@ impl SiteScraper for MassEffect2InScraper {
         }
 
         if pages.is_empty() {
-            return Err(ScrapeError::ParseError("masseffect2.in: no chapters".into()));
+            return Err(ScrapeError::ParseError(
+                "masseffect2.in: no chapters".into(),
+            ));
         }
 
         let mut chapters = Vec::new();
@@ -337,13 +347,19 @@ mod tests {
 
     #[test]
     fn parses_doc_id() {
-        assert_eq!(MassEffect2InScraper::doc_id("https://www.masseffect2.in/publ/19-1-0-1234"), Some("19-1-0-1234".to_string()));
+        assert_eq!(
+            MassEffect2InScraper::doc_id("https://www.masseffect2.in/publ/19-1-0-1234"),
+            Some("19-1-0-1234".to_string())
+        );
         assert_eq!(MassEffect2InScraper::doc_id("https://x.com/foo"), None);
     }
 
     #[test]
     fn common_prefix_works() {
-        assert_eq!(common_prefix("Mass Effect: Story — Ch 1", "Mass Effect: Story — Ch 2"), "Mass Effect: Story — Ch ");
+        assert_eq!(
+            common_prefix("Mass Effect: Story — Ch 1", "Mass Effect: Story — Ch 2"),
+            "Mass Effect: Story — Ch "
+        );
         assert_eq!(common_prefix("abc", "abd"), "ab");
         assert_eq!(common_prefix("abc", "xyz"), "");
     }

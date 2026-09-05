@@ -126,8 +126,8 @@ pub fn parse_agent_metadata_json(text: &str, source_url: &str) -> Result<AgentMe
         .trim_matches('`')
         .trim();
 
-    let parsed: AgentJson = serde_json::from_str(body)
-        .map_err(|e| format!("agent reply is not valid JSON: {e}"))?;
+    let parsed: AgentJson =
+        serde_json::from_str(body).map_err(|e| format!("agent reply is not valid JSON: {e}"))?;
 
     // ── Validation ──────────────────────────────────────────────────
     let title = parsed.title.trim().to_string();
@@ -140,7 +140,9 @@ pub fn parse_agent_metadata_json(text: &str, source_url: &str) -> Result<AgentMe
     let author = parsed.author.trim().to_string();
     let chapters = parsed.chapters.unwrap_or(0);
     if chapters < 1 {
-        return Err(format!("extraction rejected: chapters must be >= 1 (got {chapters})"));
+        return Err(format!(
+            "extraction rejected: chapters must be >= 1 (got {chapters})"
+        ));
     }
     let words = parsed.words.unwrap_or(0).max(0);
     let status = parsed.status.trim().to_lowercase();
@@ -266,7 +268,11 @@ pub async fn store_extraction(
     meta: &AgentMetadata,
     validated: bool,
 ) -> Result<i64, sqlx::Error> {
-    let agent_run_id: Option<i64> = if agent_run_id > 0 { Some(agent_run_id) } else { None };
+    let agent_run_id: Option<i64> = if agent_run_id > 0 {
+        Some(agent_run_id)
+    } else {
+        None
+    };
     sqlx::query_scalar(
         r#"INSERT INTO heal_extractions
            (failure_id, agent_run_id, url, url_id, title, author, chapters,
@@ -446,8 +452,8 @@ mod tests {
 
     #[test]
     fn parse_rejects_garbage() {
-        let err = parse_agent_metadata_json("not json at all", "https://x.example/s/1")
-            .unwrap_err();
+        let err =
+            parse_agent_metadata_json("not json at all", "https://x.example/s/1").unwrap_err();
         assert!(err.contains("not valid JSON"), "err: {err}");
     }
 

@@ -2,10 +2,10 @@
 /// Handles URLs like: https://www.royalroad.com/fiction/12345/fiction-title
 pub struct RoyalRoadScraper;
 
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper, generate_url_id};
 use async_trait::async_trait;
-use crate::{FicMetadata, Chapter, SiteScraper, ScrapeError, generate_url_id};
-use scraper::{Html, Selector};
 use chrono::Utc;
+use scraper::{Html, Selector};
 
 impl RoyalRoadScraper {
     fn extract_fiction_id(url: &str) -> Option<String> {
@@ -20,7 +20,11 @@ impl SiteScraper for RoyalRoadScraper {
         url.contains("royalroad.com/fiction/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let response = client
             .get(url)
             .header("User-Agent", "fichub.net/0.1.0")
@@ -32,20 +36,30 @@ impl SiteScraper for RoyalRoadScraper {
             return Err(ScrapeError::NotFound);
         }
 
-        let html = response.text().await.map_err(|e| ScrapeError::Network(e.to_string()))?;
+        let html = response
+            .text()
+            .await
+            .map_err(|e| ScrapeError::Network(e.to_string()))?;
         let doc = Html::parse_document(&html);
         let doc_html = html.clone();
 
         // Title from fiction page heading (RoyalRoad markup: h1.font-white)
         let title = doc
-            .select(&Selector::parse("h1.font-white, h1[property='name'], .fiction-title h1").unwrap())
+            .select(
+                &Selector::parse("h1.font-white, h1[property='name'], .fiction-title h1").unwrap(),
+            )
             .next()
             .map(|el| el.text().collect::<String>().trim().to_string())
             .unwrap_or_else(|| "Unknown Title".into());
 
         // Author name (markup: <h4 class="font-white"><span>by</span><span><a href="/profile/…">)
         let author = doc
-            .select(&Selector::parse("h4.font-white a[href*='/profile/'], h4[property='author'] a, .author-name a").unwrap())
+            .select(
+                &Selector::parse(
+                    "h4.font-white a[href*='/profile/'], h4[property='author'] a, .author-name a",
+                )
+                .unwrap(),
+            )
             .next()
             .map(|el| el.text().collect::<String>().trim().to_string())
             .unwrap_or_else(|| "Unknown Author".into());
@@ -109,7 +123,7 @@ impl SiteScraper for RoyalRoadScraper {
             chapters,
             words: words as i64,
             desc,
-            published: 0,  // RoyalRoad doesn't expose publish date easily in the DOM
+            published: 0, // RoyalRoad doesn't expose publish date easily in the DOM
             updated: Utc::now().timestamp_millis(),
             status: "ongoing".into(),
             source: url.to_string(),
@@ -123,7 +137,11 @@ impl SiteScraper for RoyalRoadScraper {
         })
     }
 
-    async fn fetch_chapters(&self, client: &reqwest::Client, meta: &FicMetadata) -> Result<Vec<Chapter>, ScrapeError> {
+    async fn fetch_chapters(
+        &self,
+        client: &reqwest::Client,
+        meta: &FicMetadata,
+    ) -> Result<Vec<Chapter>, ScrapeError> {
         // Fetch the fiction page to extract chapter URLs
         let chapter_urls = {
             let response = client
@@ -133,7 +151,10 @@ impl SiteScraper for RoyalRoadScraper {
                 .await
                 .map_err(|e| ScrapeError::Network(e.to_string()))?;
 
-            let html = response.text().await.map_err(|e| ScrapeError::Network(e.to_string()))?;
+            let html = response
+                .text()
+                .await
+                .map_err(|e| ScrapeError::Network(e.to_string()))?;
             let doc = Html::parse_document(&html);
 
             // Get all chapter links from the table — drop doc before any further awaits
@@ -142,7 +163,7 @@ impl SiteScraper for RoyalRoadScraper {
                 .filter_map(|el| el.value().attr("href"))
                 .map(|h| format!("https://www.royalroad.com{}", h))
                 .collect::<Vec<String>>()
-        };  // doc dropped here
+        }; // doc dropped here
 
         let mut chapters = Vec::new();
         for (i, ch_url) in chapter_urls.iter().enumerate() {
@@ -154,7 +175,10 @@ impl SiteScraper for RoyalRoadScraper {
                     .await
                     .map_err(|e| ScrapeError::Network(e.to_string()))?;
 
-                let ch_html = ch_resp.text().await.map_err(|e| ScrapeError::Network(e.to_string()))?;
+                let ch_html = ch_resp
+                    .text()
+                    .await
+                    .map_err(|e| ScrapeError::Network(e.to_string()))?;
                 let ch_doc = Html::parse_document(&ch_html);
 
                 let content = ch_doc
@@ -170,7 +194,7 @@ impl SiteScraper for RoyalRoadScraper {
                     .unwrap_or_else(|| format!("Chapter {}", i + 1));
 
                 (title, content)
-            };  // ch_doc dropped here
+            }; // ch_doc dropped here
 
             chapters.push(Chapter {
                 chapter_id: (i + 1) as i32,
@@ -233,7 +257,9 @@ mod tests {
     #[test]
     fn test_extract_fiction_id() {
         assert_eq!(
-            RoyalRoadScraper::extract_fiction_id("https://www.royalroad.com/fiction/12345/test-story"),
+            RoyalRoadScraper::extract_fiction_id(
+                "https://www.royalroad.com/fiction/12345/test-story"
+            ),
             Some("12345".into())
         );
         assert_eq!(

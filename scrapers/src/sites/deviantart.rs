@@ -15,8 +15,8 @@ use async_trait::async_trait;
 use chrono::TimeZone;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct DeviantArtScraper;
 
@@ -26,11 +26,16 @@ impl SiteScraper for DeviantArtScraper {
         url.contains("deviantart.com/") && !url.contains("/gallery/") && !url.contains("/shop/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
 
         // Mature gate detection (no login support in the crate).
-        if html.contains("mature-content-filter") || html.contains("requiresMatureContentEnabled")
+        if html.contains("mature-content-filter")
+            || html.contains("requiresMatureContentEnabled")
             || html.contains("only available for watchers")
         {
             return Err(ScrapeError::AuthRequired("dA login/mature gate".into()));
@@ -172,7 +177,11 @@ mod tests {
     #[test]
     fn parses_author_from_url() {
         let url = "https://www.deviantart.com/some-author/art/story-title-123";
-        let author = url.split("deviantart.com/").nth(1).and_then(|s| s.split('/').next()).unwrap();
+        let author = url
+            .split("deviantart.com/")
+            .nth(1)
+            .and_then(|s| s.split('/').next())
+            .unwrap();
         assert_eq!(author, "some-author");
     }
 
@@ -185,7 +194,8 @@ mod tests {
 
     #[test]
     fn extracts_chapter_body() {
-        let html = r#"<html><body><div data-editor-viewer="1"><p>Deviant text.</p></div></body></html>"#;
+        let html =
+            r#"<html><body><div data-editor-viewer="1"><p>Deviant text.</p></div></body></html>"#;
         let doc = Html::parse_document(html);
         let mut s = String::new();
         if let Ok(sel) = Selector::parse("[data-editor-viewer='1']") {

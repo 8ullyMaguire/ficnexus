@@ -44,7 +44,12 @@ pub async fn post_form(
     let resp = client
         .post(url)
         .header("User-Agent", USER_AGENT)
-        .form(&fields.iter().cloned().collect::<std::collections::HashMap<_, _>>())
+        .form(
+            &fields
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashMap<_, _>>(),
+        )
         .send()
         .await
         .map_err(|e| ScrapeError::Network(e.to_string()))?;

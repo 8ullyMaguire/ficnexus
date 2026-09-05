@@ -37,25 +37,158 @@ pub struct EfictionSite {
 
 /// The 19 eFiction sites FanFicFare supports.
 pub const EFICTION_SITES: &[EfictionSite] = &[
-    EfictionSite { domain: "dark-solace.org", archive_path: "/elysian", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "dksl" },
-    EfictionSite { domain: "gluttonyfiction.com", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "gltn" },
-    EfictionSite { domain: "libraryofmoria.com", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "lmor" },
-    EfictionSite { domain: "mttjustonce.net", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "mttj" },
-    EfictionSite { domain: "mugglenetfanfiction.com", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "mugl" },
-    EfictionSite { domain: "naiceanilme.net", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "naic" },
-    EfictionSite { domain: "narutofic.org", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "nart" },
-    EfictionSite { domain: "ncisfiction.com", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "ncis" },
-    EfictionSite { domain: "ninelivesarchive.com", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "nla" },
-    EfictionSite { domain: "sinfuldreams.com", archive_path: "/unicornfic", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "sdun" },
-    EfictionSite { domain: "sinfuldreams.com", archive_path: "/wickedtemptation", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "sdwk" },
-    EfictionSite { domain: "spikeluver.com", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "splv" },
-    EfictionSite { domain: "starslibrary.net", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%d %b %Y", abbrev: "stlb" },
-    EfictionSite { domain: "tgstorytime.com", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "tgst" },
-    EfictionSite { domain: "thedelphicexpanse.com", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "delp" },
-    EfictionSite { domain: "thehookupzone.net", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "hkup" },
-    EfictionSite { domain: "valentchamber.com", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "valc" },
-    EfictionSite { domain: "www.giantessworld.net", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "gsw" },
-    EfictionSite { domain: "www.sunnydaleafterdark.com", archive_path: "/", view_story: "viewstory.php", view_user: "viewuser.php", date_format: "%B %d, %Y", abbrev: "sad" },
+    EfictionSite {
+        domain: "dark-solace.org",
+        archive_path: "/elysian",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "dksl",
+    },
+    EfictionSite {
+        domain: "gluttonyfiction.com",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "gltn",
+    },
+    EfictionSite {
+        domain: "libraryofmoria.com",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "lmor",
+    },
+    EfictionSite {
+        domain: "mttjustonce.net",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "mttj",
+    },
+    EfictionSite {
+        domain: "mugglenetfanfiction.com",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "mugl",
+    },
+    EfictionSite {
+        domain: "naiceanilme.net",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "naic",
+    },
+    EfictionSite {
+        domain: "narutofic.org",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "nart",
+    },
+    EfictionSite {
+        domain: "ncisfiction.com",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "ncis",
+    },
+    EfictionSite {
+        domain: "ninelivesarchive.com",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "nla",
+    },
+    EfictionSite {
+        domain: "sinfuldreams.com",
+        archive_path: "/unicornfic",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "sdun",
+    },
+    EfictionSite {
+        domain: "sinfuldreams.com",
+        archive_path: "/wickedtemptation",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "sdwk",
+    },
+    EfictionSite {
+        domain: "spikeluver.com",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "splv",
+    },
+    EfictionSite {
+        domain: "starslibrary.net",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%d %b %Y",
+        abbrev: "stlb",
+    },
+    EfictionSite {
+        domain: "tgstorytime.com",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "tgst",
+    },
+    EfictionSite {
+        domain: "thedelphicexpanse.com",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "delp",
+    },
+    EfictionSite {
+        domain: "thehookupzone.net",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "hkup",
+    },
+    EfictionSite {
+        domain: "valentchamber.com",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "valc",
+    },
+    EfictionSite {
+        domain: "www.giantessworld.net",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "gsw",
+    },
+    EfictionSite {
+        domain: "www.sunnydaleafterdark.com",
+        archive_path: "/",
+        view_story: "viewstory.php",
+        view_user: "viewuser.php",
+        date_format: "%B %d, %Y",
+        abbrev: "sad",
+    },
 ];
 
 /// Config-driven eFiction scraper for one domain.
@@ -71,7 +204,10 @@ impl EfictionScraper {
     }
 
     pub fn all() -> Vec<EfictionScraper> {
-        EFICTION_SITES.iter().map(|s| EfictionScraper { site: s }).collect()
+        EFICTION_SITES
+            .iter()
+            .map(|s| EfictionScraper { site: s })
+            .collect()
     }
 
     fn user_url(&self, user_id: &str) -> String {
@@ -116,12 +252,19 @@ impl SiteScraper for EfictionScraper {
 
     fn can_handle(&self, url: &str) -> bool {
         let story = format!("{}?sid=", self.site.view_story);
-        url.contains(self.site.domain)
-            && (url.contains(story.as_str()) || url.contains("?sid="))
+        url.contains(self.site.domain) && (url.contains(story.as_str()) || url.contains("?sid="))
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let html = http::fetch(client, &format!("{url}&action=printable&textsize=0&chapter=1")).await?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let html = http::fetch(
+            client,
+            &format!("{url}&action=printable&textsize=0&chapter=1"),
+        )
+        .await?;
         let doc = Html::parse_document(&html);
         parse_metadata(&doc, self, url)
     }
@@ -171,7 +314,11 @@ impl SiteScraper for EfictionScraper {
                                 let href = cref.value().attr("href").unwrap_or("");
                                 if href.contains("chapter=") {
                                     let title = cref.text().collect::<String>().trim().to_string();
-                                    toc_chapters.push((chapter_num.unwrap_or(1), title, href.to_string()));
+                                    toc_chapters.push((
+                                        chapter_num.unwrap_or(1),
+                                        title,
+                                        href.to_string(),
+                                    ));
                                     capture = false;
                                 }
                             }
@@ -230,7 +377,11 @@ impl SiteScraper for EfictionScraper {
 }
 
 /// Parse the eFiction printable view into metadata.
-fn parse_metadata(doc: &Html, scraper: &EfictionScraper, url: &str) -> Result<FicMetadata, ScrapeError> {
+fn parse_metadata(
+    doc: &Html,
+    scraper: &EfictionScraper,
+    url: &str,
+) -> Result<FicMetadata, ScrapeError> {
     // Title + author from #pagetitle: first <a> = title, second = author.
     let mut title = String::new();
     let mut author = String::new();
@@ -294,7 +445,11 @@ fn parse_metadata(doc: &Html, scraper: &EfictionScraper, url: &str) -> Result<Fi
             while let Some(node) = nxt {
                 if let Some(el) = ElementRef::wrap(node) {
                     if el.value().name() == "span"
-                        && el.value().attr("class").map(|c| c.contains("label")).unwrap_or(false)
+                        && el
+                            .value()
+                            .attr("class")
+                            .map(|c| c.contains("label"))
+                            .unwrap_or(false)
                     {
                         break;
                     }
@@ -338,7 +493,11 @@ fn apply_metadata(meta: &mut FicMetadata, key: &str, value: &str) {
             meta.words = n;
         }
         "Completed" => {
-            meta.status = if value.contains("Yes") || value.contains("Completed") || value.contains("Ja") || value.contains("Igen") {
+            meta.status = if value.contains("Yes")
+                || value.contains("Completed")
+                || value.contains("Ja")
+                || value.contains("Igen")
+            {
                 "complete".into()
             } else {
                 "ongoing".into()
@@ -350,7 +509,8 @@ fn apply_metadata(meta: &mut FicMetadata, key: &str, value: &str) {
         "Updated" => {
             meta.updated = parse_common_date(value).unwrap_or(0);
         }
-        "Category" | "Categories" | "Characters" | "Pairing" | "Ships" | "Warning" | "Warnings" | "Genre" | "Fandoms" => {
+        "Category" | "Categories" | "Characters" | "Pairing" | "Ships" | "Warning" | "Warnings"
+        | "Genre" | "Fandoms" => {
             // Fold into extra_meta (the metadata model is intentionally
             // generic; hosts can split on the key themselves).
             let mut extra = meta.extra_meta.take().unwrap_or_default();
@@ -401,9 +561,16 @@ mod tests {
 
     #[test]
     fn from_url_matches_domains() {
-        assert!(EfictionScraper::from_url("https://dark-solace.org/elysian/viewstory.php?sid=123").is_some());
-        assert!(EfictionScraper::from_url("https://starslibrary.net/viewstory.php?sid=42").is_some());
-        assert!(EfictionScraper::from_url("https://not-efiction.com/viewstory.php?sid=1").is_none());
+        assert!(
+            EfictionScraper::from_url("https://dark-solace.org/elysian/viewstory.php?sid=123")
+                .is_some()
+        );
+        assert!(
+            EfictionScraper::from_url("https://starslibrary.net/viewstory.php?sid=42").is_some()
+        );
+        assert!(
+            EfictionScraper::from_url("https://not-efiction.com/viewstory.php?sid=1").is_none()
+        );
     }
 
     #[test]
@@ -420,17 +587,34 @@ mod tests {
     #[test]
     fn applies_metadata() {
         let mut meta = FicMetadata {
-            url_id: "x_1".into(), title: "t".into(), author: "a".into(),
-            chapters: 0, words: 0, desc: String::new(), published: 0, updated: 0,
-            status: "ongoing".into(), source: "u".into(), source_id: 0,
-            author_id: 0, author_url: String::new(), author_local_id: String::new(),
-            content_hash: None, extra_meta: None, raw_extended_meta: None,
+            url_id: "x_1".into(),
+            title: "t".into(),
+            author: "a".into(),
+            chapters: 0,
+            words: 0,
+            desc: String::new(),
+            published: 0,
+            updated: 0,
+            status: "ongoing".into(),
+            source: "u".into(),
+            source_id: 0,
+            author_id: 0,
+            author_url: String::new(),
+            author_local_id: String::new(),
+            content_hash: None,
+            extra_meta: None,
+            raw_extended_meta: None,
         };
         apply_metadata(&mut meta, "Word count", "12,345");
         assert_eq!(meta.words, 12345);
         apply_metadata(&mut meta, "Completed", "Yes");
         assert_eq!(meta.status, "complete");
         apply_metadata(&mut meta, "Characters", "Harry Potter, Hermione Granger");
-        assert!(meta.extra_meta.as_deref().unwrap_or("").contains("Harry Potter"));
+        assert!(
+            meta.extra_meta
+                .as_deref()
+                .unwrap_or("")
+                .contains("Harry Potter")
+        );
     }
 }

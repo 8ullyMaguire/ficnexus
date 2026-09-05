@@ -43,7 +43,11 @@ pub fn parse_strategy_specs(raw: &str) -> Vec<StrategySpec> {
             } else {
                 Some(StrategySpec {
                     name,
-                    weight: if weight.is_finite() && weight > 0.0 { weight } else { 1.0 },
+                    weight: if weight.is_finite() && weight > 0.0 {
+                        weight
+                    } else {
+                        1.0
+                    },
                 })
             }
         })
@@ -62,10 +66,7 @@ impl StrategyRegistry {
     /// Build a registry from the given strategy instances (by name) and the
     /// parsed `REC_STRATEGIES` list. Unknown names in `specs` are dropped
     /// with a warning.
-    pub fn new(
-        available: Vec<Arc<dyn RecStrategy>>,
-        raw_specs: &str,
-    ) -> Self {
+    pub fn new(available: Vec<Arc<dyn RecStrategy>>, raw_specs: &str) -> Self {
         let parsed = parse_strategy_specs(raw_specs);
         let mut by_name: HashMap<String, Arc<dyn RecStrategy>> = HashMap::new();
         for s in available {
@@ -77,7 +78,10 @@ impl StrategyRegistry {
             if by_name.contains_key(&spec.name) {
                 specs.push(spec);
             } else {
-                warn!("rec strategy '{0}' in REC_STRATEGIES is unknown — skipping", spec.name);
+                warn!(
+                    "rec strategy '{0}' in REC_STRATEGIES is unknown — skipping",
+                    spec.name
+                );
             }
         }
         // Fall back to the legacy co-occurrence strategy when nothing valid
@@ -92,7 +96,10 @@ impl StrategyRegistry {
             }
         }
 
-        Self { specs, strategies: by_name }
+        Self {
+            specs,
+            strategies: by_name,
+        }
     }
 
     /// Enabled specs in config order (used by the ranker for RRF weights).
@@ -118,7 +125,11 @@ impl StrategyRegistry {
 
     /// Total weight of enabled specs (for RRF weight normalization).
     pub fn total_weight(&self) -> f64 {
-        self.specs.iter().map(|s| s.weight).sum::<f64>().max(f64::EPSILON)
+        self.specs
+            .iter()
+            .map(|s| s.weight)
+            .sum::<f64>()
+            .max(f64::EPSILON)
     }
 }
 
@@ -153,8 +164,20 @@ mod tests {
     fn parses_weighted_list() {
         let specs = parse_strategy_specs("cooccur:0.4,embeddings:0.3,mf:0.2,bandit:0.1");
         assert_eq!(specs.len(), 4);
-        assert_eq!(specs[0], StrategySpec { name: "cooccur".into(), weight: 0.4 });
-        assert_eq!(specs[3], StrategySpec { name: "bandit".into(), weight: 0.1 });
+        assert_eq!(
+            specs[0],
+            StrategySpec {
+                name: "cooccur".into(),
+                weight: 0.4
+            }
+        );
+        assert_eq!(
+            specs[3],
+            StrategySpec {
+                name: "bandit".into(),
+                weight: 0.1
+            }
+        );
     }
 
     #[test]
@@ -163,8 +186,14 @@ mod tests {
         assert_eq!(
             specs,
             vec![
-                StrategySpec { name: "cooccur".into(), weight: 1.0 },
-                StrategySpec { name: "embeddings".into(), weight: 1.0 },
+                StrategySpec {
+                    name: "cooccur".into(),
+                    weight: 1.0
+                },
+                StrategySpec {
+                    name: "embeddings".into(),
+                    weight: 1.0
+                },
             ]
         );
     }

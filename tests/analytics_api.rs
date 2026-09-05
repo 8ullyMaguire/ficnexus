@@ -10,10 +10,10 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
 use serde_json::Value;
 use sqlx::Row;
@@ -21,7 +21,10 @@ use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
-    DB_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+    DB_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
 }
 
 async fn pool() -> sqlx::PgPool {
@@ -41,8 +44,8 @@ async fn build_app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -83,7 +86,9 @@ async fn build_app() -> Router {
         ),
         recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
         strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
         collection_worker: fichub::recommender::worker::CollectionWorker::new(
@@ -101,7 +106,10 @@ async fn build_app() -> Router {
     });
 
     Router::new()
-        .route("/api/admin/analytics", get(fichub::routes::analytics::admin_analytics_handler))
+        .route(
+            "/api/admin/analytics",
+            get(fichub::routes::analytics::admin_analytics_handler),
+        )
         .with_state(state)
 }
 
@@ -135,9 +143,7 @@ async fn cleanup(pool: &sqlx::PgPool) {
     // counts (active/view-only/unique visitors), so any leftover rows from
     // other test runs or the dev middleware would skew the numbers. Tests
     // are serialized via db_guard + --test-threads=1, so this is safe.
-    let _ = sqlx::query("DELETE FROM usage_events")
-        .execute(pool)
-        .await;
+    let _ = sqlx::query("DELETE FROM usage_events").execute(pool).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -185,7 +191,9 @@ async fn middleware_records_view_and_action_events() {
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK, "admin analytics should 200");
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
     let v: Value = serde_json::from_slice(&body).unwrap();
 
     let engagement = &v["engagement"];
@@ -193,8 +201,14 @@ async fn middleware_records_view_and_action_events() {
     let view_only_30d = engagement["view_only_users"]["30d"].as_i64().unwrap_or(-1);
     assert_eq!(active_30d, 1, "one client performed actions");
     assert_eq!(view_only_30d, 1, "one client only viewed");
-    assert!(v["unique_visitors"]["daily"].is_array(), "daily visitors present");
-    assert!(v["recent_events"].as_array().unwrap().len() >= 4, "recent timeline present");
+    assert!(
+        v["unique_visitors"]["daily"].is_array(),
+        "daily visitors present"
+    );
+    assert!(
+        v["recent_events"].as_array().unwrap().len() >= 4,
+        "recent timeline present"
+    );
 
     cleanup(&db).await;
 }
@@ -218,7 +232,11 @@ async fn non_admin_is_rejected() {
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::FORBIDDEN, "non-admin should be rejected (403)");
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "non-admin should be rejected (403)"
+    );
 
     cleanup(&db).await;
 }

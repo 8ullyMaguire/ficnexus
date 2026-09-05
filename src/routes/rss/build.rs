@@ -97,7 +97,11 @@ pub fn entry_xml(
 
 /// Extract the url_id from a page path (`/fic/<url_id>` → `<url_id>`).
 fn url_of(page_path: &str) -> &str {
-    page_path.trim_start_matches('/').split('/').nth(1).unwrap_or(page_path)
+    page_path
+        .trim_start_matches('/')
+        .split('/')
+        .nth(1)
+        .unwrap_or(page_path)
 }
 
 /// Build a complete Atom feed document.
@@ -203,10 +207,7 @@ impl FeedQuery {
 
 /// Load up to `limit` recently-created fics (`fic_info.created` DESC,
 /// fallback `fic_updated` DESC).
-pub async fn fetch_new_arrivals(
-    state: &Arc<AppState>,
-    limit: i64,
-) -> AppResult<Vec<FeedFic>> {
+pub async fn fetch_new_arrivals(state: &Arc<AppState>, limit: i64) -> AppResult<Vec<FeedFic>> {
     let rows = sqlx::query_as::<_, FeedFic>(
         r#"SELECT id, title, author, description,
                   fic_updated, words, chapters, status, work_id, created
@@ -378,11 +379,9 @@ mod tests {
     fn feed_query_defaults_and_clamps() {
         let q: FeedQuery = serde_json::from_value(serde_json::json!({})).unwrap();
         assert_eq!(q.effective_limit(), MAX_ENTRIES);
-        let q: FeedQuery =
-            serde_json::from_value(serde_json::json!({ "limit": 1000 })).unwrap();
+        let q: FeedQuery = serde_json::from_value(serde_json::json!({ "limit": 1000 })).unwrap();
         assert_eq!(q.effective_limit(), MAX_ENTRIES);
-        let q: FeedQuery =
-            serde_json::from_value(serde_json::json!({ "per_page": 5 })).unwrap();
+        let q: FeedQuery = serde_json::from_value(serde_json::json!({ "per_page": 5 })).unwrap();
         assert_eq!(q.effective_limit(), 5);
     }
 

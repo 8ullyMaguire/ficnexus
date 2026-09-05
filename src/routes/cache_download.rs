@@ -1,14 +1,14 @@
 use axum::{
+    Json,
     extract::{Path, Query, State},
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
 
-use crate::server::AppState;
 use crate::cache::EType;
+use crate::server::AppState;
 
 /// Query for cache download with hash validation
 #[derive(Debug, Deserialize)]
@@ -125,9 +125,8 @@ pub async fn download_with_hash(
         }
     };
 
-    let cache_path = crate::cache::disk::cache_path(
-        &state.config.cache_dir, &etype, &url_id, &hash,
-    );
+    let cache_path =
+        crate::cache::disk::cache_path(&state.config.cache_dir, &etype, &url_id, &hash);
 
     if !cache_path.exists() {
         return Json(json!({"err": -5, "msg": "file not found"})).into_response();
@@ -145,7 +144,9 @@ pub async fn download_with_hash(
                 EType::Txt => "text/plain",
                 EType::Azw3 => "application/vnd.amazon.ebook",
                 EType::Md => "text/markdown",
-                EType::Docx => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                EType::Docx => {
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                }
                 EType::Fb2 => "application/x-fictionbook+xml",
                 EType::Kepub => "application/epub+zip",
             };
@@ -155,7 +156,10 @@ pub async fn download_with_hash(
                     let filename = format!("{}{}", url_id, etype.suffix());
                     let headers = [
                         ("Content-Type", mime),
-                        ("Content-Disposition", &format!("attachment; filename=\"{}\"", filename)),
+                        (
+                            "Content-Disposition",
+                            &format!("attachment; filename=\"{}\"", filename),
+                        ),
                     ];
                     (headers, data).into_response()
                 }
@@ -176,9 +180,8 @@ pub async fn download_or_export(
     // If a hash is provided and file exists, serve directly
     if let Some(ref hash) = params.h {
         if let Ok(etype) = etype_str.parse::<EType>() {
-            let cache_path = crate::cache::disk::cache_path(
-                &state.config.cache_dir, &etype, &url_id, hash,
-            );
+            let cache_path =
+                crate::cache::disk::cache_path(&state.config.cache_dir, &etype, &url_id, hash);
             if cache_path.exists() {
                 match crate::cache::disk::file_md5(&cache_path) {
                     Ok(actual_hash) if actual_hash == *hash => {
@@ -190,7 +193,9 @@ pub async fn download_or_export(
                             EType::Txt => "text/plain",
                             EType::Azw3 => "application/vnd.amazon.ebook",
                             EType::Md => "text/markdown",
-                            EType::Docx => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            EType::Docx => {
+                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            }
                             EType::Fb2 => "application/x-fictionbook+xml",
                             EType::Kepub => "application/epub+zip",
                         };
@@ -199,7 +204,10 @@ pub async fn download_or_export(
                                 let filename = format!("{}{}", url_id, etype.suffix());
                                 let headers = [
                                     ("Content-Type", mime),
-                                    ("Content-Disposition", &format!("attachment; filename=\"{}\"", filename)),
+                                    (
+                                        "Content-Disposition",
+                                        &format!("attachment; filename=\"{}\"", filename),
+                                    ),
                                 ];
                                 return (headers, data).into_response();
                             }
@@ -219,5 +227,6 @@ pub async fn download_or_export(
         "msg": "file not cached — re-scrape to generate",
         "url_id": url_id,
         "format": etype_str,
-    })).into_response()
+    }))
+    .into_response()
 }

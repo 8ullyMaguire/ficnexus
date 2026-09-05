@@ -74,23 +74,18 @@ impl RecipeService {
 
     /// Get the user's currently active recipe (used by the rec engine).
     pub async fn get_active(pool: &PgPool, user_id: i32) -> Result<Option<Recipe>, AppError> {
-        let row: Option<Recipe> = sqlx::query_as(
-            "SELECT * FROM user_recipes WHERE user_id = $1 AND is_active = true",
-        )
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| AppError::Database(format!("Failed to get active recipe: {e}")))?;
+        let row: Option<Recipe> =
+            sqlx::query_as("SELECT * FROM user_recipes WHERE user_id = $1 AND is_active = true")
+                .bind(user_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| AppError::Database(format!("Failed to get active recipe: {e}")))?;
 
         Ok(row)
     }
 
     /// Set a recipe as active (deactivates all others for the user first).
-    pub async fn set_active(
-        pool: &PgPool,
-        user_id: i32,
-        recipe_id: i32,
-    ) -> Result<(), AppError> {
+    pub async fn set_active(pool: &PgPool, user_id: i32, recipe_id: i32) -> Result<(), AppError> {
         // Verify the recipe belongs to this user
         let owned: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM user_recipes WHERE id = $1 AND user_id = $2)",
@@ -123,19 +118,13 @@ impl RecipeService {
     }
 
     /// Delete a recipe owned by the user.
-    pub async fn delete(
-        pool: &PgPool,
-        user_id: i32,
-        recipe_id: i32,
-    ) -> Result<(), AppError> {
-        let result = sqlx::query(
-            "DELETE FROM user_recipes WHERE id = $1 AND user_id = $2",
-        )
-        .bind(recipe_id)
-        .bind(user_id)
-        .execute(pool)
-        .await
-        .map_err(|e| AppError::Database(format!("Failed to delete recipe: {e}")))?;
+    pub async fn delete(pool: &PgPool, user_id: i32, recipe_id: i32) -> Result<(), AppError> {
+        let result = sqlx::query("DELETE FROM user_recipes WHERE id = $1 AND user_id = $2")
+            .bind(recipe_id)
+            .bind(user_id)
+            .execute(pool)
+            .await
+            .map_err(|e| AppError::Database(format!("Failed to delete recipe: {e}")))?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound("Recipe not found".into()));
@@ -242,20 +231,15 @@ impl RecipeService {
     }
 
     /// Install (copy) a public recipe into the user's own collection.
-    pub async fn install(
-        pool: &PgPool,
-        user_id: i32,
-        recipe_id: i32,
-    ) -> Result<i32, AppError> {
+    pub async fn install(pool: &PgPool, user_id: i32, recipe_id: i32) -> Result<i32, AppError> {
         // Fetch the public recipe
-        let source: Recipe = sqlx::query_as(
-            "SELECT * FROM user_recipes WHERE id = $1 AND is_public = true",
-        )
-        .bind(recipe_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| AppError::Database(format!("Failed to fetch public recipe: {e}")))?
-        .ok_or_else(|| AppError::NotFound("Public recipe not found".into()))?;
+        let source: Recipe =
+            sqlx::query_as("SELECT * FROM user_recipes WHERE id = $1 AND is_public = true")
+                .bind(recipe_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| AppError::Database(format!("Failed to fetch public recipe: {e}")))?
+                .ok_or_else(|| AppError::NotFound("Public recipe not found".into()))?;
 
         // Copy it into the user's collection
         let new_id: i32 = sqlx::query_scalar(

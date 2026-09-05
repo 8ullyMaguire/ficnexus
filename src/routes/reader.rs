@@ -1,14 +1,14 @@
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
+use crate::cache;
+use crate::db::queries;
 use crate::error::AppError;
 use crate::server::AppState;
-use crate::db::queries;
-use crate::cache;
 
 /// Inject data-passage-hash into block elements (<p> <div> etc).
 /// Normalizes text: strips tags, collapses whitespace, SHA-256 hex.
@@ -41,10 +41,7 @@ fn inject_with_regex(html: &str) -> String {
         ["p", "div", "blockquote", "li", "pre", "section", "article"]
             .iter()
             .filter_map(|t| {
-                regex_lite::Regex::new(&format!(
-                    r#"(?is)<{0}(\s[^>]*)?>(.*?)</\s*{0}\s*>"#, t
-                ))
-                .ok()
+                regex_lite::Regex::new(&format!(r#"(?is)<{0}(\s[^>]*)?>(.*?)</\s*{0}\s*>"#, t)).ok()
             })
             .collect()
     });
@@ -127,7 +124,9 @@ fn inject_heading_tags(html: &str, re: &regex_lite::Regex) -> String {
             out.push_str(m.as_str());
         } else {
             let h = hash_text(&normalized);
-            out.push_str(&format!("<{tag}{attrs} data-passage-hash=\"{h}\">{inner}</{tag}>"));
+            out.push_str(&format!(
+                "<{tag}{attrs} data-passage-hash=\"{h}\">{inner}</{tag}>"
+            ));
         }
         last = m.end();
     }
@@ -148,7 +147,8 @@ pub async fn reader_sequel_handler(
     Path(url_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     // Resolve the current work.
-    let fic = queries::get_fic_info(&state.db, &url_id).await?
+    let fic = queries::get_fic_info(&state.db, &url_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("Fic not found".into()))?;
     let work = queries::get_work_by_source(&state.db, &url_id).await?;
 
@@ -235,7 +235,14 @@ fn looks_like_sequel(prev_title: &str, candidate_title: &str) -> bool {
 }
 
 fn normalize_title(title: &str) -> String {
-    title.to_lowercase().chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ")
+    title
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// GET /api/reader/{url_id}/related — "readers also bookmarked"
@@ -320,7 +327,8 @@ pub async fn reader_next_up_handler(
     Path(url_id): Path<String>,
     auth: crate::routes::auth::AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    let fic = queries::get_fic_info(&state.db, &url_id).await?
+    let fic = queries::get_fic_info(&state.db, &url_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("Fic not found".into()))?;
     let work = queries::get_work_by_source(&state.db, &url_id).await?;
 
@@ -362,16 +370,17 @@ pub async fn reader_next_up_handler(
             }
         }
         if found.is_none() {
-            let rows: Vec<(String, String, String)> = sqlx::query_as::<_, (String, String, String)>(
-                r#"SELECT fi.id, fi.title, fi.author FROM fic_info fi
+            let rows: Vec<(String, String, String)> =
+                sqlx::query_as::<_, (String, String, String)>(
+                    r#"SELECT fi.id, fi.title, fi.author FROM fic_info fi
                    WHERE fi.author = $1 AND fi.id <> $2 AND fi.work_id IS NOT NULL
                    ORDER BY fi.updated DESC, fi.id LIMIT 200"#,
-            )
-            .bind(&fic.author)
-            .bind(&url_id)
-            .fetch_all(&state.db)
-            .await
-            .unwrap_or_default();
+                )
+                .bind(&fic.author)
+                .bind(&url_id)
+                .fetch_all(&state.db)
+                .await
+                .unwrap_or_default();
             for (uid, title, author) in rows {
                 if looks_like_sequel(&fic.title, &title) {
                     found = Some(json!({ "url_id": uid, "title": title, "author": author }));
@@ -418,7 +427,11 @@ pub async fn reader_next_up_handler(
     // Aggregate deduped: sequel first, then sequential, then related.
     let mut seen = std::collections::HashSet::new();
     let mut items: Vec<Value> = Vec::new();
-    if let Some(s) = &sequel_val { if seen.insert(s["url_id"].as_str().unwrap_or("").to_string()) { items.push(json!({ "url_id": s["url_id"], "title": s["title"], "author": s["author"], "reason": "Next in series", "source": "sequel" })); } }
+    if let Some(s) = &sequel_val {
+        if seen.insert(s["url_id"].as_str().unwrap_or("").to_string()) {
+            items.push(json!({ "url_id": s["url_id"], "title": s["title"], "author": s["author"], "reason": "Next in series", "source": "sequel" }));
+        }
+    }
     for v in &sequential_vals {
         let uid = v["url_id"].as_str().unwrap_or("");
         if !uid.is_empty() && seen.insert(uid.to_string()) {
@@ -432,7 +445,9 @@ pub async fn reader_next_up_handler(
         }
     }
 
-    Ok(Json(json!({ "err": 0, "sequel": sequel_val, "sequential": sequential_vals, "related": related_vals, "next_up": items })))
+    Ok(Json(
+        json!({ "err": 0, "sequel": sequel_val, "sequential": sequential_vals, "related": related_vals, "next_up": items }),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -470,13 +485,12 @@ pub async fn reader_marginalia_handler(
         .await
         .unwrap_or(0);
         // topic_slug for frontend linking
-        let topic_slug: Option<String> = sqlx::query_scalar(
-            "SELECT topic_slug FROM forum_topics WHERE id = $1",
-        )
-        .bind(topic_id)
-        .fetch_optional(&state.db)
-        .await
-        .unwrap_or(None);
+        let topic_slug: Option<String> =
+            sqlx::query_scalar("SELECT topic_slug FROM forum_topics WHERE id = $1")
+                .bind(topic_id)
+                .fetch_optional(&state.db)
+                .await
+                .unwrap_or(None);
         out.push(json!({
             "passage_hash": passage_hash,
             "topic_id": topic_id,
@@ -492,25 +506,37 @@ pub async fn reader_handler(
     Path(url_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     // Get fic info
-    let fic = queries::get_fic_info(&state.db, &url_id).await?
+    let fic = queries::get_fic_info(&state.db, &url_id)
+        .await?
         .ok_or_else(|| AppError::NotFound("Fic not found".into()))?;
 
     // Determine version and hash for cache lookup
-    let version_bump = queries::get_fic_version_bump(&state.db, &url_id).await?.unwrap_or(0);
+    let version_bump = queries::get_fic_version_bump(&state.db, &url_id)
+        .await?
+        .unwrap_or(0);
     let version = state.config.export_version + version_bump;
-    let input_hash = fic.content_hash.clone().unwrap_or_else(|| "upstream".to_string());
+    let input_hash = fic
+        .content_hash
+        .clone()
+        .unwrap_or_else(|| "upstream".to_string());
 
     // Find the export log for HTML format. Legacy rows were exported with
     // input_hash = "epub:<epub_hash>" (derived-from-epub), not the raw
     // content hash — try both before giving up.
-    let log = match queries::find_export_log(&state.db, &url_id, version, "html", &input_hash).await? {
-        Some(l) => Some(l),
-        None => queries::latest_export_log(&state.db, &url_id, version, "html").await?,
-    }
-    .ok_or_else(|| AppError::NotFound("No HTML cache. Export the fic first.".into()))?;
+    let log =
+        match queries::find_export_log(&state.db, &url_id, version, "html", &input_hash).await? {
+            Some(l) => Some(l),
+            None => queries::latest_export_log(&state.db, &url_id, version, "html").await?,
+        }
+        .ok_or_else(|| AppError::NotFound("No HTML cache. Export the fic first.".into()))?;
 
     // Build cache path and read the zip
-    let cache_path = cache::disk::cache_path(&state.config.cache_dir, &cache::EType::Html, &url_id, &log.export_hash);
+    let cache_path = cache::disk::cache_path(
+        &state.config.cache_dir,
+        &cache::EType::Html,
+        &url_id,
+        &log.export_hash,
+    );
 
     if !cache_path.exists() {
         return Err(AppError::NotFound("HTML file not found on disk".into()));
@@ -522,7 +548,8 @@ pub async fn reader_handler(
     let mut archive = zip::ZipArchive::new(cursor)
         .map_err(|e| AppError::Internal(format!("Failed to read HTML cache zip: {}", e)))?;
 
-    let html_content = archive.by_name("index.html")
+    let html_content = archive
+        .by_name("index.html")
         .map_err(|_| AppError::NotFound("index.html not found in cache bundle".into()))?;
 
     // Read the entry content into a string
@@ -535,8 +562,10 @@ pub async fn reader_handler(
     let html_string = inject_passage_hashes(&html_string);
 
     // Look up work_id for reading_stats tracking
-    let work_id = queries::get_work_by_source(&state.db, &url_id).await?
-        .map(|w| w.id).unwrap_or(0);
+    let work_id = queries::get_work_by_source(&state.db, &url_id)
+        .await?
+        .map(|w| w.id)
+        .unwrap_or(0);
 
     Ok(Json(json!({
         "err": 0,
@@ -571,17 +600,38 @@ mod tests {
     fn test_empty_skipped() {
         let h = inject_passage_hashes("<p>   </p><p>Real text</p>");
         // empty paragraph untouched, real one hashed
-        assert!(!h.split("</p>").next().unwrap().contains("data-passage-hash"));
+        assert!(
+            !h.split("</p>")
+                .next()
+                .unwrap()
+                .contains("data-passage-hash")
+        );
         let rest: Vec<&str> = h.splitn(2, "</p>").collect();
-        assert!(rest.len() == 2 && rest[1].contains("data-passage-hash"), "got: {}", h);
+        assert!(
+            rest.len() == 2 && rest[1].contains("data-passage-hash"),
+            "got: {}",
+            h
+        );
     }
 
     #[test]
     fn test_stable_hash() {
         let a = inject_passage_hashes("<p>Same text</p>");
         let b = inject_passage_hashes("<p>Same text</p>");
-        let ha = a.split("data-passage-hash=\"").nth(1).unwrap().split('"').next().unwrap();
-        let hb = b.split("data-passage-hash=\"").nth(1).unwrap().split('"').next().unwrap();
+        let ha = a
+            .split("data-passage-hash=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap();
+        let hb = b
+            .split("data-passage-hash=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap();
         assert_eq!(ha, hb);
     }
 }

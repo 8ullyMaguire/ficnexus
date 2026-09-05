@@ -119,7 +119,9 @@ impl Cursor {
         Self {
             after,
             before,
-            limit: limit.unwrap_or(Self::DEFAULT_LIMIT).clamp(1, Self::MAX_LIMIT),
+            limit: limit
+                .unwrap_or(Self::DEFAULT_LIMIT)
+                .clamp(1, Self::MAX_LIMIT),
         }
     }
 
@@ -192,7 +194,11 @@ where
     /// Soft-delete a topic; its posts are soft-deleted in the same
     /// transaction (children survive for quote/reply integrity).
     async fn soft_delete_topic(&self, id: i64) -> Result<(), StoreError>;
-    async fn set_topic_status(&self, id: i64, status: crate::model::Status) -> Result<Topic<A>, StoreError>;
+    async fn set_topic_status(
+        &self,
+        id: i64,
+        status: crate::model::Status,
+    ) -> Result<Topic<A>, StoreError>;
     async fn set_topic_hidden(&self, id: i64, hidden: bool) -> Result<(), StoreError>;
     async fn increment_view_count(&self, id: i64) -> Result<(), StoreError>;
 
@@ -208,7 +214,8 @@ where
     ) -> Result<Post<A>, StoreError>;
     async fn get_post(&self, id: i64) -> Result<Post<A>, StoreError>;
     /// Cursor-paginated posts in a topic, chronological (`id > after`).
-    async fn list_posts(&self, topic_id: i64, cursor: &Cursor) -> Result<Page<Post<A>>, StoreError>;
+    async fn list_posts(&self, topic_id: i64, cursor: &Cursor)
+    -> Result<Page<Post<A>>, StoreError>;
     async fn update_post_body(&self, id: i64, body: &str) -> Result<Post<A>, StoreError>;
     /// Soft-delete a post (`deleted_at` set; children untouched).
     async fn soft_delete_post(&self, id: i64) -> Result<(), StoreError>;
@@ -218,7 +225,12 @@ where
 
     /// Upsert a vote; `value` must be `±1` (invalid values are rejected
     /// with `StoreError::Other`). Returns the resulting counts.
-    async fn upsert_vote(&self, post_id: i64, user_id: A, value: i8) -> Result<VoteCounts, StoreError>;
+    async fn upsert_vote(
+        &self,
+        post_id: i64,
+        user_id: A,
+        value: i8,
+    ) -> Result<VoteCounts, StoreError>;
     async fn remove_vote(&self, post_id: i64, user_id: A) -> Result<(), StoreError>;
     async fn get_vote(&self, post_id: i64, user_id: A) -> Result<Option<Vote<A>>, StoreError>;
     async fn vote_counts(&self, post_id: i64) -> Result<VoteCounts, StoreError>;
@@ -236,8 +248,17 @@ where
     // --- Read state -----------------------------------------------------
 
     /// Idempotent upsert of `last_read_post_id` for a user/topic pair.
-    async fn mark_read(&self, user_id: A, topic_id: i64, last_read_post_id: i64) -> Result<(), StoreError>;
-    async fn get_read_state(&self, user_id: A, topic_id: i64) -> Result<Option<ReadState<A>>, StoreError>;
+    async fn mark_read(
+        &self,
+        user_id: A,
+        topic_id: i64,
+        last_read_post_id: i64,
+    ) -> Result<(), StoreError>;
+    async fn get_read_state(
+        &self,
+        user_id: A,
+        topic_id: i64,
+    ) -> Result<Option<ReadState<A>>, StoreError>;
     /// All unread topics for a user (topics whose `last_post_id` exceeds
     /// the user's `last_read_post_id`).
     async fn unread_topics(&self, user_id: A) -> Result<Vec<Topic<A>>, StoreError>;

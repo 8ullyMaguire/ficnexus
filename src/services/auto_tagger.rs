@@ -57,7 +57,10 @@ pub fn should_accept(similarity: f32, threshold: f32) -> bool {
 pub fn vec_to_sql(emb: &[f32]) -> String {
     format!(
         "[{}]",
-        emb.iter().map(|f| format!("{f:.6}")).collect::<Vec<_>>().join(",")
+        emb.iter()
+            .map(|f| format!("{f:.6}"))
+            .collect::<Vec<_>>()
+            .join(",")
     )
 }
 
@@ -160,17 +163,18 @@ pub async fn recommend_tags(
 /// on-disk export cache (zip bundles), not the DB, so we embed title +
 /// description only.
 async fn fetch_fic_text(db: &PgPool, url_id: &str) -> Result<(String, String), AutoTaggerError> {
-    let row: Option<(String, String)> = sqlx::query_as(
-        "SELECT title, description FROM fic_info WHERE id = $1",
-    )
-    .bind(url_id)
-    .fetch_optional(db)
-    .await
-    .map_err(AutoTaggerError::Db)?;
+    let row: Option<(String, String)> =
+        sqlx::query_as("SELECT title, description FROM fic_info WHERE id = $1")
+            .bind(url_id)
+            .fetch_optional(db)
+            .await
+            .map_err(AutoTaggerError::Db)?;
 
     match row {
         Some((title, description)) => Ok((title, description)),
-        None => Err(AutoTaggerError::NoContent(format!("fic {url_id} not found"))),
+        None => Err(AutoTaggerError::NoContent(format!(
+            "fic {url_id} not found"
+        ))),
     }
 }
 
@@ -312,7 +316,10 @@ mod tests {
     #[test]
     fn vec_to_sql_round_trips_precision_and_negatives() {
         // 6-decimal formatting is stable for negatives and small values.
-        assert_eq!(vec_to_sql(&[-0.5, 0.0, 0.1234567]), "[-0.500000,0.000000,0.123457]");
+        assert_eq!(
+            vec_to_sql(&[-0.5, 0.0, 0.1234567]),
+            "[-0.500000,0.000000,0.123457]"
+        );
         assert_eq!(vec_to_sql(&[0.1]), "[0.100000]");
     }
 

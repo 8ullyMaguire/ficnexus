@@ -50,7 +50,11 @@ async fn main() {
     if dry_run {
         // Migrator doesn't expose a public applied-migrations list in this
         // sqlx version; a dry-run is informational only. Print what exists.
-        println!("DRY-RUN: {} migration files loaded from {:?}", migrator.iter().count(), migrations_path);
+        println!(
+            "DRY-RUN: {} migration files loaded from {:?}",
+            migrator.iter().count(),
+            migrations_path
+        );
         return;
     }
 

@@ -1,7 +1,7 @@
 //! FicNexus's scraper registry — wraps [`fanfic_scrapers::Registry`] and adds
 //! the FicNexus self-healing failure hook.
 
-use super::{FicMetadata, Chapter, SiteScraper, ScrapeError};
+use super::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use crate::heal::classifier;
 use fanfic_scrapers::sites;
 
@@ -64,11 +64,17 @@ impl ScraperRegistry {
         inner.register(Box::new(sites::novelall::NovelAllScraper));
         inner.register(Box::new(sites::masseffect2in::MassEffect2InScraper));
         inner.register(Box::new(sites::readonlymind::ReadonlyMindScraper::default()));
-        inner.register(Box::new(sites::utopiastories::UtopiaStoriesScraper::default()));
+        inner.register(Box::new(
+            sites::utopiastories::UtopiaStoriesScraper::default(),
+        ));
         inner.register(Box::new(sites::asexstories::ASexStoriesScraper::default()));
-        inner.register(Box::new(sites::aneroticstory::AnEroticStoryScraper::default()));
+        inner.register(Box::new(
+            sites::aneroticstory::AnEroticStoryScraper::default(),
+        ));
         inner.register(Box::new(sites::mcstories::MCStoriesScraper::default()));
-        inner.register(Box::new(sites::hentaifoundry::HentaiFoundryScraper::default()));
+        inner.register(Box::new(
+            sites::hentaifoundry::HentaiFoundryScraper::default(),
+        ));
         inner.register(Box::new(sites::bdsmlibrary::BdsmLibraryScraper::default()));
         // eFiction-variant family: 26 viewstory.php?sid= archives
         // (psychfic, wolverineandrogue, sycophanthex sites, etc.).
@@ -90,7 +96,12 @@ impl ScraperRegistry {
         // Generic WordPress novel sites (novelfull.net #1316, novelswd.com
         // #795, novelhall.com #762, hostednovel.com #523, ...).
         inner.register(Box::new(sites::wordpress_novel::WordPressNovelScraper {
-            hosts: &["novelfull.com", "novelswd.com", "novelhall.com", "hostednovel.com"],
+            hosts: &[
+                "novelfull.com",
+                "novelswd.com",
+                "novelhall.com",
+                "hostednovel.com",
+            ],
         }));
         ScraperRegistry { inner }
     }
@@ -181,9 +192,9 @@ impl ScraperRegistry {
         client: &reqwest::Client,
         meta: &FicMetadata,
     ) -> Result<Vec<Chapter>, ScrapeError> {
-        let scraper = self.find_specific_or_fff(&meta.source).ok_or_else(|| {
-            ScrapeError::Unsupported(format!("no scraper for {}", meta.source))
-        })?;
+        let scraper = self
+            .find_specific_or_fff(&meta.source)
+            .ok_or_else(|| ScrapeError::Unsupported(format!("no scraper for {}", meta.source)))?;
         scraper.fetch_chapters(client, meta).await
     }
 

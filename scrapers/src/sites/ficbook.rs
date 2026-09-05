@@ -15,8 +15,8 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct FicBookScraper;
 
@@ -26,7 +26,11 @@ impl SiteScraper for FicBookScraper {
         url.contains("ficbook.net/readfic/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
 
         if html.contains("id=\"adultCoverWarning\"") {
@@ -112,7 +116,12 @@ impl SiteScraper for FicBookScraper {
         if let Ok(li_sel) = Selector::parse("ul.list-of-fanfic-parts li.part a") {
             chapters = doc
                 .select(&li_sel)
-                .filter(|el| el.value().attr("href").map(|h| h.contains(&chap_pat)).unwrap_or(false))
+                .filter(|el| {
+                    el.value()
+                        .attr("href")
+                        .map(|h| h.contains(&chap_pat))
+                        .unwrap_or(false)
+                })
                 .count() as i32;
         }
         if chapters == 0 {
@@ -216,7 +225,10 @@ async fn fetch_chapter_text(client: &reqwest::Client, url: &str) -> String {
 
     if let Ok(note_sel) = Selector::parse("div.js-public-beta-comment-before") {
         for el in doc.select(&note_sel) {
-            out.push_str(&format!("<div class=\"fff_head_notes\">{}</div>", el.inner_html()));
+            out.push_str(&format!(
+                "<div class=\"fff_head_notes\">{}</div>",
+                el.inner_html()
+            ));
         }
     }
     if let Ok(sel) = Selector::parse("div#content") {
@@ -226,7 +238,10 @@ async fn fetch_chapter_text(client: &reqwest::Client, url: &str) -> String {
     }
     if let Ok(note_sel) = Selector::parse("div.js-public-beta-comment-after") {
         for el in doc.select(&note_sel) {
-            out.push_str(&format!("<div class=\"fff_foot_notes\">{}</div>", el.inner_html()));
+            out.push_str(&format!(
+                "<div class=\"fff_foot_notes\">{}</div>",
+                el.inner_html()
+            ));
         }
     }
     out
@@ -247,13 +262,18 @@ mod tests {
     #[test]
     fn parses_story_id() {
         let url = "https://ficbook.net/readfic/12345678/246417#part_content";
-        let id = url.split("/readfic/").nth(1).and_then(|s| s.split('/').next()).unwrap();
+        let id = url
+            .split("/readfic/")
+            .nth(1)
+            .and_then(|s| s.split('/').next())
+            .unwrap();
         assert_eq!(id, "12345678");
     }
 
     #[test]
     fn extracts_chapter_body() {
-        let html = r#"<html><body><div id="content"><p>Russian story text.</p></div></body></html>"#;
+        let html =
+            r#"<html><body><div id="content"><p>Russian story text.</p></div></body></html>"#;
         let out = {
             // fetch_chapter_text needs a client; test the body extraction logic
             // inline via parse.

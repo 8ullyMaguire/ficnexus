@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use chrono::TimeZone;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct FictionManiaScraper;
 
@@ -32,8 +32,13 @@ impl SiteScraper for FictionManiaScraper {
         url.contains("fictionmania.tv/") && (url.contains("storyID=") || url.contains("storyid="))
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("fictionmania: bad url".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("fictionmania: bad url".into()))?;
         let details_url = format!("https://fictionmania.tv/details.html?storyID={story_id}");
         let html = http::fetch(client, &details_url).await?;
         let doc = Html::parse_document(&html);
@@ -57,8 +62,21 @@ impl SiteScraper for FictionManiaScraper {
                 let key = tds[0]
                     .select(&Selector::parse("b").unwrap())
                     .next()
-                    .map(|b| b.text().collect::<String>().trim().trim_end_matches(':').to_string())
-                    .unwrap_or_else(|| tds[0].text().collect::<String>().trim().trim_end_matches(':').to_string());
+                    .map(|b| {
+                        b.text()
+                            .collect::<String>()
+                            .trim()
+                            .trim_end_matches(':')
+                            .to_string()
+                    })
+                    .unwrap_or_else(|| {
+                        tds[0]
+                            .text()
+                            .collect::<String>()
+                            .trim()
+                            .trim_end_matches(':')
+                            .to_string()
+                    });
                 let value = tds[1].text().collect::<String>().trim().to_string();
                 match key.as_str() {
                     "Title" => title = value.clone(),
@@ -68,7 +86,8 @@ impl SiteScraper for FictionManiaScraper {
                             if let Some(a) = tds[1].select(&a_sel).next() {
                                 if let Some(h) = a.value().attr("href") {
                                     author_url = format!("https://fictionmania.tv{h}");
-                                    author_local_id = h.rsplit('=').next().unwrap_or("").to_string();
+                                    author_local_id =
+                                        h.rsplit('=').next().unwrap_or("").to_string();
                                 }
                             }
                         }
@@ -118,11 +137,14 @@ impl SiteScraper for FictionManiaScraper {
         client: &reqwest::Client,
         meta: &FicMetadata,
     ) -> Result<Vec<Chapter>, ScrapeError> {
-        let story_id = Self::story_id(&meta.source).ok_or_else(|| ScrapeError::ParseError("fictionmania: bad url".into()))?;
+        let story_id = Self::story_id(&meta.source)
+            .ok_or_else(|| ScrapeError::ParseError("fictionmania: bad url".into()))?;
         let text_url = format!("https://fictionmania.tv/readtextstory.html?storyID={story_id}");
         let content = fetch_chapter_text(client, &text_url).await;
         if content.is_empty() {
-            return Err(ScrapeError::ParseError("fictionmania: no story text".into()));
+            return Err(ScrapeError::ParseError(
+                "fictionmania: no story text".into(),
+            ));
         }
         Ok(vec![Chapter {
             chapter_id: 1,

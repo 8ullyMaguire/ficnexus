@@ -1,7 +1,7 @@
-use std::path::{Path, PathBuf};
 use md5::{Digest, Md5};
 use serde::Deserialize;
-use tokio::time::{timeout, Duration};
+use std::path::{Path, PathBuf};
+use tokio::time::{Duration, timeout};
 
 use crate::cache::EType;
 use crate::export::ExportError;
@@ -49,23 +49,14 @@ pub async fn fichub_fallback(
 
     // ---- Step 2: Convert via Calibre for non-EPUB formats -----------------
     let format_str = target_format.as_str();
-    crate::export::convert::convert_epub(
-        &epub_path,
-        format_str,
-        calibre_container,
-        tmp_dir,
-    )
-    .await
+    crate::export::convert::convert_epub(&epub_path, format_str, calibre_container, tmp_dir).await
 }
 
 /// Request an EPUB from fichub.net's API.
 ///
 /// Calls `GET https://fichub.net/api/epub?q=<url>`, polls for the epub_url,
 /// downloads the EPUB, and returns the local path.
-async fn request_epub_from_fichub(
-    url: &str,
-    tmp_dir: &Path,
-) -> Result<PathBuf, ExportError> {
+async fn request_epub_from_fichub(url: &str, tmp_dir: &Path) -> Result<PathBuf, ExportError> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(FICHUB_API_TIMEOUT))
         .build()
@@ -104,9 +95,7 @@ async fn request_epub_from_fichub(
     }
 
     let epub_url = body.epub_url.ok_or_else(|| {
-        ExportError::NetworkError(
-            "fichub.net API returned no epub_url".to_string(),
-        )
+        ExportError::NetworkError("fichub.net API returned no epub_url".to_string())
     })?;
 
     // ---- Download the EPUB ------------------------------------------------
@@ -126,9 +115,7 @@ async fn download_file(
     )
     .await
     .map_err(|_| {
-        ExportError::NetworkError(format!(
-            "Download timed out after {FICHUB_EPUB_TIMEOUT}s"
-        ))
+        ExportError::NetworkError(format!("Download timed out after {FICHUB_EPUB_TIMEOUT}s"))
     })?
     .map_err(|e| ExportError::NetworkError(format!("Download request failed: {e}")))?;
 
@@ -139,9 +126,10 @@ async fn download_file(
         )));
     }
 
-    let bytes = response.bytes().await.map_err(|e| {
-        ExportError::NetworkError(format!("Failed to read download body: {e}"))
-    })?;
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| ExportError::NetworkError(format!("Failed to read download body: {e}")))?;
 
     let out_path = tmp_dir.join(filename);
     std::fs::write(&out_path, &bytes)?;

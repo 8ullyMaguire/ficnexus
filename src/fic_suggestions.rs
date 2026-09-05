@@ -1,15 +1,15 @@
+use crate::error::AppError;
+use crate::limiter::{Tier, TieredRateLimitResult, client_ip_from_headers};
+use crate::server::AppState;
 use axum::{
+    Json,
     extract::{ConnectInfo, Path, Query, State},
     http::HeaderMap,
-    Json,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use crate::error::AppError;
-use crate::limiter::{client_ip_from_headers, Tier, TieredRateLimitResult};
-use crate::server::AppState;
 
 /// Query params for GET /api/fic-suggestions?url_id=...
 #[derive(Debug, Deserialize)]
@@ -46,7 +46,11 @@ fn caller_ip(headers: &HeaderMap, remote: SocketAddr) -> IpAddr {
 
 /// Enforce the Default-tier write limiter (moderate per-IP bucket). Fails
 /// open on limiter errors so a Redis hiccup never blocks community features.
-async fn enforce_write_rate_limit(state: &Arc<AppState>, headers: &HeaderMap, remote: SocketAddr) -> Result<(), AppError> {
+async fn enforce_write_rate_limit(
+    state: &Arc<AppState>,
+    headers: &HeaderMap,
+    remote: SocketAddr,
+) -> Result<(), AppError> {
     let client_id = headers
         .get("x-client-id")
         .and_then(|v| v.to_str().ok())
@@ -54,7 +58,11 @@ async fn enforce_write_rate_limit(state: &Arc<AppState>, headers: &HeaderMap, re
         .filter(|s| !s.is_empty());
     match state
         .rate_limiter
-        .check(caller_ip(headers, remote), client_id.as_deref(), Tier::Default)
+        .check(
+            caller_ip(headers, remote),
+            client_id.as_deref(),
+            Tier::Default,
+        )
         .await
     {
         TieredRateLimitResult::Wait(secs) => Err(AppError::RateLimited(secs)),
@@ -85,9 +93,19 @@ pub async fn list_suggestions(
 
     // Vote aggregate + titles in one pass; the LEFT JOIN keeps suggestions
     // with zero votes. Only rows with status='active' are listed.
-    let rows: Vec<(i64, String, String, String, Option<String>, Option<i32>, Option<i64>, Option<i16>, Option<i32>, Option<chrono::DateTime<chrono::Utc>>)> =
-        sqlx::query_as(
-            r#"
+    let rows: Vec<(
+        i64,
+        String,
+        String,
+        String,
+        Option<String>,
+        Option<i32>,
+        Option<i64>,
+        Option<i16>,
+        Option<i32>,
+        Option<chrono::DateTime<chrono::Utc>>,
+    )> = sqlx::query_as(
+        r#"
             SELECT s.id,
                    s.suggested_url_id,
                    COALESCE(fi.title, '')      AS suggested_title,
@@ -119,17 +137,28 @@ pub async fn list_suggestions(
              WHERE s.url_id = $3 AND s.status = 'active'
              ORDER BY score DESC, s.created DESC, s.id DESC
             "#,
-        )
-        .bind(user_id)
-        .bind(ip.to_string())
-        .bind(&params.url_id)
-        .fetch_all(&state.db)
-        .await?;
+    )
+    .bind(user_id)
+    .bind(ip.to_string())
+    .bind(&params.url_id)
+    .fetch_all(&state.db)
+    .await?;
 
     let suggestions: Vec<Value> = rows
         .into_iter()
         .map(
-            |(id, suggested_url_id, suggested_title, suggested_author, comment, score, total_votes, my_vote, user_id, created)| {
+            |(
+                id,
+                suggested_url_id,
+                suggested_title,
+                suggested_author,
+                comment,
+                score,
+                total_votes,
+                my_vote,
+                user_id,
+                created,
+            )| {
                 json!({
                     "id": id,
                     "url_id": params.url_id,
@@ -147,7 +176,9 @@ pub async fn list_suggestions(
         )
         .collect();
 
-    Ok(Json(json!({ "err": 0, "url_id": params.url_id, "suggestions": suggestions })))
+    Ok(Json(
+        json!({ "err": 0, "url_id": params.url_id, "suggestions": suggestions }),
+    ))
 }
 
 /// POST /api/fic-suggestions
@@ -233,16 +264,21 @@ pub async fn create_suggestion(
     };
 
     if suggested_url_id == body.url_id {
-        return Ok(Json(json!({ "err": -1, "msg": "can't suggest a fic as similar to itself" })));
+        return Ok(Json(
+            json!({ "err": -1, "msg": "can't suggest a fic as similar to itself" }),
+        ));
     }
 
     // Seed fic must exist (the per-fic panel only renders on existing fics).
-    let seed_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM fic_info WHERE id = $1)")
-        .bind(&body.url_id)
-        .fetch_one(&state.db)
-        .await?;
+    let seed_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM fic_info WHERE id = $1)")
+            .bind(&body.url_id)
+            .fetch_one(&state.db)
+            .await?;
     if !seed_exists {
-        return Ok(Json(json!({ "err": -5, "msg": "seed fic not found in database" })));
+        return Ok(Json(
+            json!({ "err": -5, "msg": "seed fic not found in database" }),
+        ));
     }
 
     // Suggested fic must exist; otherwise enqueue for collection.
@@ -264,7 +300,11 @@ pub async fn create_suggestion(
 
     enforce_write_rate_limit(&state, &headers, remote).await?;
 
-    let comment = body.comment.as_deref().map(str::trim).filter(|c| !c.is_empty());
+    let comment = body
+        .comment
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty());
 
     let result: Result<(i64,), sqlx::Error> = sqlx::query_as(
         r#"
@@ -332,23 +372,29 @@ pub async fn vote_suggestion(
     // suggestion (verified for authenticated callers; anonymous callers have
     // no user_id so they can never match the owner).
     if auth.user_id.is_some() && auth.user_id == sug_user_id {
-        return Err(AppError::BadRequest("you can't vote on your own suggestion".to_string()));
+        return Err(AppError::BadRequest(
+            "you can't vote on your own suggestion".to_string(),
+        ));
     }
 
     // 0 retracts the caller's vote entirely.
     if body.vote == 0 {
         if let Some(voter_id) = auth.user_id {
-            sqlx::query("DELETE FROM recommendation_votes WHERE suggestion_id = $1 AND user_id = $2")
-                .bind(suggestion_id)
-                .bind(voter_id)
-                .execute(&state.db)
-                .await?;
+            sqlx::query(
+                "DELETE FROM recommendation_votes WHERE suggestion_id = $1 AND user_id = $2",
+            )
+            .bind(suggestion_id)
+            .bind(voter_id)
+            .execute(&state.db)
+            .await?;
         } else {
-            sqlx::query("DELETE FROM recommendation_votes WHERE suggestion_id = $1 AND voter_ip = $2::inet")
-                .bind(suggestion_id)
-                .bind(ip.to_string())
-                .execute(&state.db)
-                .await?;
+            sqlx::query(
+                "DELETE FROM recommendation_votes WHERE suggestion_id = $1 AND voter_ip = $2::inet",
+            )
+            .bind(suggestion_id)
+            .bind(ip.to_string())
+            .execute(&state.db)
+            .await?;
         }
     } else if let Some(voter_id) = auth.user_id {
         sqlx::query(
@@ -380,11 +426,12 @@ pub async fn vote_suggestion(
         .await?;
     }
 
-    let new_score: Option<i32> =
-        sqlx::query_scalar("SELECT SUM(vote)::INT FROM recommendation_votes WHERE suggestion_id = $1")
-            .bind(suggestion_id)
-            .fetch_one(&state.db)
-            .await?;
+    let new_score: Option<i32> = sqlx::query_scalar(
+        "SELECT SUM(vote)::INT FROM recommendation_votes WHERE suggestion_id = $1",
+    )
+    .bind(suggestion_id)
+    .fetch_one(&state.db)
+    .await?;
 
     Ok(Json(json!({
         "err": 0,
@@ -426,5 +473,7 @@ pub async fn remove_suggestion(
         .execute(&state.db)
         .await?;
 
-    Ok(Json(json!({ "err": 0, "suggestion_id": suggestion_id, "removed": true })))
+    Ok(Json(
+        json!({ "err": 0, "suggestion_id": suggestion_id, "removed": true }),
+    ))
 }

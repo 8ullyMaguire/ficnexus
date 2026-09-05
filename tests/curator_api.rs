@@ -15,12 +15,12 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::{delete, get, post, put},
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -52,8 +52,8 @@ async fn app() -> Router {
     config.tag_vote_limit_per_hour = 100_000;
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -81,17 +81,22 @@ async fn app() -> Router {
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -126,10 +131,22 @@ async fn app() -> Router {
             "/api/curator/authors/reject/{proposal_id}",
             post(fichub::routes::authors::reject_merge),
         )
-        .route("/api/curator/alias", post(fichub::tags::curator::create_alias))
-        .route("/api/curator/merge", post(fichub::tags::curator::merge_tags))
-        .route("/api/curator/tags/{id}", delete(fichub::tags::curator::delete_tag))
-        .route("/api/curator/tags/{id}", put(fichub::tags::curator::update_tag))
+        .route(
+            "/api/curator/alias",
+            post(fichub::tags::curator::create_alias),
+        )
+        .route(
+            "/api/curator/merge",
+            post(fichub::tags::curator::merge_tags),
+        )
+        .route(
+            "/api/curator/tags/{id}",
+            delete(fichub::tags::curator::delete_tag),
+        )
+        .route(
+            "/api/curator/tags/{id}",
+            put(fichub::tags::curator::update_tag),
+        )
         .route("/api/curator/flags", get(fichub::tags::curator::list_flags))
         .route(
             "/api/curator/flags/{id}/resolve",
@@ -276,14 +293,14 @@ async fn cleanup(pool: &sqlx::PgPool) {
         .execute(pool)
         .await;
     // Author-merge side
-    let _ = sqlx::query(
-        "DELETE FROM author_merge_proposals WHERE source_author LIKE 'CuratorTest %'",
-    )
-    .execute(pool)
-    .await;
-    let _ = sqlx::query("DELETE FROM author_profile_links WHERE source_author LIKE 'CuratorTest %'")
-        .execute(pool)
-        .await;
+    let _ =
+        sqlx::query("DELETE FROM author_merge_proposals WHERE source_author LIKE 'CuratorTest %'")
+            .execute(pool)
+            .await;
+    let _ =
+        sqlx::query("DELETE FROM author_profile_links WHERE source_author LIKE 'CuratorTest %'")
+            .execute(pool)
+            .await;
     let _ = sqlx::query("DELETE FROM author_profiles WHERE canonical_name LIKE 'CuratorTest %'")
         .execute(pool)
         .await;
@@ -292,8 +309,16 @@ async fn cleanup(pool: &sqlx::PgPool) {
         .await;
 }
 
-async fn post_json(app: &Router, uri: &str, token: Option<&str>, body: Value) -> (StatusCode, Value) {
-    let mut req = Request::builder().method("POST").uri(uri).header("content-type", "application/json");
+async fn post_json(
+    app: &Router,
+    uri: &str,
+    token: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
+    let mut req = Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json");
     if let Some(t) = token {
         req = req.header("authorization", t);
     }
@@ -303,8 +328,11 @@ async fn post_json(app: &Router, uri: &str, token: Option<&str>, body: Value) ->
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -319,8 +347,11 @@ async fn get_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCode, 
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -335,8 +366,11 @@ async fn delete_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCod
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -392,28 +426,38 @@ async fn author_merge_propose_pending_approve() {
     assert_eq!(s, StatusCode::FORBIDDEN, "low role pending");
 
     // Approve → the author_profile_links row exists, proposal resolved.
-    let (s, b) = post_json(&app, &format!("/api/curator/authors/approve/{proposal_id}"), Some(&t_curator), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/curator/authors/approve/{proposal_id}"),
+        Some(&t_curator),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "approve: {b}");
     assert_eq!(b["err"], 0, "approve err: {b}");
-    let linked: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM author_profile_links WHERE source_author = $1",
-    )
-    .bind("CuratorTest Author A")
-    .fetch_one(&db)
-    .await
-    .expect("link count");
+    let linked: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM author_profile_links WHERE source_author = $1")
+            .bind("CuratorTest Author A")
+            .fetch_one(&db)
+            .await
+            .expect("link count");
     assert_eq!(linked, 1, "link created");
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM author_merge_proposals WHERE id = $1",
-    )
-    .bind(proposal_id)
-    .fetch_one(&db)
-    .await
-    .expect("proposal status");
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM author_merge_proposals WHERE id = $1")
+            .bind(proposal_id)
+            .fetch_one(&db)
+            .await
+            .expect("proposal status");
     assert_eq!(status, "approved");
 
     // Approving the same proposal again → 404 (already resolved).
-    let (s, b) = post_json(&app, &format!("/api/curator/authors/approve/{proposal_id}"), Some(&t_curator), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/curator/authors/approve/{proposal_id}"),
+        Some(&t_curator),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::NOT_FOUND, "re-approve: {b}");
 
     // Admin auto-approve path (role 10, auto_approve=true) links directly.
@@ -428,13 +472,12 @@ async fn author_merge_propose_pending_approve() {
     .await;
     assert_eq!(s, StatusCode::OK, "auto-approve: {b}");
     assert_eq!(b["msg"], "Author linked directly");
-    let linked: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM author_profile_links WHERE source_author = $1",
-    )
-    .bind("CuratorTest Author B")
-    .fetch_one(&db)
-    .await
-    .expect("link count 2");
+    let linked: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM author_profile_links WHERE source_author = $1")
+            .bind("CuratorTest Author B")
+            .fetch_one(&db)
+            .await
+            .expect("link count 2");
     assert_eq!(linked, 1, "direct link created");
 
     // Cleanup
@@ -472,22 +515,28 @@ async fn author_merge_reject() {
     };
 
     // Reject → status flips, NO link row is created.
-    let (s, b) = post_json(&app, &format!("/api/curator/authors/reject/{proposal_id}"), Some(&t_curator), json!({})).await;
+    let (s, b) = post_json(
+        &app,
+        &format!("/api/curator/authors/reject/{proposal_id}"),
+        Some(&t_curator),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "reject: {b}");
     assert_eq!(b["err"], 0, "reject err: {b}");
-    let status: String = sqlx::query_scalar("SELECT status FROM author_merge_proposals WHERE id = $1")
-        .bind(proposal_id)
-        .fetch_one(&db)
-        .await
-        .expect("status");
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM author_merge_proposals WHERE id = $1")
+            .bind(proposal_id)
+            .fetch_one(&db)
+            .await
+            .expect("status");
     assert_eq!(status, "rejected");
-    let linked: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM author_profile_links WHERE source_author = $1",
-    )
-    .bind("CuratorTest Author C")
-    .fetch_one(&db)
-    .await
-    .expect("link count");
+    let linked: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM author_profile_links WHERE source_author = $1")
+            .bind("CuratorTest Author C")
+            .fetch_one(&db)
+            .await
+            .expect("link count");
     assert_eq!(linked, 0, "no link on reject");
 
     // Cleanup
@@ -513,17 +562,35 @@ async fn tag_alias_merge_delete() {
     let _ = &ta; // role-10 JWT used below for the tag-curator verbs
 
     // Anonymous → HTTP 400 (err 401, Login required).
-    let (s, b) = post_json(&app, "/api/curator/alias", None, json!({ "alias_name": "CuratorTest Alias X", "canonical_tag_id": t1 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/curator/alias",
+        None,
+        json!({ "alias_name": "CuratorTest Alias X", "canonical_tag_id": t1 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "no token: {b}");
     assert_eq!(b["err"], 401, "no token err: {b}");
 
     // Logged-in but role < 10 → HTTP 400 (err 403, project 400-as-403).
-    let (s, b) = post_json(&app, "/api/curator/alias", Some(&t_low), json!({ "alias_name": "CuratorTest Alias X", "canonical_tag_id": t1 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/curator/alias",
+        Some(&t_low),
+        json!({ "alias_name": "CuratorTest Alias X", "canonical_tag_id": t1 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "low role: {b}");
     assert_eq!(b["err"], -403, "low role err: {b}");
 
     // Low role also blocked from the other tag-curator verbs.
-    let (s, b) = post_json(&app, "/api/curator/merge", Some(&t_low), json!({ "source_tag_id": t1, "target_tag_id": t2 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/curator/merge",
+        Some(&t_low),
+        json!({ "source_tag_id": t1, "target_tag_id": t2 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "low role merge: {b}");
     assert_eq!(b["err"], -403, "low role merge err: {b}");
     let (s, b) = delete_json(&app, &format!("/api/curator/tags/{t2}"), Some(&t_low)).await;
@@ -531,7 +598,13 @@ async fn tag_alias_merge_delete() {
     assert_eq!(b["err"], -403, "low role delete err: {b}");
 
     // Create an alias pointing at t1 (role 10).
-    let (s, b) = post_json(&app, "/api/curator/alias", Some(&ta), json!({ "alias_name": "CuratorTest Alias X", "canonical_tag_id": t1 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/curator/alias",
+        Some(&ta),
+        json!({ "alias_name": "CuratorTest Alias X", "canonical_tag_id": t1 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "alias: {b}");
     assert_eq!(b["err"], 0, "alias err: {b}");
 
@@ -548,17 +621,22 @@ async fn tag_alias_merge_delete() {
     assert_eq!(syn, 1, "alias row created");
 
     // Merge t1 INTO t2: fic_tags migrate, source tag deleted.
-    let (s, b) = post_json(&app, "/api/curator/merge", Some(&ta), json!({ "source_tag_id": t1, "target_tag_id": t2 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/curator/merge",
+        Some(&ta),
+        json!({ "source_tag_id": t1, "target_tag_id": t2 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "merge: {b}");
     assert_eq!(b["err"], 0, "merge err: {b}");
-    let migrated: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM fic_tags WHERE url_id = $1 AND tag_id = $2",
-    )
-    .bind("curatort_tag")
-    .bind(t2)
-    .fetch_one(&db)
-    .await
-    .expect("migrated count");
+    let migrated: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM fic_tags WHERE url_id = $1 AND tag_id = $2")
+            .bind("curatort_tag")
+            .bind(t2)
+            .fetch_one(&db)
+            .await
+            .expect("migrated count");
     assert_eq!(migrated, 1, "fic_tag migrated to target: {b}");
     let gone: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tags WHERE id = $1")
         .bind(t1)
@@ -568,7 +646,13 @@ async fn tag_alias_merge_delete() {
     assert_eq!(gone, 0, "source tag deleted");
 
     // Merge into itself → err -1.
-    let (s, b) = post_json(&app, "/api/curator/merge", Some(&ta), json!({ "source_tag_id": t2, "target_tag_id": t2 })).await;
+    let (s, b) = post_json(
+        &app,
+        "/api/curator/merge",
+        Some(&ta),
+        json!({ "source_tag_id": t2, "target_tag_id": t2 }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "self-merge: {b}");
     assert_eq!(b["err"], -1, "self-merge err: {b}");
 

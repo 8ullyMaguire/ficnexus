@@ -56,7 +56,9 @@ pub async fn refresh_signals(db: &PgPool, curator_user_id: Option<i32>) -> Resul
     let curator = curator_user_id.unwrap_or(-1);
     let mut tx = db.begin().await?;
 
-    sqlx::query("DELETE FROM rec_user_signals").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM rec_user_signals")
+        .execute(&mut *tx)
+        .await?;
 
     // Bookmarks (per-user).
     sqlx::query(
@@ -130,10 +132,7 @@ pub async fn all_signals(db: &PgPool) -> Result<Vec<UserSignal>, AppError> {
 
 /// Recent global download popularity: (work_id, weight) over the last
 /// `days` from request_log (anonymous).
-pub async fn download_popularity(
-    db: &PgPool,
-    days: i64,
-) -> Result<Vec<(String, f64)>, AppError> {
+pub async fn download_popularity(db: &PgPool, days: i64) -> Result<Vec<(String, f64)>, AppError> {
     let rows = sqlx::query_as::<_, (String, f64)>(
         r#"SELECT url_id, COUNT(*)::float8 * $2 AS w
            FROM request_log

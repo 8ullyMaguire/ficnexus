@@ -19,7 +19,9 @@ fn db_guard() -> std::sync::MutexGuard<'static, ()> {
 
 async fn pool() -> sqlx::PgPool {
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (load .env)");
-    sqlx::PgPool::connect(&database_url).await.expect("db connect")
+    sqlx::PgPool::connect(&database_url)
+        .await
+        .expect("db connect")
 }
 
 async fn seed_user(pool: &sqlx::PgPool, username: &str) -> i32 {
@@ -95,9 +97,11 @@ async fn curator_prior_pulls_cold_user_toward_curator_profile() {
 
     // Fics.
     let fics = [
-        "rectestcur_cur1", "rectestcur_cur2", // curator's picks
-        "rectestcur_user1", "rectestcur_user2", // cold user's own
-        "rectestcur_cand", // candidate
+        "rectestcur_cur1",
+        "rectestcur_cur2", // curator's picks
+        "rectestcur_user1",
+        "rectestcur_user2", // cold user's own
+        "rectestcur_cand",  // candidate
     ];
     for (i, f) in fics.iter().enumerate() {
         seed_fic(&db, f, &format!("Curator Test {i}"), 1).await;
@@ -137,12 +141,18 @@ async fn curator_prior_pulls_cold_user_toward_curator_profile() {
         config.rec_curator_tau,
     );
     assert!(alpha >= config.rec_prior_floor, "floor respected: {alpha}");
-    assert!(alpha > 0.7, "cold user still strongly curator-shaped: {alpha}");
+    assert!(
+        alpha > 0.7,
+        "cold user still strongly curator-shaped: {alpha}"
+    );
 
     // Alignment: user's tag vector vs curator's. Both have no tags seeded —
     // the alignment should be 0 (no shared tags) rather than NaN.
     let alignment = fichub::recommender::ranker::compute_alignment(&ctx, cold_id, curator_id).await;
-    assert!(alignment.is_finite(), "alignment must be finite: {alignment}");
+    assert!(
+        alignment.is_finite(),
+        "alignment must be finite: {alignment}"
+    );
 
     // The pure blend math (no DB): a cold user's rec list containing the
     // curator's top work gets it lifted to the top at alpha ≈ floor.
@@ -151,7 +161,10 @@ async fn curator_prior_pulls_cold_user_toward_curator_profile() {
         (curator_first.clone(), 0.6),
     ];
     let out = fichub::recommender::ranker::apply_curator_prior(&fused, &curator_top, alpha);
-    assert_eq!(out[0].0, curator_first, "curator pick must lead after blend: {out:?}");
+    assert_eq!(
+        out[0].0, curator_first,
+        "curator pick must lead after blend: {out:?}"
+    );
     // Blend is score-additive, not probability-bounded: the curator's raw
     // signal sums (5× bookmarks) can exceed 1.0 — assert relative ordering,
     // not an absolute ceiling.
@@ -159,14 +172,31 @@ async fn curator_prior_pulls_cold_user_toward_curator_profile() {
 
     // Cleanup.
     for f in &fics {
-        let _ = sqlx::query("DELETE FROM rec_user_signals WHERE work_id = $1").bind(f).execute(&db).await;
-        let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1").bind(f).execute(&db).await;
+        let _ = sqlx::query("DELETE FROM rec_user_signals WHERE work_id = $1")
+            .bind(f)
+            .execute(&db)
+            .await;
+        let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1")
+            .bind(f)
+            .execute(&db)
+            .await;
     }
-    let _ = sqlx::query("DELETE FROM rec_user_curator_align WHERE user_id = $1").bind(cold_id).execute(&db).await;
+    let _ = sqlx::query("DELETE FROM rec_user_curator_align WHERE user_id = $1")
+        .bind(cold_id)
+        .execute(&db)
+        .await;
     for name in [curator_name, cold_name] {
-        let _ = sqlx::query("DELETE FROM bookmarks WHERE user_id = (SELECT id FROM users WHERE username = $1)").bind(name).execute(&db).await;
+        let _ = sqlx::query(
+            "DELETE FROM bookmarks WHERE user_id = (SELECT id FROM users WHERE username = $1)",
+        )
+        .bind(name)
+        .execute(&db)
+        .await;
         let _ = sqlx::query("DELETE FROM rec_user_signals WHERE user_id = (SELECT id FROM users WHERE username = $1)").bind(name).execute(&db).await;
-        let _ = sqlx::query("DELETE FROM users WHERE username = $1").bind(name).execute(&db).await;
+        let _ = sqlx::query("DELETE FROM users WHERE username = $1")
+            .bind(name)
+            .execute(&db)
+            .await;
     }
 }
 

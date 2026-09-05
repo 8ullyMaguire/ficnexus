@@ -12,12 +12,12 @@
 //! run a small highlighter that wraps matching terms in `<mark>`.
 
 use axum::{
+    Json,
     extract::{Query, State},
     http::HeaderMap,
-    Json,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 use std::sync::Arc;
 
@@ -99,15 +99,17 @@ pub async fn body_search_handler(
     }
 
     let page = params.page.unwrap_or(1).max(1);
-    let per_page = params.per_page.unwrap_or(DEFAULT_PER_PAGE).clamp(1, MAX_PER_PAGE);
+    let per_page = params
+        .per_page
+        .unwrap_or(DEFAULT_PER_PAGE)
+        .clamp(1, MAX_PER_PAGE);
     let offset = (page - 1) * per_page;
 
-    let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM fic_info WHERE body_text_search @@ $1::tsquery",
-    )
-    .bind(&tsquery)
-    .fetch_one(&state.db)
-    .await?;
+    let total: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM fic_info WHERE body_text_search @@ $1::tsquery")
+            .bind(&tsquery)
+            .fetch_one(&state.db)
+            .await?;
 
     // Match + rank. body_text_search is NULL for fics without a cached
     // body, so they can never match. ts_rank DESC breaks ties by id for
@@ -255,7 +257,10 @@ mod tests {
         }
         text.push_str("And then Harry Potter finally appeared in the story.");
         let out = highlight_snippet(&text, "harry:*");
-        assert!(out.starts_with('…'), "snippet should open with ellipsis: {out}");
+        assert!(
+            out.starts_with('…'),
+            "snippet should open with ellipsis: {out}"
+        );
         assert!(out.contains("<mark>Harry</mark>"), "snippet: {out}");
     }
 

@@ -1,7 +1,7 @@
-use sqlx::PgPool;
 use crate::db::queries;
 use crate::error::AppError;
 use crate::scrape::FicMetadata;
+use sqlx::PgPool;
 
 /// Result of auto-merge check
 #[derive(Debug)]
@@ -97,8 +97,7 @@ pub fn decide_merge(title_author_match: bool, words: i64, avg_words: f64) -> Mer
     }
     if word_count_within_tolerance(words, avg_words) {
         MergeDecision::AutoMerge {
-            confidence: auto_merge_confidence(words, avg_words)
-                .unwrap_or(DEFAULT_MERGE_CONFIDENCE),
+            confidence: auto_merge_confidence(words, avg_words).unwrap_or(DEFAULT_MERGE_CONFIDENCE),
         }
     } else {
         // Word count outside tolerance: medium confidence (proposal).
@@ -143,7 +142,10 @@ pub async fn find_or_create_work(
                 if avg_words > 0.0 {
                     tracing::info!(
                         "Auto-merged source '{}' ({} words) into work '{}' (avg={:.0}, diff={:.1}%)",
-                        title, words, existing_work.canonical_title, avg_words,
+                        title,
+                        words,
+                        existing_work.canonical_title,
+                        avg_words,
                         word_count_diff(words, avg_words) * 100.0
                     );
                 }
@@ -167,17 +169,14 @@ pub async fn find_or_create_work(
                 // existing /work-proposals flow.
                 tracing::info!(
                     "Title+author match but word count outside tolerance: {} vs avg {:.0} (diff={:.1}%). Creating separate work instead of auto-merging.",
-                    words, avg_words, word_count_diff(words, avg_words) * 100.0
+                    words,
+                    avg_words,
+                    word_count_diff(words, avg_words) * 100.0
                 );
 
-                let work_id = queries::create_work(
-                    pool,
-                    title,
-                    author,
-                    &meta.desc,
-                    Some(&meta.url_id),
-                )
-                .await?;
+                let work_id =
+                    queries::create_work(pool, title, author, &meta.desc, Some(&meta.url_id))
+                        .await?;
                 queries::link_source_to_work(pool, &meta.url_id, work_id).await?;
 
                 return Ok(AutoMergeResult {
@@ -193,21 +192,16 @@ pub async fn find_or_create_work(
     }
 
     // Step 2: No match found — create new work
-    let work_id = queries::create_work(
-        pool,
-        title,
-        author,
-        &meta.desc,
-        Some(&meta.url_id),
-    )
-    .await?;
+    let work_id = queries::create_work(pool, title, author, &meta.desc, Some(&meta.url_id)).await?;
 
     // Link the source to the new work
     queries::link_source_to_work(pool, &meta.url_id, work_id).await?;
 
     tracing::info!(
         "Created new work '{}' by '{}' (id={})",
-        title, author, work_id
+        title,
+        author,
+        work_id
     );
 
     Ok(AutoMergeResult {
@@ -314,7 +308,10 @@ mod tests {
     #[test]
     fn no_title_author_match_creates_new_work() {
         // Word counts don't matter without a title+author match.
-        assert_eq!(decide_merge(false, 100_000, 100_000.0), MergeDecision::NewWork);
+        assert_eq!(
+            decide_merge(false, 100_000, 100_000.0),
+            MergeDecision::NewWork
+        );
         assert_eq!(decide_merge(false, 100_000, 0.0), MergeDecision::NewWork);
         assert_eq!(decide_merge(false, 10, 0.0), MergeDecision::NewWork);
     }
@@ -360,7 +357,9 @@ mod tests {
         // with under a TODO.
         assert_eq!(
             decide_merge(true, 90_000, 100_000.0),
-            MergeDecision::Proposal { confidence: MEDIUM_CONFIDENCE }
+            MergeDecision::Proposal {
+                confidence: MEDIUM_CONFIDENCE
+            }
         );
         assert_eq!(
             decide_merge(true, 110_000, 100_000.0),
@@ -373,7 +372,9 @@ mod tests {
         // 94_999 → diff 0.05001 → just outside tolerance → proposal
         assert_eq!(
             decide_merge(true, 94_999, 100_000.0),
-            MergeDecision::Proposal { confidence: MEDIUM_CONFIDENCE }
+            MergeDecision::Proposal {
+                confidence: MEDIUM_CONFIDENCE
+            }
         );
     }
 
@@ -382,7 +383,9 @@ mod tests {
         // No existing sources with word counts → default 0.8 auto-merge
         assert_eq!(
             decide_merge(true, 100_000, 0.0),
-            MergeDecision::AutoMerge { confidence: DEFAULT_MERGE_CONFIDENCE }
+            MergeDecision::AutoMerge {
+                confidence: DEFAULT_MERGE_CONFIDENCE
+            }
         );
         assert_eq!(
             decide_merge(true, 42, 0.0),
@@ -396,12 +399,16 @@ mod tests {
         // Should auto-merge with default confidence, not create a proposal.
         assert_eq!(
             decide_merge(true, 0, 806_306.0),
-            MergeDecision::AutoMerge { confidence: DEFAULT_MERGE_CONFIDENCE }
+            MergeDecision::AutoMerge {
+                confidence: DEFAULT_MERGE_CONFIDENCE
+            }
         );
         // Both zero — still auto-merge
         assert_eq!(
             decide_merge(true, 0, 0.0),
-            MergeDecision::AutoMerge { confidence: DEFAULT_MERGE_CONFIDENCE }
+            MergeDecision::AutoMerge {
+                confidence: DEFAULT_MERGE_CONFIDENCE
+            }
         );
     }
 }

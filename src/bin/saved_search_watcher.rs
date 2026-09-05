@@ -36,7 +36,9 @@ async fn main() {
         .parse()
         .unwrap_or(-3);
 
-    let pool: PgPool = db::init_pool(&database_url).await.expect("Failed to connect to database");
+    let pool: PgPool = db::init_pool(&database_url)
+        .await
+        .expect("Failed to connect to database");
 
     tracing::info!("Running saved-search alert watcher...");
 
@@ -51,13 +53,12 @@ async fn main() {
 
     for (search_id,) in searches {
         // Load the query text for this search.
-        let query_text: Option<String> = sqlx::query_scalar(
-            "SELECT query_text FROM saved_searches WHERE id = $1",
-        )
-        .bind(search_id)
-        .fetch_optional(&pool)
-        .await
-        .expect("failed to load saved search query text");
+        let query_text: Option<String> =
+            sqlx::query_scalar("SELECT query_text FROM saved_searches WHERE id = $1")
+                .bind(search_id)
+                .fetch_optional(&pool)
+                .await
+                .expect("failed to load saved search query text");
 
         let Some(query_text) = query_text else {
             tracing::warn!(search_id, "saved search missing query text; skipping");
@@ -65,20 +66,21 @@ async fn main() {
         };
 
         // Re-run via the shared builder pipeline to get the current match set.
-        let work_ids = match run_search_work_ids(&pool, &query_text, ALERT_PER_PAGE, tag_hidden_threshold).await {
-            Ok(ids) => ids,
-            Err(e) => {
-                tracing::error!(search_id, %e, "saved search re-run failed; skipping");
-                sqlx::query(
-                    "UPDATE saved_searches SET last_run_at = now() WHERE id = $1",
-                )
-                .bind(search_id)
-                .execute(&pool)
+        let work_ids =
+            match run_search_work_ids(&pool, &query_text, ALERT_PER_PAGE, tag_hidden_threshold)
                 .await
-                .ok();
-                continue;
-            }
-        };
+            {
+                Ok(ids) => ids,
+                Err(e) => {
+                    tracing::error!(search_id, %e, "saved search re-run failed; skipping");
+                    sqlx::query("UPDATE saved_searches SET last_run_at = now() WHERE id = $1")
+                        .bind(search_id)
+                        .execute(&pool)
+                        .await
+                        .ok();
+                    continue;
+                }
+            };
 
         // Record this run's timestamps/count before diffing.
         sqlx::query(
@@ -114,5 +116,8 @@ async fn main() {
     }
 
     tracing::info!(processed, total_new, "saved-search watcher complete");
-    println!("OK: processed {} saved searches, {} new matches", processed, total_new);
+    println!(
+        "OK: processed {} saved searches, {} new matches",
+        processed, total_new
+    );
 }

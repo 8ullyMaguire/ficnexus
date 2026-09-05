@@ -7,10 +7,17 @@ use std::sync::Arc;
 use crate::error::{AppError, AppResult};
 use crate::server::AppState;
 
-use super::{build_feed, fic_entry, iso_now, opds_response, FeedKind, PageParams};
+use super::{FeedKind, PageParams, build_feed, fic_entry, iso_now, opds_response};
 
 /// Build a navigation entry for the root catalog.
-fn nav_entry(title: &str, href: &str, id: &str, summary: &str, now: &str, base_url: Option<&str>) -> String {
+fn nav_entry(
+    title: &str,
+    href: &str,
+    id: &str,
+    summary: &str,
+    now: &str,
+    base_url: Option<&str>,
+) -> String {
     let abs = super::abs_url(href, base_url);
     format!(
         r#"  <entry>
@@ -112,7 +119,10 @@ async fn fetch_recent(
     state: &Arc<AppState>,
     page: usize,
     per_page: usize,
-) -> AppResult<(Vec<(String, String, String, String, String, i64, i32, String)>, i64)> {
+) -> AppResult<(
+    Vec<(String, String, String, String, String, i64, i32, String)>,
+    i64,
+)> {
     let offset = (page.saturating_sub(1)) * per_page;
 
     let rows = sqlx::query_as::<_, (String, String, String, String, String, i64, i32, String)>(
@@ -140,7 +150,10 @@ async fn fetch_popular(
     state: &Arc<AppState>,
     page: usize,
     per_page: usize,
-) -> AppResult<(Vec<(String, String, String, String, String, i64, i32, String)>, i64)> {
+) -> AppResult<(
+    Vec<(String, String, String, String, String, i64, i32, String)>,
+    i64,
+)> {
     let offset = (page.saturating_sub(1)) * per_page;
 
     let rows = sqlx::query_as::<_, (String, String, String, String, String, i64, i32, String)>(

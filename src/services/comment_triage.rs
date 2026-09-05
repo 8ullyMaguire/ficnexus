@@ -118,7 +118,11 @@ pub fn parse_triage_response(s: &str) -> CommentTriage {
         None => 0.0,
     };
 
-    CommentTriage { category, reason, confidence }
+    CommentTriage {
+        category,
+        reason,
+        confidence,
+    }
 }
 
 /// Classify a comment body via Ollama and persist the result.

@@ -25,10 +25,10 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
 use serde_json::Value;
 use tower::ServiceExt; // oneshot
@@ -65,8 +65,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -87,21 +87,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false, // dynamic rate limiting off in tests
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false, // dynamic rate limiting off in tests
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -112,7 +120,7 @@ async fn app() -> Router {
             fichub::config::Config::from_env(),
             scraper_registry,
         ),
-                suggest_cache: Arc::new(tokio::sync::Mutex::new(None)),
+        suggest_cache: Arc::new(tokio::sync::Mutex::new(None)),
         heal: fichub::heal::HealService::new(db.clone(), config.clone()),
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
@@ -233,12 +241,14 @@ async fn seed_fic(
 
 /// Seed a tag row; returns its id. `ON CONFLICT (name) DO NOTHING`.
 async fn seed_tag(pool: &sqlx::PgPool, name: &str, type_id: i16) -> i32 {
-    sqlx::query("INSERT INTO tags (name, tag_type_id) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING")
-        .bind(name)
-        .bind(type_id)
-        .execute(pool)
-        .await
-        .expect("seed_tag failed");
+    sqlx::query(
+        "INSERT INTO tags (name, tag_type_id) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING",
+    )
+    .bind(name)
+    .bind(type_id)
+    .execute(pool)
+    .await
+    .expect("seed_tag failed");
     sqlx::query_scalar("SELECT id FROM tags WHERE name = $1")
         .bind(name)
         .fetch_one(pool)
@@ -279,10 +289,12 @@ async fn cleanup(
     tags: &[&str],
     downloads: &[&str],
 ) {
-    let _ = sqlx::query("DELETE FROM bookmarks WHERE user_id = (SELECT id FROM users WHERE username = $1)")
-        .bind(user)
-        .execute(pool)
-        .await;
+    let _ = sqlx::query(
+        "DELETE FROM bookmarks WHERE user_id = (SELECT id FROM users WHERE username = $1)",
+    )
+    .bind(user)
+    .execute(pool)
+    .await;
     for id in fics {
         let _ = sqlx::query("DELETE FROM fic_tags WHERE url_id = $1")
             .bind(id)
@@ -360,10 +372,50 @@ async fn personal_recs_returns_scored_recs_excluding_known() {
 
     let fics = ["recpersit_a", "recpersit_b", "recpersit_c", "recpersit_d"];
     // Three bookmarked fics + one candidate sharing the fandom tag.
-    seed_fic(&db, "recpersit_a", "Rec Personal Alpha", "A dragon story.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "recpersit_b", "Rec Personal Beta", "Another dragon story.", 2000, 2, "complete", 2).await;
-    seed_fic(&db, "recpersit_c", "Rec Personal Gamma", "More dragons.", 3000, 3, "ongoing", 3).await;
-    seed_fic(&db, "recpersit_d", "Rec Personal Candidate", "The dragon candidate.", 4000, 4, "ongoing", 1).await;
+    seed_fic(
+        &db,
+        "recpersit_a",
+        "Rec Personal Alpha",
+        "A dragon story.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "recpersit_b",
+        "Rec Personal Beta",
+        "Another dragon story.",
+        2000,
+        2,
+        "complete",
+        2,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "recpersit_c",
+        "Rec Personal Gamma",
+        "More dragons.",
+        3000,
+        3,
+        "ongoing",
+        3,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "recpersit_d",
+        "Rec Personal Candidate",
+        "The dragon candidate.",
+        4000,
+        4,
+        "ongoing",
+        1,
+    )
+    .await;
 
     let tag_fandom = seed_tag(&db, "RecPersIt Fandom", 1).await;
     let tag_char = seed_tag(&db, "RecPersIt Character", 2).await;
@@ -383,15 +435,24 @@ async fn personal_recs_returns_scored_recs_excluding_known() {
 
     let body = get_personal(Some(&auth_header(user_id))).await;
     assert_eq!(body["err"], 0, "{body}");
-    assert_eq!(body["enough_data"], true, "3 bookmarks must pass the gate: {body}");
+    assert_eq!(
+        body["enough_data"], true,
+        "3 bookmarks must pass the gate: {body}"
+    );
 
     // based_on: up to 3 bookmarked fic titles.
     let based_on = body["based_on"].as_array().unwrap();
     assert!(!based_on.is_empty(), "based_on must be populated: {body}");
     assert!(based_on.len() <= 3, "{body}");
-    let based_ids: Vec<&str> = based_on.iter().filter_map(|b| b["url_id"].as_str()).collect();
+    let based_ids: Vec<&str> = based_on
+        .iter()
+        .filter_map(|b| b["url_id"].as_str())
+        .collect();
     assert!(based_ids.contains(&"recpersit_a"), "{body}");
-    assert!(based_on.iter().all(|b| b["title"].as_str().is_some()), "{body}");
+    assert!(
+        based_on.iter().all(|b| b["title"].as_str().is_some()),
+        "{body}"
+    );
 
     // recs: non-empty, candidate present, bookmarked fics excluded.
     let recs = body["recs"].as_array().unwrap();
@@ -402,7 +463,10 @@ async fn personal_recs_returns_scored_recs_excluding_known() {
         "candidate sharing the fandom tag must appear: {body}"
     );
     for known in &fics[..3] {
-        assert!(!rec_ids.contains(known), "bookmarked {known} leaked into recs: {body}");
+        assert!(
+            !rec_ids.contains(known),
+            "bookmarked {known} leaked into recs: {body}"
+        );
     }
 
     // RecResult shape: score/community_score/download_urls present.
@@ -413,7 +477,18 @@ async fn personal_recs_returns_scored_recs_excluding_known() {
     assert!(first["title"].as_str().is_some(), "{body}");
     assert!(first["author"].as_str().is_some(), "{body}");
 
-    cleanup(&db, user, &fics, &["RecPersIt Fandom", "RecPersIt Character", "RecPersIt Freeform"], &[]).await;
+    cleanup(
+        &db,
+        user,
+        &fics,
+        &[
+            "RecPersIt Fandom",
+            "RecPersIt Character",
+            "RecPersIt Freeform",
+        ],
+        &[],
+    )
+    .await;
 }
 
 /// (4) Download/export activity counts toward the signal gate: 2 bookmarks +
@@ -427,11 +502,56 @@ async fn personal_recs_download_signal_counts_and_excludes() {
     let user = "recpersit_dl_user";
     let user_id = seed_user(&db, user).await;
 
-    let fics = ["recpersit_dl_a", "recpersit_dl_b", "recpersit_dl_downloaded", "recpersit_dl_cand"];
-    seed_fic(&db, "recpersit_dl_a", "DL Story Alpha", "Space opera.", 1000, 1, "complete", 1).await;
-    seed_fic(&db, "recpersit_dl_b", "DL Story Beta", "More space opera.", 2000, 2, "complete", 2).await;
-    seed_fic(&db, "recpersit_dl_downloaded", "DL Downloaded Fic", "Downloaded space opera.", 3000, 3, "complete", 5).await;
-    seed_fic(&db, "recpersit_dl_cand", "DL Candidate", "Fresh space opera.", 4000, 4, "ongoing", 1).await;
+    let fics = [
+        "recpersit_dl_a",
+        "recpersit_dl_b",
+        "recpersit_dl_downloaded",
+        "recpersit_dl_cand",
+    ];
+    seed_fic(
+        &db,
+        "recpersit_dl_a",
+        "DL Story Alpha",
+        "Space opera.",
+        1000,
+        1,
+        "complete",
+        1,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "recpersit_dl_b",
+        "DL Story Beta",
+        "More space opera.",
+        2000,
+        2,
+        "complete",
+        2,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "recpersit_dl_downloaded",
+        "DL Downloaded Fic",
+        "Downloaded space opera.",
+        3000,
+        3,
+        "complete",
+        5,
+    )
+    .await;
+    seed_fic(
+        &db,
+        "recpersit_dl_cand",
+        "DL Candidate",
+        "Fresh space opera.",
+        4000,
+        4,
+        "ongoing",
+        1,
+    )
+    .await;
 
     let tag = seed_tag(&db, "RecPersIt DL Fandom", 1).await;
     for f in &fics[..2] {

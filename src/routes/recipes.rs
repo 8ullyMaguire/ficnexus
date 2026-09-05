@@ -14,8 +14,8 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, Query, State},
     Json,
+    extract::{Path, Query, State},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -293,8 +293,14 @@ pub async fn publish_recipe(
     // Publishing shares the recipe with the whole site, so it sits above the
     // bare-write tier (trust-sandboxed accounts may still draft privately).
     if req.is_public {
-        trust::assert_staff_or_min_trust(&state.db, Some(user_id), auth.role, trust::PUBLISH_MIN_TRUST, "Publishing recipes")
-            .await?;
+        trust::assert_staff_or_min_trust(
+            &state.db,
+            Some(user_id),
+            auth.role,
+            trust::PUBLISH_MIN_TRUST,
+            "Publishing recipes",
+        )
+        .await?;
     }
 
     RecipeService::set_public(&state.db, user_id, id, req.is_public).await?;

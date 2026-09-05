@@ -12,10 +12,10 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
 use serde_json::Value;
 use tower::ServiceExt; // oneshot
@@ -55,8 +55,8 @@ async fn app() -> Router {
     let config = test_config();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -77,21 +77,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false, // dynamic rate limiting off in tests
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false, // dynamic rate limiting off in tests
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -110,7 +118,10 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/blind-date", get(fichub::routes::blind::blind_date_handler))
+        .route(
+            "/api/blind-date",
+            get(fichub::routes::blind::blind_date_handler),
+        )
         .route(
             "/api/blind-date/reveal",
             get(fichub::routes::blind::blind_date_reveal_handler),
@@ -140,7 +151,15 @@ async fn get_blind_date(uri: &str) -> Value {
 }
 
 /// Seed a fic_info row. `ON CONFLICT (id) DO NOTHING` keeps this idempotent.
-async fn seed_fic(pool: &sqlx::PgPool, id: &str, title: &str, description: &str, words: i64, chapters: i32, status: &str) {
+async fn seed_fic(
+    pool: &sqlx::PgPool,
+    id: &str,
+    title: &str,
+    description: &str,
+    words: i64,
+    chapters: i32,
+    status: &str,
+) {
     sqlx::query(
         r#"INSERT INTO fic_info (
             id, title, author, author_url, author_local_id,
@@ -237,8 +256,26 @@ async fn blind_date_returns_eligible_fic_and_respects_exclude() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["blindtest_a", "blindtest_b"];
-    seed_fic(&db, "blindtest_a", "Blind Test Alpha", "A brave knight fights a dragon.", 5000, 5, "complete").await;
-    seed_fic(&db, "blindtest_b", "Blind Test Beta", "Two bakers open a shop in a small town.", 2000, 3, "ongoing").await;
+    seed_fic(
+        &db,
+        "blindtest_a",
+        "Blind Test Alpha",
+        "A brave knight fights a dragon.",
+        5000,
+        5,
+        "complete",
+    )
+    .await;
+    seed_fic(
+        &db,
+        "blindtest_b",
+        "Blind Test Beta",
+        "Two bakers open a shop in a small town.",
+        2000,
+        3,
+        "ongoing",
+    )
+    .await;
 
     let tag_fluff = seed_tag(&db, "BlindTest Fluff", 4).await; // freeform
     let tag_angst = seed_tag(&db, "BlindTest Angst", 4).await;
@@ -298,14 +335,13 @@ async fn blind_date_returns_eligible_fic_and_respects_exclude() {
     // denylist of ids — rather than by a "good description" predicate —
     // makes the forced pick deterministic: after excluding, only
     // blindtest_a and blindtest_b remain eligible.
-    let other_ids: Vec<String> = sqlx::query_scalar(
-        "SELECT id FROM fic_info WHERE id NOT IN ($1, $2)",
-    )
-    .bind(fics[0])
-    .bind(fics[1])
-    .fetch_all(&db)
-    .await
-    .expect("fetch other fics");
+    let other_ids: Vec<String> =
+        sqlx::query_scalar("SELECT id FROM fic_info WHERE id NOT IN ($1, $2)")
+            .bind(fics[0])
+            .bind(fics[1])
+            .fetch_all(&db)
+            .await
+            .expect("fetch other fics");
     // Exclude the earlier random pick too (so the forced pick must be the
     // OTHER seed).
     let mut forced_excludes = other_ids.clone();
@@ -317,13 +353,18 @@ async fn blind_date_returns_eligible_fic_and_respects_exclude() {
     .await;
     // The forced pick must be one of OUR seeded fics (exclude removed
     // every other eligible fic in the DB, including the earlier pick).
-    let forced_fic = forced["fic"].as_object_mut().expect("expected a fic object");
+    let forced_fic = forced["fic"]
+        .as_object_mut()
+        .expect("expected a fic object");
     let forced_id = forced_fic["url_id"].as_str().unwrap().to_string();
     assert!(
         fics.contains(&forced_id.as_str()),
         "expected a seeded fic after excluding everything else, got {forced_id}: {forced}"
     );
-    let tropes: Vec<&str> = forced_fic["tropes"].as_array().unwrap().iter()
+    let tropes: Vec<&str> = forced_fic["tropes"]
+        .as_array()
+        .unwrap()
+        .iter()
         .filter_map(|t| t.as_str())
         .collect();
     assert!(!tropes.is_empty(), "expected tropes in response: {forced}");
@@ -342,9 +383,22 @@ async fn blind_date_returns_eligible_fic_and_respects_exclude() {
     let url_id2 = fic2["url_id"].as_str().unwrap().to_string();
     assert_ne!(url_id2, url_id, "exclude must not return the same fic");
     let desc2 = fic2["description"].as_str().unwrap();
-    assert!(!desc2.is_empty(), "excluded pick must still have a description");
+    assert!(
+        !desc2.is_empty(),
+        "excluded pick must still have a description"
+    );
 
-    cleanup(&db, &fics, &["BlindTest Fluff", "BlindTest Angst", "BlindTest Knight", "BlindTest Fandom"]).await;
+    cleanup(
+        &db,
+        &fics,
+        &[
+            "BlindTest Fluff",
+            "BlindTest Angst",
+            "BlindTest Knight",
+            "BlindTest Fandom",
+        ],
+    )
+    .await;
 }
 
 /// Excluding BOTH seeded fics (leaving nothing eligible in the archive for
@@ -356,8 +410,26 @@ async fn blind_date_excluding_everything_is_well_formed() {
     let _guard = db_guard();
     let db = pool().await;
     let fics = ["blindtest_c", "blindtest_d"];
-    seed_fic(&db, "blindtest_c", "Blind Test Gamma", "A story about gardens.", 1000, 1, "complete").await;
-    seed_fic(&db, "blindtest_d", "Blind Test Delta", "A story about rivers.", 1500, 1, "ongoing").await;
+    seed_fic(
+        &db,
+        "blindtest_c",
+        "Blind Test Gamma",
+        "A story about gardens.",
+        1000,
+        1,
+        "complete",
+    )
+    .await;
+    seed_fic(
+        &db,
+        "blindtest_d",
+        "Blind Test Delta",
+        "A story about rivers.",
+        1500,
+        1,
+        "ongoing",
+    )
+    .await;
 
     let body = get_blind_date("/api/blind-date?exclude=blindtest_c,blindtest_d").await;
     assert_eq!(body["err"], 0, "must be a well-formed 200: {body}");
@@ -396,20 +468,14 @@ async fn blind_date_reveal_returns_title_and_fandom_with_valid_signature() {
     seed_fic_tag(&db, "blindtest_reveal", tag_freeform, 5).await;
 
     // Exclude every other fic so the draw MUST be our seeded fic.
-    let other_ids: Vec<String> = sqlx::query_scalar(
-        "SELECT id FROM fic_info WHERE id <> $1",
-    )
-    .bind(fics[0])
-    .fetch_all(&db)
-    .await
-    .expect("fetch other fics");
+    let other_ids: Vec<String> = sqlx::query_scalar("SELECT id FROM fic_info WHERE id <> $1")
+        .bind(fics[0])
+        .fetch_all(&db)
+        .await
+        .expect("fetch other fics");
     let mut excludes = other_ids.clone();
     excludes.push("zzblindtest_reveal_never_exists".to_string()); // ensure non-empty
-    let body = get_blind_date(&format!(
-        "/api/blind-date?exclude={}",
-        excludes.join(",")
-    ))
-    .await;
+    let body = get_blind_date(&format!("/api/blind-date?exclude={}", excludes.join(","))).await;
     let fic = body["fic"].as_object().expect("expected our seeded fic");
     assert_eq!(
         fic["url_id"].as_str(),
@@ -417,8 +483,14 @@ async fn blind_date_reveal_returns_title_and_fandom_with_valid_signature() {
         "exclude-all should force our seed, got: {body}"
     );
     // Discovery still hides the title even when we force our own seed.
-    assert!(fic.get("title").is_none(), "title leaked pre-reveal: {body}");
-    assert!(fic.get("fandom").is_none(), "fandom leaked pre-reveal: {body}");
+    assert!(
+        fic.get("title").is_none(),
+        "title leaked pre-reveal: {body}"
+    );
+    assert!(
+        fic.get("fandom").is_none(),
+        "fandom leaked pre-reveal: {body}"
+    );
 
     let nonce = fic["reveal"]["nonce"].as_str().unwrap();
     let sig = fic["reveal"]["sig"].as_str().unwrap();
@@ -440,12 +512,7 @@ async fn blind_date_reveal_returns_title_and_fandom_with_valid_signature() {
         "fandom must come back on reveal: {reveal_body}"
     );
 
-    cleanup(
-        &db,
-        &fics,
-        &["BlindTest Fandom", "BlindTest Fluff"],
-    )
-    .await;
+    cleanup(&db, &fics, &["BlindTest Fandom", "BlindTest Fluff"]).await;
 }
 
 /// A reveal with a WRONG signature (or a missing one) must be rejected —
@@ -490,4 +557,3 @@ async fn blind_date_reveal_rejects_invalid_signature() {
 
     cleanup(&db, &fics, &[]).await;
 }
-

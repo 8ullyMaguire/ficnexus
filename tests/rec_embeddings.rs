@@ -21,9 +21,10 @@ fn db_guard() -> std::sync::MutexGuard<'static, ()> {
 
 async fn pool() -> sqlx::PgPool {
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (load .env)");
-    sqlx::PgPool::connect(&database_url).await.expect("db connect")
+    sqlx::PgPool::connect(&database_url)
+        .await
+        .expect("db connect")
 }
-
 
 /// Build a 384-dim vector literal with nonzero entries at the given positions.
 fn vec384(pairs: &[(usize, f64)]) -> String {
@@ -33,7 +34,10 @@ fn vec384(pairs: &[(usize, f64)]) -> String {
     }
     format!(
         "[{}]",
-        v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
+        v.iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
     )
 }
 
@@ -114,8 +118,14 @@ async fn embeddings_item_to_item_cosine() {
     );
 
     for id in ["rectestemb_a", "rectestemb_b", "rectestemb_c"] {
-        let _ = sqlx::query("DELETE FROM rec_embeddings WHERE work_id = $1").bind(id).execute(&db).await;
-        let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1").bind(id).execute(&db).await;
+        let _ = sqlx::query("DELETE FROM rec_embeddings WHERE work_id = $1")
+            .bind(id)
+            .execute(&db)
+            .await;
+        let _ = sqlx::query("DELETE FROM fic_info WHERE id = $1")
+            .bind(id)
+            .execute(&db)
+            .await;
     }
 }
 
@@ -167,14 +177,19 @@ async fn embeddings_content_hash_skips_unchanged() {
             reqwest::Client::new(),
         ),
     );
-    let needing = fichub::recommender::embeddings::works_needing_embedding(&ctx, "nomic-embed-text", 100)
-        .await
-        .expect("query");
+    let needing =
+        fichub::recommender::embeddings::works_needing_embedding(&ctx, "nomic-embed-text", 100)
+            .await
+            .expect("query");
     assert!(
         !needing.iter().any(|(id, _)| id == "rectestemb_h"),
         "unchanged work must be skipped: {needing:?}"
     );
 
-    let _ = sqlx::query("DELETE FROM rec_embeddings WHERE work_id = 'rectestemb_h'").execute(&db).await;
-    let _ = sqlx::query("DELETE FROM fic_info WHERE id = 'rectestemb_h'").execute(&db).await;
+    let _ = sqlx::query("DELETE FROM rec_embeddings WHERE work_id = 'rectestemb_h'")
+        .execute(&db)
+        .await;
+    let _ = sqlx::query("DELETE FROM fic_info WHERE id = 'rectestemb_h'")
+        .execute(&db)
+        .await;
 }

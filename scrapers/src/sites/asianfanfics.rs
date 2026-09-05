@@ -16,8 +16,8 @@ use async_trait::async_trait;
 use chrono::TimeZone;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct AsianFanFicsScraper;
 
@@ -27,7 +27,11 @@ impl SiteScraper for AsianFanFicsScraper {
         url.contains("asianfanfics.com/story/view/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
 
         if html.contains("Please subscribe to read further chapters") {
@@ -105,7 +109,11 @@ impl SiteScraper for AsianFanFicsScraper {
             let mut words = 0i64;
             if let Ok(span_sel) = Selector::parse("span") {
                 for span in doc.select(&span_sel) {
-                    if span.text().collect::<String>().contains("Total word count:") {
+                    if span
+                        .text()
+                        .collect::<String>()
+                        .contains("Total word count:")
+                    {
                         let mut nxt = span.next_sibling();
                         while let Some(node) = nxt {
                             if let Some(el) = scraper::ElementRef::wrap(node) {
@@ -159,8 +167,17 @@ impl SiteScraper for AsianFanFicsScraper {
             }
 
             (
-                title, author, author_url, author_local_id, story_id,
-                status, words, published, updated, chapters, desc_url,
+                title,
+                author,
+                author_url,
+                author_local_id,
+                story_id,
+                status,
+                words,
+                published,
+                updated,
+                chapters,
+                desc_url,
             )
         }; // doc dropped here
 
@@ -338,7 +355,8 @@ mod tests {
 
     #[test]
     fn extracts_chapter_body() {
-        let html = r#"<html><body><div id="user-submitted-body"><p>Story text.</p></div></body></html>"#;
+        let html =
+            r#"<html><body><div id="user-submitted-body"><p>Story text.</p></div></body></html>"#;
         let doc = Html::parse_document(html);
         let mut s = String::new();
         if let Ok(sel) = Selector::parse("div#user-submitted-body") {

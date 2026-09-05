@@ -1,12 +1,12 @@
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;
-use crate::server::AppState;
 use crate::routes::auth::AuthUser;
+use crate::server::AppState;
 
 // ── Constructive-comment heuristic ────────────────────────────────────────
 //
@@ -18,12 +18,45 @@ use crate::routes::auth::AuthUser;
 // Curators can still flip the flag / soft-delete via the existing endpoints.
 
 const NEGATIVE_MARKERS: &[&str] = &[
-    "terrible", "awful", "horrible", "garbage", "trash", "rubbish", "waste of time",
-    "disappointing", "disappointment", "hate", "hating", "stupid", "idiotic",
-    "dumb", "ridiculous", "nonsense", "boring", "bored", "cringe", "worst",
-    "worse", "sucks", "sucked", "suck", "useless", "pointless", "pathetic",
-    "annoying", "disgusting", "crap", "shit", "fuck", "piss", "abandon",
-    "quit reading", "couldn't finish", "could not finish", "drops this", "dropped",
+    "terrible",
+    "awful",
+    "horrible",
+    "garbage",
+    "trash",
+    "rubbish",
+    "waste of time",
+    "disappointing",
+    "disappointment",
+    "hate",
+    "hating",
+    "stupid",
+    "idiotic",
+    "dumb",
+    "ridiculous",
+    "nonsense",
+    "boring",
+    "bored",
+    "cringe",
+    "worst",
+    "worse",
+    "sucks",
+    "sucked",
+    "suck",
+    "useless",
+    "pointless",
+    "pathetic",
+    "annoying",
+    "disgusting",
+    "crap",
+    "shit",
+    "fuck",
+    "piss",
+    "abandon",
+    "quit reading",
+    "couldn't finish",
+    "could not finish",
+    "drops this",
+    "dropped",
 ];
 
 /// Heuristic: is this comment text negative-toned (i.e. not constructive)?
@@ -103,9 +136,19 @@ pub async fn get_comments_handler(
     .await?;
 
     // Fetch top-level comments (newest first)
-    let top_rows: Vec<(i64, String, Option<i64>, String, Option<i32>, Option<String>, String, Option<String>, bool, bool)> =
-        sqlx::query_as(
-            "SELECT c.id, c.url_id, c.parent_id, c.body, c.user_id,
+    let top_rows: Vec<(
+        i64,
+        String,
+        Option<i64>,
+        String,
+        Option<i32>,
+        Option<String>,
+        String,
+        Option<String>,
+        bool,
+        bool,
+    )> = sqlx::query_as(
+        "SELECT c.id, c.url_id, c.parent_id, c.body, c.user_id,
                     u.username, c.created_at::text, c.updated_at::text,
                     c.deleted_at IS NOT NULL AS deleted, c.is_hidden
              FROM comments c
@@ -114,23 +157,34 @@ pub async fn get_comments_handler(
              AND c.deleted_at IS NULL AND c.is_hidden = FALSE AND c.constructive = TRUE
              ORDER BY c.created_at DESC
              LIMIT $2 OFFSET $3",
-        )
-        .bind(&url_id)
-        .bind(per_page)
-        .bind(offset)
-        .fetch_all(&state.db)
-        .await?;
+    )
+    .bind(&url_id)
+    .bind(per_page)
+    .bind(offset)
+    .fetch_all(&state.db)
+    .await?;
 
     // Collect top-level IDs for fetching replies
     let top_ids: Vec<i64> = top_rows.iter().map(|r| r.0).collect();
 
     // Fetch all replies for these top-level comments (recursive CTE)
-    let all_replies: Vec<(i64, String, Option<i64>, String, Option<i32>, Option<String>, String, Option<String>, bool, bool, i64)> =
-        if top_ids.is_empty() {
-            Vec::new()
-        } else {
-            sqlx::query_as(
-                "WITH RECURSIVE thread AS (
+    let all_replies: Vec<(
+        i64,
+        String,
+        Option<i64>,
+        String,
+        Option<i32>,
+        Option<String>,
+        String,
+        Option<String>,
+        bool,
+        bool,
+        i64,
+    )> = if top_ids.is_empty() {
+        Vec::new()
+    } else {
+        sqlx::query_as(
+            "WITH RECURSIVE thread AS (
                     SELECT c.id, c.url_id, c.parent_id, c.body, c.user_id,
                            u.username, c.created_at::text, c.updated_at::text,
                            c.deleted_at IS NOT NULL AS deleted, c.is_hidden, c.parent_id AS root_id
@@ -152,11 +206,11 @@ pub async fn get_comments_handler(
                        created_at, updated_at, deleted, is_hidden, root_id
                 FROM thread
                 ORDER BY root_id, created_at ASC",
-            )
-            .bind(&top_ids)
-            .fetch_all(&state.db)
-            .await?
-        };
+        )
+        .bind(&top_ids)
+        .fetch_all(&state.db)
+        .await?
+    };
 
     // Build reply count map
     use std::collections::HashMap;
@@ -166,7 +220,22 @@ pub async fn get_comments_handler(
     }
 
     // Group replies by parent
-    let mut replies_by_parent: HashMap<i64, Vec<&(i64, String, Option<i64>, String, Option<i32>, Option<String>, String, Option<String>, bool, bool, i64)>> = HashMap::new();
+    let mut replies_by_parent: HashMap<
+        i64,
+        Vec<&(
+            i64,
+            String,
+            Option<i64>,
+            String,
+            Option<i32>,
+            Option<String>,
+            String,
+            Option<String>,
+            bool,
+            bool,
+            i64,
+        )>,
+    > = HashMap::new();
     for row in &all_replies {
         if let Some(parent) = row.2 {
             replies_by_parent.entry(parent).or_default().push(row);
@@ -176,10 +245,19 @@ pub async fn get_comments_handler(
     // Build response
     let mut comments: Vec<Value> = Vec::new();
     for row in &top_rows {
-        let (id, _, parent_id, body, user_id, username, created_at, updated_at, deleted, hidden) = row;
+        let (id, _, parent_id, body, user_id, username, created_at, updated_at, deleted, hidden) =
+            row;
         let comment = build_comment_json(
-            *id, &url_id, *parent_id, body, *user_id, username.as_deref(),
-            created_at, updated_at.as_deref(), *deleted, *hidden,
+            *id,
+            &url_id,
+            *parent_id,
+            body,
+            *user_id,
+            username.as_deref(),
+            created_at,
+            updated_at.as_deref(),
+            *deleted,
+            *hidden,
             reply_counts.get(id).copied().unwrap_or(0),
         );
         comments.push(comment);
@@ -187,10 +265,31 @@ pub async fn get_comments_handler(
         // Add replies recursively
         if let Some(replies) = replies_by_parent.get(id) {
             for reply in replies {
-                let (rid, _, rparent, rbody, ruid, runame, rcreated, rupdated, rdeleted, rhidden, _) = reply;
+                let (
+                    rid,
+                    _,
+                    rparent,
+                    rbody,
+                    ruid,
+                    runame,
+                    rcreated,
+                    rupdated,
+                    rdeleted,
+                    rhidden,
+                    _,
+                ) = reply;
                 let reply_json = build_comment_json(
-                    *rid, &url_id, *rparent, rbody, *ruid, runame.as_deref(),
-                    rcreated, rupdated.as_deref(), *rdeleted, *rhidden, 0,
+                    *rid,
+                    &url_id,
+                    *rparent,
+                    rbody,
+                    *ruid,
+                    runame.as_deref(),
+                    rcreated,
+                    rupdated.as_deref(),
+                    *rdeleted,
+                    *rhidden,
+                    0,
                 );
                 comments.push(reply_json);
             }
@@ -207,10 +306,17 @@ pub async fn get_comments_handler(
 }
 
 fn build_comment_json(
-    id: i64, url_id: &str, parent_id: Option<i64>, body: &str,
-    user_id: Option<i32>, username: Option<&str>,
-    created_at: &str, updated_at: Option<&str>,
-    deleted: bool, hidden: bool, reply_count: i64,
+    id: i64,
+    url_id: &str,
+    parent_id: Option<i64>,
+    body: &str,
+    user_id: Option<i32>,
+    username: Option<&str>,
+    created_at: &str,
+    updated_at: Option<&str>,
+    deleted: bool,
+    hidden: bool,
+    reply_count: i64,
 ) -> Value {
     let user = user_id.map(|uid| {
         json!({
@@ -249,27 +355,33 @@ pub async fn post_comment_handler(
     Path(url_id): Path<String>,
     Json(body): Json<PostCommentBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     if body.body.trim().is_empty() {
         return Err(AppError::BadRequest("Comment cannot be empty".to_string()));
     }
     if body.body.len() > 2000 {
-        return Err(AppError::BadRequest("Comment too long (max 2000 chars)".to_string()));
+        return Err(AppError::BadRequest(
+            "Comment too long (max 2000 chars)".to_string(),
+        ));
     }
 
     // Verify parent belongs to same work if provided
     if let Some(parent_id) = body.parent_id {
-        let parent: Option<(String,)> = sqlx::query_as(
-            "SELECT url_id FROM comments WHERE id = $1",
-        )
-        .bind(parent_id)
-        .fetch_optional(&state.db)
-        .await?;
+        let parent: Option<(String,)> = sqlx::query_as("SELECT url_id FROM comments WHERE id = $1")
+            .bind(parent_id)
+            .fetch_optional(&state.db)
+            .await?;
 
         match parent {
             Some((parent_url,)) if parent_url == url_id => {}
-            Some(_) => return Err(AppError::BadRequest("Parent comment belongs to different work".to_string())),
+            Some(_) => {
+                return Err(AppError::BadRequest(
+                    "Parent comment belongs to different work".to_string(),
+                ));
+            }
             None => return Err(AppError::BadRequest("Parent comment not found".to_string())),
         }
     }
@@ -312,7 +424,9 @@ pub async fn delete_comment_handler(
     State(state): State<Arc<AppState>>,
     Path(comment_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     // Check ownership or curator role
     let comment: Option<(Option<i32>, i16)> = sqlx::query_as(
@@ -347,15 +461,15 @@ pub async fn hide_comment_handler(
     Path(comment_id): Path<i64>,
     Json(body): Json<HideCommentBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     // Check curator role
-    let role: Option<i16> = sqlx::query_scalar(
-        "SELECT role FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let role: Option<i16> = sqlx::query_scalar("SELECT role FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&state.db)
+        .await?;
 
     match role {
         Some(r) if r >= 1 => {} // Curator or above
@@ -384,19 +498,20 @@ pub async fn edit_comment_handler(
     Path(comment_id): Path<i64>,
     Json(body): Json<EditCommentBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     if body.body.trim().is_empty() {
         return Err(AppError::BadRequest("Comment cannot be empty".to_string()));
     }
 
     // Verify ownership + 30-minute edit window
-    let row: Option<(i32,)> = sqlx::query_as(
-        "SELECT user_id FROM comments WHERE id = $1 AND deleted_at IS NULL"
-    )
-    .bind(comment_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let row: Option<(i32,)> =
+        sqlx::query_as("SELECT user_id FROM comments WHERE id = $1 AND deleted_at IS NULL")
+            .bind(comment_id)
+            .fetch_optional(&state.db)
+            .await?;
 
     let (owner_id,) = row.ok_or_else(|| AppError::NotFound("Comment not found".to_string()))?;
     if owner_id != user_id {
@@ -405,14 +520,16 @@ pub async fn edit_comment_handler(
 
     // Check 24-hour edit window (86400 seconds)
     let within_window: bool = sqlx::query_scalar(
-        "SELECT EXTRACT(EPOCH FROM (NOW() - created_at)) < 86400 FROM comments WHERE id = $1"
+        "SELECT EXTRACT(EPOCH FROM (NOW() - created_at)) < 86400 FROM comments WHERE id = $1",
     )
     .bind(comment_id)
     .fetch_one(&state.db)
     .await?;
 
     if !within_window {
-        return Err(AppError::BadRequest("Edit window expired (24h)".to_string()));
+        return Err(AppError::BadRequest(
+            "Edit window expired (24h)".to_string(),
+        ));
     }
 
     sqlx::query("UPDATE comments SET body = $1, updated_at = NOW() WHERE id = $2")
@@ -436,10 +553,17 @@ mod tests {
     #[test]
     fn test_build_comment_json_normal() {
         let json = build_comment_json(
-            1, "test-url", None, "Hello world!",
-            Some(5), Some("Alice"),
-            "2026-07-27T10:00:00Z", None,
-            false, false, 3,
+            1,
+            "test-url",
+            None,
+            "Hello world!",
+            Some(5),
+            Some("Alice"),
+            "2026-07-27T10:00:00Z",
+            None,
+            false,
+            false,
+            3,
         );
         assert_eq!(json["id"], 1);
         assert_eq!(json["url_id"], "test-url");
@@ -457,10 +581,17 @@ mod tests {
     #[test]
     fn test_build_comment_json_deleted() {
         let json = build_comment_json(
-            2, "test-url", Some(1), "Original text",
-            Some(3), Some("Bob"),
-            "2026-07-27T10:05:00Z", None,
-            true, false, 0,
+            2,
+            "test-url",
+            Some(1),
+            "Original text",
+            Some(3),
+            Some("Bob"),
+            "2026-07-27T10:05:00Z",
+            None,
+            true,
+            false,
+            0,
         );
         assert_eq!(json["body"], "[deleted]");
         assert_eq!(json["deleted"], true);
@@ -470,10 +601,17 @@ mod tests {
     #[test]
     fn test_build_comment_json_hidden() {
         let json = build_comment_json(
-            3, "test-url", Some(1), "Spam content",
-            Some(4), Some("Eve"),
-            "2026-07-27T10:10:00Z", None,
-            false, true, 0,
+            3,
+            "test-url",
+            Some(1),
+            "Spam content",
+            Some(4),
+            Some("Eve"),
+            "2026-07-27T10:10:00Z",
+            None,
+            false,
+            true,
+            0,
         );
         assert_eq!(json["body"], "[hidden]");
         assert_eq!(json["hidden"], true);
@@ -482,10 +620,17 @@ mod tests {
     #[test]
     fn test_build_comment_json_anonymous() {
         let json = build_comment_json(
-            4, "test-url", None, "Anonymous post",
-            None, None,
-            "2026-07-27T10:15:00Z", None,
-            false, false, 0,
+            4,
+            "test-url",
+            None,
+            "Anonymous post",
+            None,
+            None,
+            "2026-07-27T10:15:00Z",
+            None,
+            false,
+            false,
+            0,
         );
         assert_eq!(json["user"], Value::Null);
         assert_eq!(json["body"], "Anonymous post");
@@ -496,10 +641,17 @@ mod tests {
     fn test_build_comment_json_with_replies() {
         // Top-level comment with 5 replies
         let json = build_comment_json(
-            10, "work-abc", None, "Great story!",
-            Some(1), Some("Reader1"),
-            "2026-07-27T12:00:00Z", None,
-            false, false, 5,
+            10,
+            "work-abc",
+            None,
+            "Great story!",
+            Some(1),
+            Some("Reader1"),
+            "2026-07-27T12:00:00Z",
+            None,
+            false,
+            false,
+            5,
         );
         assert_eq!(json["reply_count"], 5);
         assert_eq!(json["parent_id"], Value::Null);
@@ -509,10 +661,17 @@ mod tests {
     fn test_build_comment_json_nested_reply() {
         // Reply to a comment (has parent_id)
         let json = build_comment_json(
-            11, "work-abc", Some(10), "I agree!",
-            Some(2), Some("Reader2"),
-            "2026-07-27T12:30:00Z", None,
-            false, false, 0,
+            11,
+            "work-abc",
+            Some(10),
+            "I agree!",
+            Some(2),
+            Some("Reader2"),
+            "2026-07-27T12:30:00Z",
+            None,
+            false,
+            false,
+            0,
         );
         assert_eq!(json["parent_id"], 10);
         assert_eq!(json["reply_count"], 0);
@@ -522,10 +681,17 @@ mod tests {
     #[test]
     fn test_build_comment_json_with_updated_at() {
         let json = build_comment_json(
-            12, "work-abc", None, "Edited comment",
-            Some(7), Some("Editor"),
-            "2026-07-27T11:00:00Z", Some("2026-07-27T11:30:00Z"),
-            false, false, 0,
+            12,
+            "work-abc",
+            None,
+            "Edited comment",
+            Some(7),
+            Some("Editor"),
+            "2026-07-27T11:00:00Z",
+            Some("2026-07-27T11:30:00Z"),
+            false,
+            false,
+            0,
         );
         assert_eq!(json["updated_at"], "2026-07-27T11:30:00Z");
     }
@@ -534,10 +700,17 @@ mod tests {
     fn test_build_comment_json_user_id_without_username() {
         // user_id present but username is None (user deleted from users table)
         let json = build_comment_json(
-            13, "work-abc", None, "Orphaned user comment",
-            Some(99), None,
-            "2026-07-27T14:00:00Z", None,
-            false, false, 0,
+            13,
+            "work-abc",
+            None,
+            "Orphaned user comment",
+            Some(99),
+            None,
+            "2026-07-27T14:00:00Z",
+            None,
+            false,
+            false,
+            0,
         );
         assert_eq!(json["user"]["id"], 99);
         assert_eq!(json["user"]["username"], "unknown");
@@ -547,10 +720,17 @@ mod tests {
     fn test_build_comment_json_deeply_nested_reply() {
         // A reply with reply_count of 0 (leaf node in thread)
         let json = build_comment_json(
-            50, "work-xyz", Some(40), "Deep reply",
-            Some(3), Some("Bob"),
-            "2026-07-27T15:00:00Z", None,
-            false, false, 0,
+            50,
+            "work-xyz",
+            Some(40),
+            "Deep reply",
+            Some(3),
+            Some("Bob"),
+            "2026-07-27T15:00:00Z",
+            None,
+            false,
+            false,
+            0,
         );
         assert_eq!(json["parent_id"], 40);
         assert_eq!(json["reply_count"], 0);
@@ -560,10 +740,17 @@ mod tests {
     fn test_build_comment_json_deleted_and_hidden_ignored() {
         // deleted takes priority over hidden
         let json = build_comment_json(
-            60, "work-xyz", None, "Gone",
-            Some(1), Some("Mod"),
-            "2026-07-27T16:00:00Z", None,
-            true, true, 0,
+            60,
+            "work-xyz",
+            None,
+            "Gone",
+            Some(1),
+            Some("Mod"),
+            "2026-07-27T16:00:00Z",
+            None,
+            true,
+            true,
+            0,
         );
         assert_eq!(json["body"], "[deleted]");
         assert_eq!(json["deleted"], true);
@@ -575,7 +762,9 @@ mod tests {
     #[test]
     fn test_constructive_score_accepts_positive_comments() {
         assert!(constructive_score("Great story, I loved the pacing!"));
-        assert!(constructive_score("The character development was wonderful."));
+        assert!(constructive_score(
+            "The character development was wonderful."
+        ));
         assert!(constructive_score(""));
         assert!(constructive_score("   "));
     }
@@ -638,16 +827,14 @@ mod tests {
 
     #[test]
     fn test_comment_query_params_partial_page_only() {
-        let params: CommentQueryParams =
-            serde_json::from_str(r#"{"page": 5}"#).unwrap();
+        let params: CommentQueryParams = serde_json::from_str(r#"{"page": 5}"#).unwrap();
         assert_eq!(params.page, Some(5));
         assert_eq!(params.per_page, None);
     }
 
     #[test]
     fn test_comment_query_params_partial_per_page_only() {
-        let params: CommentQueryParams =
-            serde_json::from_str(r#"{"per_page": 25}"#).unwrap();
+        let params: CommentQueryParams = serde_json::from_str(r#"{"per_page": 25}"#).unwrap();
         assert_eq!(params.page, None);
         assert_eq!(params.per_page, Some(25));
     }
@@ -673,20 +860,32 @@ mod tests {
     fn test_comment_query_params_handler_clamping() {
         // Simulate the clamping logic from get_comments_handler
         let params_cases: Vec<(Option<i64>, Option<i64>, i64, i64, i64)> = vec![
-            (None, None, 1, 20, 0),       // defaults: page=1, per_page=20, offset=0
-            (Some(1), Some(5), 1, 5, 0),   // explicit small
-            (Some(3), Some(10), 3, 10, 20), // page 3, per_page 10 => offset 20
-            (Some(-1), Some(-5), 1, 1, 0),  // negatives clamp to 1
-            (Some(0), Some(0), 1, 1, 0),    // zeros clamp to 1
+            (None, None, 1, 20, 0),           // defaults: page=1, per_page=20, offset=0
+            (Some(1), Some(5), 1, 5, 0),      // explicit small
+            (Some(3), Some(10), 3, 10, 20),   // page 3, per_page 10 => offset 20
+            (Some(-1), Some(-5), 1, 1, 0),    // negatives clamp to 1
+            (Some(0), Some(0), 1, 1, 0),      // zeros clamp to 1
             (Some(5), Some(100), 5, 50, 200), // per_page > 50 clamps to 50
         ];
         for (page_opt, per_page_opt, exp_page, exp_per_page, exp_offset) in params_cases {
             let page = page_opt.unwrap_or(1).max(1);
             let per_page = per_page_opt.unwrap_or(20).min(50).max(1);
             let offset = (page - 1) * per_page;
-            assert_eq!(page, exp_page, "page failed for {:?}/{:?}", page_opt, per_page_opt);
-            assert_eq!(per_page, exp_per_page, "per_page failed for {:?}/{:?}", page_opt, per_page_opt);
-            assert_eq!(offset, exp_offset, "offset failed for {:?}/{:?}", page_opt, per_page_opt);
+            assert_eq!(
+                page, exp_page,
+                "page failed for {:?}/{:?}",
+                page_opt, per_page_opt
+            );
+            assert_eq!(
+                per_page, exp_per_page,
+                "per_page failed for {:?}/{:?}",
+                page_opt, per_page_opt
+            );
+            assert_eq!(
+                offset, exp_offset,
+                "offset failed for {:?}/{:?}",
+                page_opt, per_page_opt
+            );
         }
     }
 
@@ -709,17 +908,21 @@ mod tests {
 
     #[test]
     fn test_post_comment_body_empty_body() {
-        let body: PostCommentBody =
-            serde_json::from_str(r#"{"body": ""}"#).unwrap();
+        let body: PostCommentBody = serde_json::from_str(r#"{"body": ""}"#).unwrap();
         // Validation logic from the handler
-        assert!(body.body.trim().is_empty(), "empty body should fail validation");
+        assert!(
+            body.body.trim().is_empty(),
+            "empty body should fail validation"
+        );
     }
 
     #[test]
     fn test_post_comment_body_whitespace_only() {
-        let body: PostCommentBody =
-            serde_json::from_str(r#"{"body": "   \t\n  "}"#).unwrap();
-        assert!(body.body.trim().is_empty(), "whitespace-only body should fail validation");
+        let body: PostCommentBody = serde_json::from_str(r#"{"body": "   \t\n  "}"#).unwrap();
+        assert!(
+            body.body.trim().is_empty(),
+            "whitespace-only body should fail validation"
+        );
     }
 
     #[test]
@@ -727,7 +930,10 @@ mod tests {
         let long_body = "x".repeat(2001);
         let body: PostCommentBody =
             serde_json::from_value(serde_json::json!({"body": long_body})).unwrap();
-        assert!(body.body.len() > 2000, "over-length body should fail validation");
+        assert!(
+            body.body.len() > 2000,
+            "over-length body should fail validation"
+        );
     }
 
     #[test]
@@ -777,13 +983,28 @@ mod tests {
         ORDER BY root_id, created_at ASC";
 
         // Structural checks
-        assert!(sql.contains("WITH RECURSIVE thread AS"), "missing RECURSIVE CTE declaration");
+        assert!(
+            sql.contains("WITH RECURSIVE thread AS"),
+            "missing RECURSIVE CTE declaration"
+        );
         assert!(sql.contains("UNION ALL"), "missing UNION ALL for recursion");
-        assert!(sql.contains("JOIN thread t ON c.parent_id = t.id"), "missing self-join for recursion");
+        assert!(
+            sql.contains("JOIN thread t ON c.parent_id = t.id"),
+            "missing self-join for recursion"
+        );
         assert!(sql.contains("root_id"), "missing root_id column");
-        assert!(sql.contains("deleted_at IS NOT NULL AS deleted"), "missing deleted column");
-        assert!(sql.contains("is_hidden = FALSE"), "missing is_hidden filter in base");
-        assert!(sql.contains("ORDER BY root_id, created_at ASC"), "missing ordering");
+        assert!(
+            sql.contains("deleted_at IS NOT NULL AS deleted"),
+            "missing deleted column"
+        );
+        assert!(
+            sql.contains("is_hidden = FALSE"),
+            "missing is_hidden filter in base"
+        );
+        assert!(
+            sql.contains("ORDER BY root_id, created_at ASC"),
+            "missing ordering"
+        );
     }
 
     #[test]
@@ -792,7 +1013,10 @@ mod tests {
             WHERE url_id = $1 AND parent_id IS NULL
             AND deleted_at IS NULL AND is_hidden = FALSE";
 
-        assert!(sql.contains("parent_id IS NULL"), "missing top-level filter");
+        assert!(
+            sql.contains("parent_id IS NULL"),
+            "missing top-level filter"
+        );
         assert!(sql.contains("deleted_at IS NULL"), "missing deleted filter");
         assert!(sql.contains("is_hidden = FALSE"), "missing hidden filter");
     }
@@ -821,12 +1045,8 @@ mod tests {
 
     #[test]
     fn test_replies_grouped_by_parent() {
-        let replies: Vec<(i64, Option<i64>)> = vec![
-            (10, Some(1)),
-            (11, Some(10)),
-            (12, Some(10)),
-            (13, Some(1)),
-        ];
+        let replies: Vec<(i64, Option<i64>)> =
+            vec![(10, Some(1)), (11, Some(10)), (12, Some(10)), (13, Some(1))];
 
         let mut by_parent: HashMap<i64, Vec<i64>> = HashMap::new();
         for (id, parent) in &replies {
@@ -857,7 +1077,7 @@ mod tests {
         // Simulate a deep thread tree
         // Root -> child -> grandchild -> great-grandchild
         let tree: Vec<(i64, Option<i64>)> = vec![
-            (1, None),   // root
+            (1, None),    // root
             (2, Some(1)), // child
             (3, Some(2)), // grandchild
             (4, Some(3)), // great-grandchild
@@ -868,8 +1088,7 @@ mod tests {
         let mut current = Some(4);
         while let Some(id) = current {
             depth += 1;
-            current = tree.iter().find(|(i, _)| *i == id)
-                .and_then(|(_, p)| *p);
+            current = tree.iter().find(|(i, _)| *i == id).and_then(|(_, p)| *p);
         }
         assert_eq!(depth, 4, "tree should have 4 levels of nesting");
     }

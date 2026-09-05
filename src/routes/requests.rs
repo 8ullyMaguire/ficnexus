@@ -8,10 +8,10 @@
 //! Votes: one per user per answer, toggle/retract allowed. No self-vote.
 //! Answers per user per request capped at 3 (ANSWER_CAP).
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::db::queries;
@@ -41,9 +41,15 @@ pub struct ListRequestsParams {
     pub page: i64,
 }
 
-fn default_status() -> String { "open".into() }
-fn default_sort() -> String { "new".into() }
-fn default_page() -> i64 { 1 }
+fn default_status() -> String {
+    "open".into()
+}
+fn default_sort() -> String {
+    "new".into()
+}
+fn default_page() -> i64 {
+    1
+}
 
 #[derive(Debug, Deserialize)]
 pub struct AnswerBody {
@@ -77,7 +83,9 @@ pub async fn create_request(
     State(state): State<Arc<AppState>>,
     Json(body): Json<CreateRequestBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
     let title = body.title.trim();
     if title.is_empty() {
         return Err(AppError::BadRequest("title must not be empty".to_string()));
@@ -133,7 +141,9 @@ pub async fn create_request(
         .await;
     });
 
-    Ok(Json(json!({ "err": 0, "id": id, "msg": "Request created" })))
+    Ok(Json(
+        json!({ "err": 0, "id": id, "msg": "Request created" }),
+    ))
 }
 
 /// Minimal percent-encoding for search URLs (keep it readable; only encode
@@ -159,7 +169,11 @@ pub async fn list_requests(
 ) -> Result<Json<Value>, AppError> {
     let status = match params.status.as_str() {
         "open" | "answered" | "closed" => params.status.as_str(),
-        _ => return Err(AppError::BadRequest("status must be open|answered|closed".to_string())),
+        _ => {
+            return Err(AppError::BadRequest(
+                "status must be open|answered|closed".to_string(),
+            ));
+        }
     };
     let per_page = 20i64;
     let offset = (params.page.max(1) - 1) * per_page;
@@ -209,7 +223,9 @@ pub async fn list_requests(
         })
         .collect();
 
-    Ok(Json(json!({ "err": 0, "items": items, "page": params.page, "status": status })))
+    Ok(Json(
+        json!({ "err": 0, "items": items, "page": params.page, "status": status }),
+    ))
 }
 
 /// GET /api/requests/{id} — detail + answers with net scores + my_vote (auth optional)
@@ -218,15 +234,23 @@ pub async fn get_request(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    let req_row: Option<(i32, i32, String, String, Option<i32>, String, String, Option<i32>)> =
-        sqlx::query_as(
-            r#"SELECT id, user_id, title, body, seed_work_id, status,
+    let req_row: Option<(
+        i32,
+        i32,
+        String,
+        String,
+        Option<i32>,
+        String,
+        String,
+        Option<i32>,
+    )> = sqlx::query_as(
+        r#"SELECT id, user_id, title, body, seed_work_id, status,
                       created_at::text, accepted_answer_id
                FROM fic_requests WHERE id = $1 AND deleted_at IS NULL"#,
-        )
-        .bind(id)
-        .fetch_optional(&state.db)
-        .await?;
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await?;
     let (rid, owner_id, title, body, seed, status, created, accepted) =
         req_row.ok_or_else(|| AppError::BadRequest("request not found".to_string()))?;
 
@@ -249,12 +273,11 @@ pub async fn get_request(
 
     let my_user_id = auth.user_id;
     // M3: request upvotes (count + my upvote)
-    let (upvote_count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*)::bigint FROM fic_request_upvotes WHERE request_id = $1",
-    )
-    .bind(id)
-    .fetch_one(&state.db)
-    .await?;
+    let (upvote_count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*)::bigint FROM fic_request_upvotes WHERE request_id = $1")
+            .bind(id)
+            .fetch_one(&state.db)
+            .await?;
     let (my_upvote,): (bool,) = sqlx::query_as(
         "SELECT EXISTS(SELECT 1 FROM fic_request_upvotes WHERE request_id = $1 AND user_id = $2)",
     )
@@ -286,15 +309,18 @@ pub async fn get_request(
         // Work answers carry fic metadata; search/LLM answers carry the
         // query string instead.
         let (answer_kind, fic_title, fic_author) = if let Some(wid) = wid {
-            let (t, a): (String, String) = sqlx::query_as(
-                "SELECT title, author FROM fic_info WHERE work_id = $1 LIMIT 1",
-            )
-            .bind(wid)
-            .fetch_one(&state.db)
-            .await?;
+            let (t, a): (String, String) =
+                sqlx::query_as("SELECT title, author FROM fic_info WHERE work_id = $1 LIMIT 1")
+                    .bind(wid)
+                    .fetch_one(&state.db)
+                    .await?;
             ("work".to_string(), t, a)
         } else if source == "archivist" {
-            ("llm".to_string(), String::new(), "FicNexus Archivist".to_string())
+            (
+                "llm".to_string(),
+                String::new(),
+                "FicNexus Archivist".to_string(),
+            )
         } else {
             ("search".to_string(), String::new(), uname.clone())
         };
@@ -327,14 +353,15 @@ pub async fn delete_request(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
     let role = auth.role;
-    let req_row: Option<(i32,)> = sqlx::query_as(
-        "SELECT user_id FROM fic_requests WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await?;
+    let req_row: Option<(i32,)> =
+        sqlx::query_as("SELECT user_id FROM fic_requests WHERE id = $1 AND deleted_at IS NULL")
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await?;
     let owner = req_row.ok_or_else(|| AppError::BadRequest("request not found".to_string()))?;
     if owner.0 != user_id && role < 5 {
         return Err(AppError::Forbidden("Not allowed".to_string()));
@@ -353,13 +380,14 @@ pub async fn add_answer(
     Path(id): Path<i32>,
     Json(body): Json<AnswerBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
-    let req: Option<(String,)> = sqlx::query_as(
-        "SELECT status FROM fic_requests WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let req: Option<(String,)> =
+        sqlx::query_as("SELECT status FROM fic_requests WHERE id = $1 AND deleted_at IS NULL")
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await?;
     let (status,) = req.ok_or_else(|| AppError::BadRequest("request not found".to_string()))?;
     if status != "open" {
         return Err(AppError::BadRequest("request is not open".to_string()));
@@ -374,14 +402,18 @@ pub async fn add_answer(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
-    if search_answer.is_some() && (body.work_id.is_some() || body.url_id.is_some() || !body.url.trim().is_empty()) {
+    if search_answer.is_some()
+        && (body.work_id.is_some() || body.url_id.is_some() || !body.url.trim().is_empty())
+    {
         return Err(AppError::BadRequest(
             "search_query answers cannot also name a work".to_string(),
         ));
     }
     let work_id: i32 = if let Some(sq) = &search_answer {
         if sq.chars().count() > 300 {
-            return Err(AppError::BadRequest("search_query too long (max 300)".to_string()));
+            return Err(AppError::BadRequest(
+                "search_query too long (max 300)".to_string(),
+            ));
         }
         0 // unused placeholder for the search branch; not inserted
     } else if let Some(wid) = body.work_id {
@@ -437,7 +469,9 @@ pub async fn add_answer(
     .fetch_one(&state.db)
     .await?;
     if cnt >= ANSWER_CAP {
-        return Err(AppError::BadRequest(format!("Max {ANSWER_CAP} answers per request")));
+        return Err(AppError::BadRequest(format!(
+            "Max {ANSWER_CAP} answers per request"
+        )));
     }
 
     // Duplicate (UNIQUE(request_id, work_id)) → friendly error. Search
@@ -472,7 +506,9 @@ pub async fn add_answer(
         {
             Ok(aid) => aid,
             Err(e) if e.to_string().contains("duplicate key") => {
-                return Err(AppError::BadRequest("This fic is already an answer".to_string()));
+                return Err(AppError::BadRequest(
+                    "This fic is already an answer".to_string(),
+                ));
             }
             Err(e) => return Err(e.into()),
         }
@@ -507,7 +543,9 @@ pub async fn add_answer(
         }
     }
 
-    Ok(Json(json!({ "err": 0, "answer_id": aid, "msg": "Answer added" })))
+    Ok(Json(
+        json!({ "err": 0, "answer_id": aid, "msg": "Answer added" }),
+    ))
 }
 
 /// DELETE /api/requests/{id}/answers/{aid} — soft delete (owner or curator >= 5)
@@ -516,7 +554,9 @@ pub async fn delete_answer(
     State(state): State<Arc<AppState>>,
     Path((id, aid)): Path<(i32, i32)>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
     let role = auth.role;
     let row: Option<(i32,)> = sqlx::query_as(
         "SELECT user_id FROM fic_request_answers WHERE id = $1 AND request_id = $2 AND deleted_at IS NULL",
@@ -543,7 +583,9 @@ pub async fn vote_answer(
     Path((id, aid)): Path<(i32, i32)>,
     Json(body): Json<VoteBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
     if !matches!(body.vote, -1 | 0 | 1) {
         return Err(AppError::BadRequest("vote must be -1, 0, or 1".to_string()));
     }
@@ -553,12 +595,17 @@ pub async fn vote_answer(
     .bind(aid)
     .fetch_optional(&state.db)
     .await?;
-    let (rid, answer_owner) = row.ok_or_else(|| AppError::BadRequest("answer not found".to_string()))?;
+    let (rid, answer_owner) =
+        row.ok_or_else(|| AppError::BadRequest("answer not found".to_string()))?;
     if rid != id {
-        return Err(AppError::BadRequest("answer does not belong to this request".to_string()));
+        return Err(AppError::BadRequest(
+            "answer does not belong to this request".to_string(),
+        ));
     }
     if answer_owner == user_id {
-        return Err(AppError::BadRequest("Cannot vote on your own answer".to_string()));
+        return Err(AppError::BadRequest(
+            "Cannot vote on your own answer".to_string(),
+        ));
     }
 
     if body.vote == 0 {
@@ -587,7 +634,9 @@ pub async fn vote_answer(
     .fetch_one(&state.db)
     .await?;
 
-    Ok(Json(json!({ "err": 0, "score": score, "my_vote": if body.vote == 0 { Value::Null } else { json!(body.vote) } })))
+    Ok(Json(
+        json!({ "err": 0, "score": score, "my_vote": if body.vote == 0 { Value::Null } else { json!(body.vote) } }),
+    ))
 }
 
 /// POST /api/requests/{id}/upvote — request-level upvote (toggle). No self-vote.
@@ -599,16 +648,19 @@ pub async fn upvote_request(
     Path(id): Path<i32>,
     Json(body): Json<UpvoteBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
-    let row: Option<(i32,)> = sqlx::query_as(
-        "SELECT user_id FROM fic_requests WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let row: Option<(i32,)> =
+        sqlx::query_as("SELECT user_id FROM fic_requests WHERE id = $1 AND deleted_at IS NULL")
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await?;
     let owner = row.ok_or_else(|| AppError::BadRequest("request not found".to_string()))?;
     if owner.0 == user_id {
-        return Err(AppError::BadRequest("Cannot upvote your own request".to_string()));
+        return Err(AppError::BadRequest(
+            "Cannot upvote your own request".to_string(),
+        ));
     }
 
     if body.enabled {
@@ -628,12 +680,11 @@ pub async fn upvote_request(
             .await?;
     }
 
-    let (count,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*)::bigint FROM fic_request_upvotes WHERE request_id = $1",
-    )
-    .bind(id)
-    .fetch_one(&state.db)
-    .await?;
+    let (count,): (i64,) =
+        sqlx::query_as("SELECT COUNT(*)::bigint FROM fic_request_upvotes WHERE request_id = $1")
+            .bind(id)
+            .fetch_one(&state.db)
+            .await?;
     let (mine,): (bool,) = sqlx::query_as(
         "SELECT EXISTS(SELECT 1 FROM fic_request_upvotes WHERE request_id = $1 AND user_id = $2)",
     )
@@ -642,7 +693,9 @@ pub async fn upvote_request(
     .fetch_one(&state.db)
     .await?;
 
-    Ok(Json(json!({ "err": 0, "upvotes": count, "my_upvote": mine })))
+    Ok(Json(
+        json!({ "err": 0, "upvotes": count, "my_upvote": mine }),
+    ))
 }
 
 /// POST /api/requests/{id}/accept/{aid} — requester only → status='answered'
@@ -651,16 +704,21 @@ pub async fn accept_answer(
     State(state): State<Arc<AppState>>,
     Path((id, aid)): Path<(i32, i32)>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
     let req: Option<(i32, String)> = sqlx::query_as(
         "SELECT user_id, status FROM fic_requests WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(id)
     .fetch_optional(&state.db)
     .await?;
-    let (owner, status) = req.ok_or_else(|| AppError::BadRequest("request not found".to_string()))?;
+    let (owner, status) =
+        req.ok_or_else(|| AppError::BadRequest("request not found".to_string()))?;
     if owner != user_id {
-        return Err(AppError::Forbidden("Only the requester can accept".to_string()));
+        return Err(AppError::Forbidden(
+            "Only the requester can accept".to_string(),
+        ));
     }
     if status == "closed" {
         return Err(AppError::BadRequest("request is closed".to_string()));
@@ -687,12 +745,11 @@ pub async fn accept_answer(
 
     // M3: notify the answer author that their answer was accepted
     // (best-effort; never fail the main action).
-    if let Ok(Some((answer_owner,))) = sqlx::query_as::<_, (i32,)>(
-        "SELECT user_id FROM fic_request_answers WHERE id = $1",
-    )
-    .bind(aid)
-    .fetch_optional(&state.db)
-    .await
+    if let Ok(Some((answer_owner,))) =
+        sqlx::query_as::<_, (i32,)>("SELECT user_id FROM fic_request_answers WHERE id = $1")
+            .bind(aid)
+            .fetch_optional(&state.db)
+            .await
     {
         if answer_owner != user_id {
             let _ = queries::create_notification(
@@ -709,7 +766,9 @@ pub async fn accept_answer(
         }
     }
 
-    Ok(Json(json!({ "err": 0, "msg": "Answer accepted", "status": "answered" })))
+    Ok(Json(
+        json!({ "err": 0, "msg": "Answer accepted", "status": "answered" }),
+    ))
 }
 
 /// GET /api/requests/{id}/candidates — engine suggestions for answering a
@@ -733,7 +792,9 @@ pub async fn candidates(
     .flatten();
 
     if seed.is_none() {
-        return Ok(Json(json!({ "err": 0, "request_id": id, "candidates": [] })));
+        return Ok(Json(
+            json!({ "err": 0, "request_id": id, "candidates": [] }),
+        ));
     }
     let seed = seed.unwrap();
 
@@ -750,7 +811,9 @@ pub async fn candidates(
     .await?;
 
     let Some(url_id) = url_id else {
-        return Ok(Json(json!({ "err": 0, "request_id": id, "candidates": [] })));
+        return Ok(Json(
+            json!({ "err": 0, "request_id": id, "candidates": [] }),
+        ));
     };
 
     // Ask the recommender engine for similar works.
@@ -776,5 +839,7 @@ pub async fn candidates(
         })
         .collect();
 
-    Ok(Json(json!({ "err": 0, "request_id": id, "candidates": candidates })))
+    Ok(Json(
+        json!({ "err": 0, "request_id": id, "candidates": candidates }),
+    ))
 }

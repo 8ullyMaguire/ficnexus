@@ -29,11 +29,15 @@ pub async fn parse_manual_upload(
     } else if payload.file_name.ends_with(".html") || payload.file_name.ends_with(".htm") {
         parse_html_chapters(&payload.file_data)?
     } else {
-        return Err(AppError::BadRequest("Unsupported file type. Use .txt, .epub, or .html".to_string()));
+        return Err(AppError::BadRequest(
+            "Unsupported file type. Use .txt, .epub, or .html".to_string(),
+        ));
     };
 
     if chapters.is_empty() {
-        return Err(AppError::BadRequest("No chapters could be parsed from the file".to_string()));
+        return Err(AppError::BadRequest(
+            "No chapters could be parsed from the file".to_string(),
+        ));
     }
 
     let total_words: i64 = chapters
@@ -75,8 +79,7 @@ fn parse_txt_chapters(data: &[u8], title: &str) -> Result<Vec<Chapter>, AppError
     let text_str = text.as_ref();
 
     // Try to split on chapter headers
-    let re =
-        regex_lite::Regex::new(r"(?im)^(?:chapter|part|section)\s+\d+.*$|^---+\s*$").unwrap();
+    let re = regex_lite::Regex::new(r"(?im)^(?:chapter|part|section)\s+\d+.*$|^---+\s*$").unwrap();
     let mut chapters = Vec::new();
     let mut current_start = 0;
     let mut chapter_num = 1;
@@ -147,8 +150,7 @@ fn parse_epub_chapters(data: &[u8]) -> Result<Vec<Chapter>, AppError> {
     if let Ok(mut container) = archive.by_name("META-INF/container.xml") {
         let mut container_xml = String::new();
         container.read_to_string(&mut container_xml).ok();
-        let re =
-            regex_lite::Regex::new(r#"rootfile\s+full-path="([^"]+)""#).ok();
+        let re = regex_lite::Regex::new(r#"rootfile\s+full-path="([^"]+)""#).ok();
         if let Some(caps) = re.and_then(|r| r.captures(&container_xml)) {
             if let Some(p) = caps.get(1) {
                 opf_path = p.as_str().to_string();
@@ -197,7 +199,8 @@ fn parse_epub_chapters(data: &[u8]) -> Result<Vec<Chapter>, AppError> {
                     total_decompressed += content.len();
                     if total_decompressed > MAX_TOTAL_DECOMPRESSED {
                         return Err(AppError::BadRequest(
-                            "EPUB expands beyond 50 MB after decompression — refusing to process".to_string(),
+                            "EPUB expands beyond 50 MB after decompression — refusing to process"
+                                .to_string(),
                         ));
                     }
 
@@ -219,9 +222,9 @@ fn parse_epub_chapters(data: &[u8]) -> Result<Vec<Chapter>, AppError> {
     if chapters.is_empty() {
         // Fallback: scan all html/xhtml files in archive
         for i in 0..archive.len() {
-            let mut file = archive.by_index(i).map_err(|e| {
-                AppError::BadRequest(format!("EPUB read error: {}", e))
-            })?;
+            let mut file = archive
+                .by_index(i)
+                .map_err(|e| AppError::BadRequest(format!("EPUB read error: {}", e)))?;
             let name = file.name().to_string();
             if name.ends_with(".html") || name.ends_with(".xhtml") || name.ends_with(".htm") {
                 let mut content = String::new();
@@ -230,7 +233,8 @@ fn parse_epub_chapters(data: &[u8]) -> Result<Vec<Chapter>, AppError> {
                 total_decompressed += content.len();
                 if total_decompressed > MAX_TOTAL_DECOMPRESSED {
                     return Err(AppError::BadRequest(
-                        "EPUB expands beyond 50 MB after decompression — refusing to process".to_string(),
+                        "EPUB expands beyond 50 MB after decompression — refusing to process"
+                            .to_string(),
                     ));
                 }
 

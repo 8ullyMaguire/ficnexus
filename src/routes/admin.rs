@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 
-use chrono::Utc;
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
 use crate::server::AppState;
+use chrono::Utc;
 
 // ═══════════════════════════════════════════════════════════════════
 // Shared query params
@@ -52,7 +52,19 @@ pub async fn mod_queue(
     let per_page = params.per_page.unwrap_or(20).max(1).min(100);
     let offset = ((params.page.unwrap_or(1).max(1)) - 1) * per_page;
 
-    let rows = sqlx::query_as::<_, (i32, String, String, String, String, String, String, chrono::NaiveDateTime)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i32,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            chrono::NaiveDateTime,
+        ),
+    >(
         r#"SELECT w.id, w.canonical_title, w.canonical_author, fi.description,
                   fi.source, u.username, fi.source_type, fi.created
            FROM works w
@@ -61,7 +73,7 @@ pub async fn mod_queue(
            WHERE fi.source_type IN ('manual_epub', 'manual_text', 'import')
              AND w.is_visible = FALSE
            ORDER BY fi.created DESC
-           LIMIT $1 OFFSET $2"#
+           LIMIT $1 OFFSET $2"#,
     )
     .bind(per_page as i64)
     .bind(offset as i64)
@@ -98,14 +110,14 @@ pub async fn approve_upload(
     }
 
     // Get uploader_id before making visible
-    let uploader: Option<(i32,)> = sqlx::query_as(
-        "SELECT uploader_id FROM works WHERE id = $1 AND is_visible = FALSE"
-    )
-    .bind(work_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let uploader: Option<(i32,)> =
+        sqlx::query_as("SELECT uploader_id FROM works WHERE id = $1 AND is_visible = FALSE")
+            .bind(work_id)
+            .fetch_optional(&state.db)
+            .await?;
 
-    let (uploader_id,) = uploader.ok_or_else(|| AppError::NotFound("No pending upload with this ID".into()))?;
+    let (uploader_id,) =
+        uploader.ok_or_else(|| AppError::NotFound("No pending upload with this ID".into()))?;
 
     sqlx::query("UPDATE works SET is_visible = TRUE WHERE id = $1")
         .bind(work_id)
@@ -113,15 +125,15 @@ pub async fn approve_upload(
         .await?;
 
     // v3 XP: qualified publish award (>=5k words) + auto-claim work bounties.
-    let (words, status): (Option<i64>, Option<String>) = sqlx::query_as(
-        "SELECT fi.word_count, fi.status FROM fic_info fi WHERE fi.work_id = $1",
-    )
-    .bind(work_id)
-    .fetch_optional(&state.db)
-    .await?
-    .unwrap_or((None, None));
+    let (words, status): (Option<i64>, Option<String>) =
+        sqlx::query_as("SELECT fi.word_count, fi.status FROM fic_info fi WHERE fi.work_id = $1")
+            .bind(work_id)
+            .fetch_optional(&state.db)
+            .await?
+            .unwrap_or((None, None));
     let w = words.unwrap_or(0);
-    let _ = crate::services::bounties::auto_claim_work_bounties(&state.db, work_id, uploader_id).await;
+    let _ =
+        crate::services::bounties::auto_claim_work_bounties(&state.db, work_id, uploader_id).await;
     // Resolve url_id once — used for publish + completion bonuses.
     let url_id = sqlx::query_scalar::<_, String>(
         "SELECT fi.source_url FROM fic_info fi WHERE fi.work_id = $1",
@@ -131,9 +143,21 @@ pub async fn approve_upload(
     .await?;
     if w >= 5000 {
         if let Some(ref uid) = url_id {
-            let _ = crate::services::progression::award_xp(&state.db, uploader_id, "work_publish", Some(uid)).await;
+            let _ = crate::services::progression::award_xp(
+                &state.db,
+                uploader_id,
+                "work_publish",
+                Some(uid),
+            )
+            .await;
         } else {
-            let _ = crate::services::progression::award_xp(&state.db, uploader_id, "work_publish", None).await;
+            let _ = crate::services::progression::award_xp(
+                &state.db,
+                uploader_id,
+                "work_publish",
+                None,
+            )
+            .await;
         }
         // Completion bonus: status == 'complete' → scaled XP = 100 + 2*(words/1000).
         if status.as_deref() == Some("complete") {
@@ -142,16 +166,39 @@ pub async fn approve_upload(
             // award_xp enforces caps/streak on the def row (work_complete_qualified), but
             // the XP *amount* is scaled here before recording. We call a dedicated path:
             let _ = crate::services::progression::award_scaled_xp(
-                &state.db, uploader_id, "work_complete_qualified", url_id.as_deref(), scaled as i32,
-            ).await;
+                &state.db,
+                uploader_id,
+                "work_complete_qualified",
+                url_id.as_deref(),
+                scaled as i32,
+            )
+            .await;
         }
     }
     // Retain legacy reputation path for a single transitional sprint.
-    let _ = crate::db::queries::update_reputation_and_promote(&state.db, uploader_id, 25, "upload_approved").await;
-    let _ = crate::db::queries::check_and_award_badges(&state.db, uploader_id, "upload_approved").await;
+    let _ = crate::db::queries::update_reputation_and_promote(
+        &state.db,
+        uploader_id,
+        25,
+        "upload_approved",
+    )
+    .await;
+    let _ =
+        crate::db::queries::check_and_award_badges(&state.db, uploader_id, "upload_approved").await;
 
-    crate::modlog::record(&state.db, user.user_id, user.username.clone(), "approve_upload", "work", &work_id.to_string(), serde_json::json!({})).await;
-    Ok(Json(json!({"err": 0, "msg": "Upload approved and made visible"})))
+    crate::modlog::record(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "approve_upload",
+        "work",
+        &work_id.to_string(),
+        serde_json::json!({}),
+    )
+    .await;
+    Ok(Json(
+        json!({"err": 0, "msg": "Upload approved and made visible"}),
+    ))
 }
 
 /// POST /api/admin/moderation/reject/{work_id} — reject a manual upload
@@ -170,8 +217,19 @@ pub async fn reject_upload(
         .execute(&state.db)
         .await?;
 
-    crate::modlog::record(&state.db, user.user_id, user.username.clone(), "reject_upload", "work", &work_id.to_string(), serde_json::json!({})).await;
-    Ok(Json(json!({"err": 0, "msg": "Upload rejected and deleted"})))
+    crate::modlog::record(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "reject_upload",
+        "work",
+        &work_id.to_string(),
+        serde_json::json!({}),
+    )
+    .await;
+    Ok(Json(
+        json!({"err": 0, "msg": "Upload rejected and deleted"}),
+    ))
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -209,7 +267,7 @@ pub async fn scraper_health(
            FROM request_log rl
            WHERE rl.status = 'error' AND rl.created > NOW() - INTERVAL '24 hours'
            ORDER BY rl.created DESC
-           LIMIT 20"#
+           LIMIT 20"#,
     )
     .fetch_all(&state.db)
     .await?;
@@ -253,7 +311,7 @@ pub async fn admin_users(
                FROM users
                WHERE username ILIKE $1
                ORDER BY id
-               LIMIT $2 OFFSET $3"#
+               LIMIT $2 OFFSET $3"#,
         )
         .bind(format!("%{}%", q))
         .bind(per_page as i64)
@@ -273,7 +331,7 @@ pub async fn admin_users(
 
     let rows = sqlx::query_as::<_, (i32, String, i16, i32, Option<i64>, bool, Option<String>)>(
         r#"SELECT id, username, role, reputation, total_words_read, is_banned, locale
-           FROM users ORDER BY id LIMIT $1 OFFSET $2"#
+           FROM users ORDER BY id LIMIT $1 OFFSET $2"#,
     )
     .bind(per_page as i64)
     .bind(offset as i64)
@@ -360,7 +418,9 @@ pub async fn toggle_ban(
     )
     .await;
 
-    Ok(Json(json!({"err": 0, "msg": if banned { "User banned" } else { "User unbanned" }})))
+    Ok(Json(
+        json!({"err": 0, "msg": if banned { "User banned" } else { "User unbanned" }}),
+    ))
 }
 
 /// POST /api/admin/reputation/award — manually grant an admin-only XP/reputation
@@ -400,17 +460,18 @@ pub async fn rep_award_handler(
         return Err(AppError::BadRequest("Not an admin-awarded reward".into()));
     }
     let awarded = crate::services::progression::award_xp(
-        &state.db, req.user_id, &req.event_type, req.source_ref.as_deref(),
+        &state.db,
+        req.user_id,
+        &req.event_type,
+        req.source_ref.as_deref(),
     )
     .await?;
     // Badge side-effect: admin-granted event types (e.g. marathon_writer)
     // should also issue the matching user_badges record. check_and_award_badges
     // is keyed on event_type matching badge_definitions.trigger, so the same
     // grant that awards XP also stamps the badge.
-    let _ = crate::db::queries::check_and_award_badges(
-        &state.db, req.user_id, &req.event_type,
-    )
-    .await;
+    let _ =
+        crate::db::queries::check_and_award_badges(&state.db, req.user_id, &req.event_type).await;
     crate::modlog::record_json(
         &state.db,
         Some(admin_id),
@@ -452,10 +513,26 @@ pub async fn admin_list_translations(
     // status filter — validated against the CHECK constraint values.
     let status = params.status.as_deref().unwrap_or("draft");
     if !matches!(status, "draft" | "approved" | "rejected") {
-        return Err(AppError::BadRequest("status must be one of draft, approved, rejected".to_string()));
+        return Err(AppError::BadRequest(
+            "status must be one of draft, approved, rejected".to_string(),
+        ));
     }
 
-    let rows = sqlx::query_as::<_, (i64, i32, String, Option<String>, Option<String>, Option<i32>, chrono::DateTime<chrono::Utc>, String, Option<i32>, Option<chrono::DateTime<chrono::Utc>>)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            i32,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<i32>,
+            chrono::DateTime<chrono::Utc>,
+            String,
+            Option<i32>,
+            Option<chrono::DateTime<chrono::Utc>>,
+        ),
+    >(
         r#"SELECT id, work_id, locale_code, title, summary, translated_by, translated_at,
                   status, reviewed_by, reviewed_at
            FROM work_translations
@@ -505,7 +582,9 @@ pub async fn admin_approve_translation(
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
-    let admin_id = user.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let admin_id = user
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let result = sqlx::query(
         r#"UPDATE work_translations
@@ -518,11 +597,24 @@ pub async fn admin_approve_translation(
     .await?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Translation not found or not in draft state".into()));
+        return Err(AppError::NotFound(
+            "Translation not found or not in draft state".into(),
+        ));
     }
 
-    crate::modlog::record(&state.db, user.user_id, user.username.clone(), "approve_translation", "translation", &translation_id.to_string(), serde_json::json!({})).await;
-    Ok(Json(json!({"err": 0, "msg": "Translation approved", "id": translation_id})))
+    crate::modlog::record(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "approve_translation",
+        "translation",
+        &translation_id.to_string(),
+        serde_json::json!({}),
+    )
+    .await;
+    Ok(Json(
+        json!({"err": 0, "msg": "Translation approved", "id": translation_id}),
+    ))
 }
 
 /// POST /api/admin/translations/{id}/reject — reject a draft translation.
@@ -537,7 +629,9 @@ pub async fn admin_reject_translation(
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
-    let admin_id = user.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let admin_id = user
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let result = sqlx::query(
         r#"UPDATE work_translations
@@ -550,11 +644,24 @@ pub async fn admin_reject_translation(
     .await?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Translation not found or not in draft state".into()));
+        return Err(AppError::NotFound(
+            "Translation not found or not in draft state".into(),
+        ));
     }
 
-    crate::modlog::record(&state.db, user.user_id, user.username.clone(), "reject_translation", "translation", &translation_id.to_string(), serde_json::json!({})).await;
-    Ok(Json(json!({"err": 0, "msg": "Translation rejected", "id": translation_id})))
+    crate::modlog::record(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "reject_translation",
+        "translation",
+        &translation_id.to_string(),
+        serde_json::json!({}),
+    )
+    .await;
+    Ok(Json(
+        json!({"err": 0, "msg": "Translation rejected", "id": translation_id}),
+    ))
 }
 
 /// POST /api/admin/translations/{id}/edit — post-edit a draft translation
@@ -570,11 +677,19 @@ pub async fn admin_edit_translation(
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
-    let title = payload.get("title").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let summary = payload.get("summary").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let title = payload
+        .get("title")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let summary = payload
+        .get("summary")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     if title.is_none() && summary.is_none() {
-        return Err(AppError::BadRequest("At least one of title or summary is required".to_string()));
+        return Err(AppError::BadRequest(
+            "At least one of title or summary is required".to_string(),
+        ));
     }
 
     let result = sqlx::query(
@@ -590,10 +705,14 @@ pub async fn admin_edit_translation(
     .await?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Translation not found or not in draft state".into()));
+        return Err(AppError::NotFound(
+            "Translation not found or not in draft state".into(),
+        ));
     }
 
-    Ok(Json(json!({"err": 0, "msg": "Translation updated", "id": translation_id})))
+    Ok(Json(
+        json!({"err": 0, "msg": "Translation updated", "id": translation_id}),
+    ))
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -617,7 +736,18 @@ pub async fn admin_rating_checks(
     let per_page = params.per_page.unwrap_or(20).max(1).min(100);
     let offset = ((params.page.unwrap_or(1).max(1)) - 1) * per_page;
 
-    let rows = sqlx::query_as::<_, (i32, String, String, Option<String>, Option<serde_json::Value>, Option<chrono::DateTime<chrono::Utc>>, String)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i32,
+            String,
+            String,
+            Option<String>,
+            Option<serde_json::Value>,
+            Option<chrono::DateTime<chrono::Utc>>,
+            String,
+        ),
+    >(
         r#"SELECT DISTINCT ON (w.id) w.id, w.canonical_title, w.canonical_author,
                   fi.extra_meta,
                   wrv.warnings,
@@ -676,9 +806,14 @@ pub async fn admin_verify_rating(
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
-    let admin_id = user.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let admin_id = user
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
-    let rating = payload.get("rating").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let rating = payload
+        .get("rating")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
     let warnings = payload
         .get("warnings")
         .filter(|v| v.is_array())
@@ -686,7 +821,9 @@ pub async fn admin_verify_rating(
         .unwrap_or_else(|| serde_json::json!([]));
 
     if rating.is_none() && warnings.as_array().map_or(true, |w| w.is_empty()) {
-        return Err(AppError::BadRequest("At least one of rating or warnings is required".to_string()));
+        return Err(AppError::BadRequest(
+            "At least one of rating or warnings is required".to_string(),
+        ));
     }
 
     let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM works WHERE id = $1)")
@@ -718,7 +855,9 @@ pub async fn admin_verify_rating(
         .execute(&state.db)
         .await;
 
-    Ok(Json(json!({"err": 0, "msg": "Rating verified", "work_id": work_id})))
+    Ok(Json(
+        json!({"err": 0, "msg": "Rating verified", "work_id": work_id}),
+    ))
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -741,7 +880,9 @@ pub async fn admin_fix_tag_score(
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
-    let admin_id = user.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let admin_id = user
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let url_id = payload
         .get("url_id")
@@ -753,13 +894,12 @@ pub async fn admin_fix_tag_score(
         .map(|v| v as i16)
         .ok_or_else(|| AppError::BadRequest("score field required (integer)".to_string()))?;
 
-    let old: Option<(i16,)> = sqlx::query_as(
-        "SELECT score FROM fic_tags WHERE url_id = $1 AND tag_id = $2",
-    )
-    .bind(url_id)
-    .bind(tag_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let old: Option<(i16,)> =
+        sqlx::query_as("SELECT score FROM fic_tags WHERE url_id = $1 AND tag_id = $2")
+            .bind(url_id)
+            .bind(tag_id)
+            .fetch_optional(&state.db)
+            .await?;
 
     let old_score = match old {
         Some((s,)) => s,
@@ -767,7 +907,9 @@ pub async fn admin_fix_tag_score(
     };
 
     if old_score == new_score {
-        return Ok(Json(json!({"err": 0, "msg": "Score unchanged", "tag_id": tag_id})));
+        return Ok(Json(
+            json!({"err": 0, "msg": "Score unchanged", "tag_id": tag_id}),
+        ));
     }
 
     sqlx::query("UPDATE fic_tags SET score = $1 WHERE url_id = $2 AND tag_id = $3")
@@ -815,7 +957,7 @@ pub async fn admin_stats(
     let daily_stats = sqlx::query_as::<_, (String, i32, i32, i32, i32, i32, i64, i64)>(
         r#"SELECT to_char(date, 'YYYY-MM-DD'), total_users, new_users, total_works,
                   new_works, manual_uploads, epubs_downloaded, words_read
-           FROM admin_daily_stats ORDER BY date DESC LIMIT 30"#
+           FROM admin_daily_stats ORDER BY date DESC LIMIT 30"#,
     )
     .fetch_all(&state.db)
     .await?;
@@ -910,9 +1052,15 @@ pub async fn admin_bots(
             let bot_score = (ratio * 0.7 + if fauths > 0 { 0.3 } else { 0.0 }).min(1.0);
             let flags: Vec<&str> = {
                 let mut v = vec![];
-                if ratio > 0.9 { v.push("mirror"); }
-                if fauths > 3 { v.push("stuffing"); }
-                if reqs > 500 && wins <= 2 { v.push("burst"); }
+                if ratio > 0.9 {
+                    v.push("mirror");
+                }
+                if fauths > 3 {
+                    v.push("stuffing");
+                }
+                if reqs > 500 && wins <= 2 {
+                    v.push("burst");
+                }
                 v
             };
             json!({
@@ -954,7 +1102,9 @@ pub async fn admin_bot_shadowban(
     state
         .rate_limiter
         .shadowban(&client_id, state.config.rl_shadowban_ttl);
-    Ok(Json(json!({ "err": 0, "client_id": client_id, "shadowbanned": true })))
+    Ok(Json(
+        json!({ "err": 0, "client_id": client_id, "shadowbanned": true }),
+    ))
 }
 
 /// POST /api/admin/bots/{client_id}/unshadowban — remove a client from the
@@ -972,7 +1122,9 @@ pub async fn admin_bot_unshadowban(
     }
 
     state.rate_limiter.unshadowban(&client_id);
-    Ok(Json(json!({ "err": 0, "client_id": client_id, "shadowbanned": false })))
+    Ok(Json(
+        json!({ "err": 0, "client_id": client_id, "shadowbanned": false }),
+    ))
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1082,7 +1234,7 @@ pub async fn admin_realtime(
             COUNT(*) FILTER (WHERE etype = 'search')::bigint
         FROM request_log
         WHERE created >= now() - interval '5 minutes'
-        "#
+        "#,
     )
     .fetch_one(&state.db)
     .await?;
@@ -1095,7 +1247,7 @@ pub async fn admin_realtime(
             COUNT(DISTINCT ip)::bigint
         FROM bot_scores
         WHERE window_start >= now() - interval '1 hour'
-        "#
+        "#,
     )
     .fetch_one(&state.db)
     .await?;
@@ -1106,7 +1258,11 @@ pub async fn admin_realtime(
     // report redis:false even when Redis is healthy (see health.rs).
     let mut redis_ok = false;
     let mut redis_mem: i64 = 0;
-    if let Ok(()) = redis::cmd("PING").query_async::<String>(&mut state.health_redis.clone()).await.map(|_| ()) {
+    if let Ok(()) = redis::cmd("PING")
+        .query_async::<String>(&mut state.health_redis.clone())
+        .await
+        .map(|_| ())
+    {
         redis_ok = true;
         redis_mem = redis::cmd("INFO")
             .query_async::<String>(&mut state.health_redis.clone())
@@ -1158,7 +1314,7 @@ pub async fn admin_roadmap_consensus(
         GROUP BY c.id
         ORDER BY c.elo_rating DESC
         LIMIT 100
-        "#
+        "#,
     )
     .fetch_all(&state.db)
     .await?;
@@ -1174,7 +1330,7 @@ pub async fn admin_roadmap_consensus(
         WHERE status = 'open'
         ORDER BY matches_played DESC
         LIMIT 100
-        "#
+        "#,
     )
     .fetch_all(&state.db)
     .await?;
@@ -1192,8 +1348,6 @@ pub async fn admin_roadmap_consensus(
         })).collect::<Vec<_>>(),
     })))
 }
-
-
 
 // ═══════════════════════════════════════════════════════════════════
 // F. Comment moderation triage queue
@@ -1214,7 +1368,19 @@ pub async fn moderation_comments(
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
-    let rows = sqlx::query_as::<_, (i64, String, String, String, f32, Option<i32>, Option<String>, Option<i32>)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            String,
+            f32,
+            Option<i32>,
+            Option<String>,
+            Option<i32>,
+        ),
+    >(
         r#"SELECT ct.comment_id::bigint, c.body, ct.category, ct.reason, ct.confidence,
                   c.work_id, w.canonical_title, c.user_id
            FROM comment_triage ct
@@ -1290,8 +1456,19 @@ pub async fn blacklist_fic(
     .execute(&state.db)
     .await?;
 
-    crate::modlog::record_json(&state.db, user.user_id, user.username.clone(), "blacklist_fic", "fic", &body.url_id, vec![("reason", serde_json::json!(reason))]).await;
-    Ok(Json(json!({"err": 0, "msg": "fic blacklisted", "url_id": body.url_id, "reason": reason})))
+    crate::modlog::record_json(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "blacklist_fic",
+        "fic",
+        &body.url_id,
+        vec![("reason", serde_json::json!(reason))],
+    )
+    .await;
+    Ok(Json(
+        json!({"err": 0, "msg": "fic blacklisted", "url_id": body.url_id, "reason": reason}),
+    ))
 }
 
 /// POST /api/admin/blacklist/author — add an author to the blacklist (upsert).
@@ -1316,8 +1493,22 @@ pub async fn blacklist_author(
     .execute(&state.db)
     .await?;
 
-    crate::modlog::record_json(&state.db, user.user_id, user.username.clone(), "blacklist_author", "author", &body.author_id.to_string(), vec![("source_id", serde_json::json!(body.source_id)), ("reason", serde_json::json!(reason))]).await;
-    Ok(Json(json!({"err": 0, "msg": "author blacklisted", "source_id": body.source_id, "author_id": body.author_id, "reason": reason})))
+    crate::modlog::record_json(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "blacklist_author",
+        "author",
+        &body.author_id.to_string(),
+        vec![
+            ("source_id", serde_json::json!(body.source_id)),
+            ("reason", serde_json::json!(reason)),
+        ],
+    )
+    .await;
+    Ok(Json(
+        json!({"err": 0, "msg": "author blacklisted", "source_id": body.source_id, "author_id": body.author_id, "reason": reason}),
+    ))
 }
 
 /// GET /api/admin/blacklist — list all blacklist entries (fics + authors).
@@ -1381,8 +1572,19 @@ pub async fn admin_hide_comment(
         .execute(&state.db)
         .await;
 
-    crate::modlog::record(&state.db, user.user_id, user.username.clone(), "hide_comment", "comment", &comment_id.to_string(), serde_json::json!({})).await;
-    Ok(Json(json!({"err": 0, "msg": "Comment hidden", "comment_id": comment_id})))
+    crate::modlog::record(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "hide_comment",
+        "comment",
+        &comment_id.to_string(),
+        serde_json::json!({}),
+    )
+    .await;
+    Ok(Json(
+        json!({"err": 0, "msg": "Comment hidden", "comment_id": comment_id}),
+    ))
 }
 
 /// POST /api/admin/moderation/comments/{id}/delete — soft-delete a comment
@@ -1397,13 +1599,16 @@ pub async fn admin_delete_comment(
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
-    let result = sqlx::query("UPDATE comments SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
-        .bind(comment_id)
-        .execute(&state.db)
-        .await?;
+    let result =
+        sqlx::query("UPDATE comments SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
+            .bind(comment_id)
+            .execute(&state.db)
+            .await?;
     if result.rows_affected() == 0 {
         // Either missing, or already deleted — treat both as not found.
-        return Err(AppError::NotFound("Comment not found or already deleted".into()));
+        return Err(AppError::NotFound(
+            "Comment not found or already deleted".into(),
+        ));
     }
 
     // Clear the triage row so the item leaves the review queue.
@@ -1412,8 +1617,19 @@ pub async fn admin_delete_comment(
         .execute(&state.db)
         .await;
 
-    crate::modlog::record(&state.db, user.user_id, user.username.clone(), "delete_comment", "comment", &comment_id.to_string(), serde_json::json!({})).await;
-    Ok(Json(json!({"err": 0, "msg": "Comment deleted", "comment_id": comment_id})))
+    crate::modlog::record(
+        &state.db,
+        user.user_id,
+        user.username.clone(),
+        "delete_comment",
+        "comment",
+        &comment_id.to_string(),
+        serde_json::json!({}),
+    )
+    .await;
+    Ok(Json(
+        json!({"err": 0, "msg": "Comment deleted", "comment_id": comment_id}),
+    ))
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1456,7 +1672,9 @@ pub async fn update_work_metadata(
         || body.status.is_some()
         || body.description.is_some();
     if !has_any {
-        return Err(AppError::BadRequest("No metadata fields provided".to_string()));
+        return Err(AppError::BadRequest(
+            "No metadata fields provided".to_string(),
+        ));
     }
     if let Some(ref t) = body.title {
         if t.trim().is_empty() {
@@ -1542,7 +1760,9 @@ pub async fn list_content_scan(
     }
     let per_page = params.per_page.unwrap_or(50).max(1).min(200);
     let offset = ((params.page.unwrap_or(1).max(1)) - 1) * per_page;
-    let status_filter = params.review_status.unwrap_or_else(|| "pending".to_string());
+    let status_filter = params
+        .review_status
+        .unwrap_or_else(|| "pending".to_string());
     let class_filter = params.classification.unwrap_or_default();
 
     // Static SQL with a nullable optional filter (empty string = no filter)
@@ -1577,7 +1797,9 @@ pub async fn list_content_scan(
         })
         .collect();
 
-    Ok(Json(json!({ "err": 0, "items": items, "total": items.len() })))
+    Ok(Json(
+        json!({ "err": 0, "items": items, "total": items.len() }),
+    ))
 }
 
 /// POST /api/admin/content-scan/run — run a batch scan over the body cache.
@@ -1595,13 +1817,9 @@ pub async fn run_content_scan(
         .and_then(|v| v.as_u64())
         .map(|n| n as usize);
 
-    let (scanned, failed) = crate::services::content_scan::scan_cache(
-        &state.db,
-        &state.ollama,
-        &state.config,
-        limit,
-    )
-    .await;
+    let (scanned, failed) =
+        crate::services::content_scan::scan_cache(&state.db, &state.ollama, &state.config, limit)
+            .await;
 
     Ok(Json(json!({
         "err": 0,
@@ -1624,7 +1842,9 @@ pub async fn review_content_scan(
     }
     let action = body.action.as_str();
     if action != "confirmed" && action != "dismissed" {
-        return Err(AppError::BadRequest("action must be 'confirmed' or 'dismissed'".to_string()));
+        return Err(AppError::BadRequest(
+            "action must be 'confirmed' or 'dismissed'".to_string(),
+        ));
     }
 
     // On dismiss, clear the deletion schedule (curator says it's fine)
@@ -1655,7 +1875,9 @@ pub async fn review_content_scan(
     )
     .await;
 
-    Ok(Json(json!({ "err": 0, "url_id": url_id, "status": action })))
+    Ok(Json(
+        json!({ "err": 0, "url_id": url_id, "status": action }),
+    ))
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -1740,13 +1962,9 @@ pub async fn run_embedding_dedupe(
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
-    let (auto_merged, proposed, examined) = crate::services::embedding_dedupe::run_dedupe(
-        &state.db,
-        proposer_id,
-        threshold,
-        limit,
-    )
-    .await;
+    let (auto_merged, proposed, examined) =
+        crate::services::embedding_dedupe::run_dedupe(&state.db, proposer_id, threshold, limit)
+            .await;
 
     Ok(Json(json!({
         "err": 0,
@@ -1757,29 +1975,61 @@ pub async fn run_embedding_dedupe(
     })))
 }
 
-
 /// Approve an immutable chapter translation version.
-pub async fn admin_approve_chapter_translation_version(State(state): State<Arc<AppState>>, user: AuthUser, Path(id): Path<i64>) -> Result<Json<Value>, AppError> {
-    if user.role < 10 { return Err(AppError::Forbidden("Admin access required".into())); }
-    let admin_id = user.user_id.ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
+pub async fn admin_approve_chapter_translation_version(
+    State(state): State<Arc<AppState>>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, AppError> {
+    if user.role < 10 {
+        return Err(AppError::Forbidden("Admin access required".into()));
+    }
+    let admin_id = user
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
     let result = sqlx::query("UPDATE chapter_translation_versions SET status='approved', reviewed_by=$1, reviewed_at=NOW() WHERE id=$2 AND status='draft'").bind(admin_id).bind(id).execute(&state.db).await?;
-    if result.rows_affected()==0 { return Err(AppError::NotFound("Version not found or not in draft state".into())); }
-    Ok(Json(json!({"err":0,"msg":"Chapter translation version approved","id":id})))
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "Version not found or not in draft state".into(),
+        ));
+    }
+    Ok(Json(
+        json!({"err":0,"msg":"Chapter translation version approved","id":id}),
+    ))
 }
 
 /// Reject an immutable chapter translation version.
-pub async fn admin_reject_chapter_translation_version(State(state): State<Arc<AppState>>, user: AuthUser, Path(id): Path<i64>) -> Result<Json<Value>, AppError> {
-    if user.role < 10 { return Err(AppError::Forbidden("Admin access required".into())); }
-    let admin_id = user.user_id.ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
+pub async fn admin_reject_chapter_translation_version(
+    State(state): State<Arc<AppState>>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, AppError> {
+    if user.role < 10 {
+        return Err(AppError::Forbidden("Admin access required".into()));
+    }
+    let admin_id = user
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
     let result = sqlx::query("UPDATE chapter_translation_versions SET status='rejected', reviewed_by=$1, reviewed_at=NOW() WHERE id=$2 AND status='draft'").bind(admin_id).bind(id).execute(&state.db).await?;
-    if result.rows_affected()==0 { return Err(AppError::NotFound("Version not found or not in draft state".into())); }
-    Ok(Json(json!({"err":0,"msg":"Chapter translation version rejected","id":id})))
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "Version not found or not in draft state".into(),
+        ));
+    }
+    Ok(Json(
+        json!({"err":0,"msg":"Chapter translation version rejected","id":id}),
+    ))
 }
 
 /// Backfill tags for existing works.
 /// Iterates over works with fic_info entries and re-scrapes tags from the source.
-pub async fn admin_backfill_tags(State(state): State<Arc<AppState>>, user: AuthUser) -> Result<Json<Value>, AppError> {
-    if user.role < 10 { return Err(AppError::Forbidden("Admin access required".into())); }
+pub async fn admin_backfill_tags(
+    State(state): State<Arc<AppState>>,
+    user: AuthUser,
+) -> Result<Json<Value>, AppError> {
+    if user.role < 10 {
+        return Err(AppError::Forbidden("Admin access required".into()));
+    }
 
     // Get works that have fic_info but no fic_tags
     let works_without_tags: Vec<(String, i32)> = sqlx::query_as(
@@ -1788,7 +2038,7 @@ pub async fn admin_backfill_tags(State(state): State<Arc<AppState>>, user: AuthU
            LEFT JOIN fic_tags ft ON ft.url_id = fi.id
            WHERE ft.url_id IS NULL
            AND fi.work_id IS NOT NULL
-           LIMIT 100"#
+           LIMIT 100"#,
     )
     .fetch_all(&state.db)
     .await?;
@@ -1798,7 +2048,10 @@ pub async fn admin_backfill_tags(State(state): State<Arc<AppState>>, user: AuthU
 
     for (url_id, _work_id) in &works_without_tags {
         // Re-scrape tags for this fic
-        let query = &state.scraper_registry.lookup(&state.http_client, &url_id, None).await;
+        let query = &state
+            .scraper_registry
+            .lookup(&state.http_client, &url_id, None)
+            .await;
         match query {
             Ok(_meta) => {
                 // Tags would have been extracted during the lookup via extract_tags
@@ -1820,15 +2073,20 @@ pub async fn admin_backfill_tags(State(state): State<Arc<AppState>>, user: AuthU
 }
 
 /// Backfill fic bodies (chapters) for works that have metadata but no cached content.
-pub async fn admin_backfill_bodies(State(state): State<Arc<AppState>>, user: AuthUser) -> Result<Json<Value>, AppError> {
-    if user.role < 10 { return Err(AppError::Forbidden("Admin access required".into())); }
+pub async fn admin_backfill_bodies(
+    State(state): State<Arc<AppState>>,
+    user: AuthUser,
+) -> Result<Json<Value>, AppError> {
+    if user.role < 10 {
+        return Err(AppError::Forbidden("Admin access required".into()));
+    }
 
     // Get works that have fic_info but may not have cached body content
     let works: Vec<(String, String, i32)> = sqlx::query_as(
         r#"SELECT fi.id, fi.source, COALESCE(fi.work_id, 0) as work_id
            FROM fic_info fi
            WHERE fi.work_id IS NOT NULL
-           LIMIT 100"#
+           LIMIT 100"#,
     )
     .fetch_all(&state.db)
     .await?;
@@ -1845,12 +2103,26 @@ pub async fn admin_backfill_bodies(State(state): State<Arc<AppState>>, user: Aut
         }
 
         // Re-scrape to get chapter content
-        match state.scraper_registry.lookup(&state.http_client, url_id, None).await {
+        match state
+            .scraper_registry
+            .lookup(&state.http_client, url_id, None)
+            .await
+        {
             Ok(meta) => {
-                match state.scraper_registry.fetch_chapters(&state.http_client, &meta).await {
+                match state
+                    .scraper_registry
+                    .fetch_chapters(&state.http_client, &meta)
+                    .await
+                {
                     Ok(chapters) => {
                         if !chapters.is_empty() {
-                            let _ = crate::body_cache::save_body(&state.config, url_id, &chapters, None, 0);
+                            let _ = crate::body_cache::save_body(
+                                &state.config,
+                                url_id,
+                                &chapters,
+                                None,
+                                0,
+                            );
                             processed += 1;
                         } else {
                             skipped += 1;

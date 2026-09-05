@@ -13,18 +13,21 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
-    body::Body,
-    http::{header, Request, StatusCode},
-    routing::{get, post},
     Router,
+    body::Body,
+    http::{Request, StatusCode, header},
+    routing::{get, post},
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
-    DB_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+    DB_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
 }
 
 const USERNAME: &str = "reports_test_user";
@@ -50,8 +53,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -90,8 +93,11 @@ async fn app() -> Router {
             .await
             .expect("rate limiter"),
         ),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -111,7 +117,10 @@ async fn app() -> Router {
 
     Router::new()
         .route("/api/reports", post(fichub::routes::reports::create_report))
-        .route("/api/admin/reports", get(fichub::routes::reports::list_reports))
+        .route(
+            "/api/admin/reports",
+            get(fichub::routes::reports::list_reports),
+        )
         .route(
             "/api/admin/reports/{id}/resolve",
             post(fichub::routes::reports::resolve_report),
@@ -169,37 +178,36 @@ async fn seed_work(pool: &sqlx::PgPool, url_id: &str, title: &str, author: &str)
     .await
     .expect("seed fic_info failed");
 
-    let existing: Option<i32> = sqlx::query_scalar(
-        "SELECT id FROM works WHERE default_source_id = $1",
-    )
-    .bind(url_id)
-    .fetch_optional(pool)
-    .await
-    .expect("work lookup failed");
+    let existing: Option<i32> =
+        sqlx::query_scalar("SELECT id FROM works WHERE default_source_id = $1")
+            .bind(url_id)
+            .fetch_optional(pool)
+            .await
+            .expect("work lookup failed");
 
     let work_id = match existing {
         Some(id) => {
-            sqlx::query("UPDATE works SET canonical_title = $1, canonical_author = $2 WHERE id = $3")
-                .bind(title)
-                .bind(author)
-                .bind(id)
-                .execute(pool)
-                .await
-                .expect("update seeded work failed");
-            id
-        }
-        None => {
-            sqlx::query_scalar(
-                "INSERT INTO works (canonical_title, canonical_author, default_source_id)
-                 VALUES ($1, $2, $3) RETURNING id",
+            sqlx::query(
+                "UPDATE works SET canonical_title = $1, canonical_author = $2 WHERE id = $3",
             )
             .bind(title)
             .bind(author)
-            .bind(url_id)
-            .fetch_one(pool)
+            .bind(id)
+            .execute(pool)
             .await
-            .expect("seed work failed")
+            .expect("update seeded work failed");
+            id
         }
+        None => sqlx::query_scalar(
+            "INSERT INTO works (canonical_title, canonical_author, default_source_id)
+                 VALUES ($1, $2, $3) RETURNING id",
+        )
+        .bind(title)
+        .bind(author)
+        .bind(url_id)
+        .fetch_one(pool)
+        .await
+        .expect("seed work failed"),
     };
 
     sqlx::query("UPDATE fic_info SET work_id = $1 WHERE id = $2")
@@ -280,8 +288,13 @@ async fn send(
     };
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────
@@ -295,8 +308,13 @@ async fn logged_in_user_files_work_report() {
     let db = pool().await;
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME, 0).await;
-    let (work_id, _) =
-        seed_work(&db, "reports-post-a", &format!("{TITLE_PREFIX} Post A"), "Character A").await;
+    let (work_id, _) = seed_work(
+        &db,
+        "reports-post-a",
+        &format!("{TITLE_PREFIX} Post A"),
+        "Character A",
+    )
+    .await;
     let app = app().await;
     let token = auth_header(user_id, 0, USERNAME);
 
@@ -328,7 +346,10 @@ async fn logged_in_user_files_work_report() {
     assert_eq!(row.1, "work");
     assert_eq!(row.2, work_id);
     assert_eq!(row.3, "Wrong author listed");
-    assert_eq!(row.4.as_ref().and_then(|v| v["expected_author"].as_str()), Some("Character B"));
+    assert_eq!(
+        row.4.as_ref().and_then(|v| v["expected_author"].as_str()),
+        Some("Character B")
+    );
     assert_eq!(row.5, "open");
 
     // Anonymous → login required.
@@ -388,8 +409,13 @@ async fn admin_lists_and_resolves_reports() {
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME, 0).await;
     let admin_id = seed_user(&db, ADMIN_USERNAME, 10).await;
-    let (work_id, _) =
-        seed_work(&db, "reports-admin-a", &format!("{TITLE_PREFIX} Admin A"), "Character A").await;
+    let (work_id, _) = seed_work(
+        &db,
+        "reports-admin-a",
+        &format!("{TITLE_PREFIX} Admin A"),
+        "Character A",
+    )
+    .await;
     let app = app().await;
     let admin_token = auth_header(admin_id, 10, ADMIN_USERNAME);
 
@@ -432,7 +458,11 @@ async fn admin_lists_and_resolves_reports() {
 
     // Now the open list is empty.
     let (_, body) = get_json(&app, "/api/admin/reports", Some(&admin_token)).await;
-    assert_eq!(body["items"].as_array().map(|a| a.len()), Some(0), "no open left: {body}");
+    assert_eq!(
+        body["items"].as_array().map(|a| a.len()),
+        Some(0),
+        "no open left: {body}"
+    );
 
     // Resolving again → 404 (already handled).
     let (status, _) = send(
@@ -454,7 +484,11 @@ async fn admin_lists_and_resolves_reports() {
         Some(json!({ "action": "dismissed" })),
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "dismissing a dismissed report must 404");
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "dismissing a dismissed report must 404"
+    );
 }
 
 /// Admin report endpoints require role >= 10.
@@ -465,14 +499,23 @@ async fn admin_report_endpoints_require_role_10() {
     let db = pool().await;
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME, 0).await;
-    let (work_id, _) =
-        seed_work(&db, "reports-forbid-a", &format!("{TITLE_PREFIX} Forbid A"), "Character A").await;
+    let (work_id, _) = seed_work(
+        &db,
+        "reports-forbid-a",
+        &format!("{TITLE_PREFIX} Forbid A"),
+        "Character A",
+    )
+    .await;
     let report_id = seed_report(&db, user_id, "work", work_id, "Wrong author", "open").await;
     let app = app().await;
     let user_token = auth_header(user_id, 0, USERNAME);
 
     let (status, _) = get_json(&app, "/api/admin/reports", Some(&user_token)).await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "role 0 list must be forbidden");
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "role 0 list must be forbidden"
+    );
 
     let (status, _) = send(
         &app,
@@ -482,7 +525,11 @@ async fn admin_report_endpoints_require_role_10() {
         Some(json!({ "action": "resolved" })),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "role 0 resolve must be forbidden");
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "role 0 resolve must be forbidden"
+    );
 }
 
 async fn get_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCode, Value) {

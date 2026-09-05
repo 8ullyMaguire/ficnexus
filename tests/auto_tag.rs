@@ -12,15 +12,17 @@
 
 use std::sync::{Mutex, OnceLock};
 
-
-
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
-    DB_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+    DB_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
 }
 
 async fn pool() -> sqlx::PgPool {
-    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
+    let url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set (run with .env loaded)");
     sqlx::PgPool::connect(&url).await.expect("connect pool")
 }
 
@@ -49,12 +51,14 @@ async fn seed_fic(pool: &sqlx::PgPool, id: &str, description: &str) {
 /// Seed a tag row; returns its id (idempotent — tags are shared, cleanup
 /// only removes the fic_tags links).
 async fn seed_tag(pool: &sqlx::PgPool, name: &str, type_id: i16) -> i32 {
-    sqlx::query("INSERT INTO tags (name, tag_type_id) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING")
-        .bind(name)
-        .bind(type_id)
-        .execute(pool)
-        .await
-        .expect("seed_tag failed");
+    sqlx::query(
+        "INSERT INTO tags (name, tag_type_id) VALUES ($1, $2) ON CONFLICT (name) DO NOTHING",
+    )
+    .bind(name)
+    .bind(type_id)
+    .execute(pool)
+    .await
+    .expect("seed_tag failed");
     sqlx::query_scalar("SELECT id FROM tags WHERE name = $1")
         .bind(name)
         .fetch_one(pool)
@@ -87,8 +91,12 @@ async fn seed_tag_embedding(pool: &sqlx::PgPool, tag_id: i32, name: &str) {
 }
 
 async fn cleanup(pool: &sqlx::PgPool) {
-    let _ = sqlx::query("DELETE FROM fic_tags WHERE url_id LIKE 'auto_tag_%'").execute(pool).await;
-    let _ = sqlx::query("DELETE FROM fic_info WHERE id LIKE 'auto_tag_%'").execute(pool).await;
+    let _ = sqlx::query("DELETE FROM fic_tags WHERE url_id LIKE 'auto_tag_%'")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM fic_info WHERE id LIKE 'auto_tag_%'")
+        .execute(pool)
+        .await;
 }
 
 /// recommend_tags inserts a machine-suggested fic_tags row for a tag whose
@@ -137,12 +145,13 @@ async fn recommend_tags_inserts_machine_suggestion() {
         .await
         .expect("second run");
     assert!(again.iter().any(|s| s.tag_id == tag), "{again:?}");
-    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM fic_tags WHERE url_id = $1 AND tag_id = $2")
-        .bind(url_id)
-        .bind(tag)
-        .fetch_one(&db)
-        .await
-        .expect("count");
+    let count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM fic_tags WHERE url_id = $1 AND tag_id = $2")
+            .bind(url_id)
+            .bind(tag)
+            .fetch_one(&db)
+            .await
+            .expect("count");
     assert_eq!(count.0, 1, "ON CONFLICT DO NOTHING keeps a single row");
 
     cleanup(&db).await;

@@ -38,11 +38,14 @@ pub async fn create_kepub(
     let kepub_path = work_dir.join("output.kepub");
     let file = fs::File::create(&kepub_path)?;
     let mut writer = zip::ZipWriter::new(file);
-    let options: zip::write::SimpleFileOptions =
-        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let options: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
 
     // MIME type (must be first, uncompressed, per OCF spec)
-    writer.start_file("mimetype", options.compression_method(zip::CompressionMethod::Stored))?;
+    writer.start_file(
+        "mimetype",
+        options.compression_method(zip::CompressionMethod::Stored),
+    )?;
     writer.write_all(b"application/epub+zip")?;
 
     writer.start_file("META-INF/container.xml", options)?;
@@ -92,12 +95,12 @@ pub async fn create_kepub(
             format!("OEBPS/chapter_{}.xhtml", chapter.chapter_id),
             options,
         )?;
-        writer.write_all(
-            build_chapter_xhtml(&chapter.title, &body).as_bytes(),
-        )?;
+        writer.write_all(build_chapter_xhtml(&chapter.title, &body).as_bytes())?;
     }
 
-    writer.finish().map_err(|e| ExportError::ZipError(e.to_string()))?;
+    writer
+        .finish()
+        .map_err(|e| ExportError::ZipError(e.to_string()))?;
 
     // ---- MD5 hash ---------------------------------------------------------
     let data = fs::read(&kepub_path)?;
@@ -217,8 +220,18 @@ fn build_chapter_xhtml(title: &str, body_html: &str) -> String {
 /// Implemented as a small tag scanner (regex-lite has no backreferences, and
 /// a hand-rolled stack is more robust for nested HTML anyway).
 fn wrap_kobo_spans(content: &str, counter: &mut usize) -> String {
-    const BLOCK_TAGS: [&str; 10] =
-        ["p", "h1", "h2", "h3", "h4", "h5", "h6", "div", "li", "blockquote"];
+    const BLOCK_TAGS: [&str; 10] = [
+        "p",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "div",
+        "li",
+        "blockquote",
+    ];
 
     let bytes = content.as_bytes();
     let mut result = String::with_capacity(content.len() + 256);
@@ -277,9 +290,7 @@ fn wrap_kobo_spans(content: &str, counter: &mut usize) -> String {
                     *counter += 1;
                     let id = format!("kobo.{}.1", *counter);
                     result.push_str(&content[last..start]);
-                    result.push_str(&format!(
-                        "<span class=\"koboSpan\" id=\"{id}\">"
-                    ));
+                    result.push_str(&format!("<span class=\"koboSpan\" id=\"{id}\">"));
                     result.push_str(&content[start..tag_end]);
                     result.push_str("</span>");
                     last = tag_end;
@@ -389,11 +400,10 @@ mod tests {
     #[test]
     fn test_wrap_kobo_spans_heading_and_attrs() {
         let mut counter = 0;
-        let out = wrap_kobo_spans(
-            "<h2 class=\"title\">Hi</h2><p>Body</p>",
-            &mut counter,
-        );
-        assert!(out.starts_with("<span class=\"koboSpan\" id=\"kobo.1.1\"><h2 class=\"title\">Hi</h2></span>"));
+        let out = wrap_kobo_spans("<h2 class=\"title\">Hi</h2><p>Body</p>", &mut counter);
+        assert!(out.starts_with(
+            "<span class=\"koboSpan\" id=\"kobo.1.1\"><h2 class=\"title\">Hi</h2></span>"
+        ));
         assert!(out.ends_with("<span class=\"koboSpan\" id=\"kobo.2.1\"><p>Body</p></span>"));
     }
 
@@ -402,10 +412,7 @@ mod tests {
         let mut counter = 0;
         // The <p> inside the <div> is nested — only the outermost <div> and
         // the standalone <p> should be wrapped.
-        let out = wrap_kobo_spans(
-            "<div><p>Nested</p></div><p>Standalone</p>",
-            &mut counter,
-        );
+        let out = wrap_kobo_spans("<div><p>Nested</p></div><p>Standalone</p>", &mut counter);
         assert_eq!(
             out,
             "<span class=\"koboSpan\" id=\"kobo.1.1\"><div><p>Nested</p></div></span>\
@@ -459,7 +466,12 @@ mod tests {
 
         // OCF-required entries
         let names: Vec<String> = archive.file_names().map(|s| s.to_string()).collect();
-        for required in ["mimetype", "META-INF/container.xml", "OEBPS/content.opf", "OEBPS/nav.xhtml"] {
+        for required in [
+            "mimetype",
+            "META-INF/container.xml",
+            "OEBPS/content.opf",
+            "OEBPS/nav.xhtml",
+        ] {
             assert!(
                 names.iter().any(|n| n == required),
                 "kepub missing {required}: {names:?}"
@@ -476,19 +488,31 @@ mod tests {
             );
         }
         let mut mime_contents = String::new();
-        archive.by_name("mimetype").unwrap().read_to_string(&mut mime_contents).unwrap();
+        archive
+            .by_name("mimetype")
+            .unwrap()
+            .read_to_string(&mut mime_contents)
+            .unwrap();
         assert_eq!(mime_contents, "application/epub+zip");
 
         // Chapter files contain koboSpan wrappers
         let mut ch1 = String::new();
-        archive.by_name("OEBPS/chapter_1.xhtml").unwrap().read_to_string(&mut ch1).unwrap();
+        archive
+            .by_name("OEBPS/chapter_1.xhtml")
+            .unwrap()
+            .read_to_string(&mut ch1)
+            .unwrap();
         assert!(ch1.contains("koboSpan"));
         assert!(ch1.contains("kobo.1.1"));
         assert!(ch1.contains("kobo.2.1"));
         assert!(ch1.contains("Hello world."));
         // Second chapter continues the counter
         let mut ch2 = String::new();
-        archive.by_name("OEBPS/chapter_2.xhtml").unwrap().read_to_string(&mut ch2).unwrap();
+        archive
+            .by_name("OEBPS/chapter_2.xhtml")
+            .unwrap()
+            .read_to_string(&mut ch2)
+            .unwrap();
         assert!(ch2.contains("kobo.3.1"));
         assert!(ch2.contains("kobo.4.1"));
 
@@ -502,8 +526,12 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
 
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let (_, a) = rt.block_on(create_kepub(&make_meta(), &make_chapters(), &tmp)).unwrap();
-        let (_, b) = rt.block_on(create_kepub(&make_meta(), &make_chapters(), &tmp)).unwrap();
+        let (_, a) = rt
+            .block_on(create_kepub(&make_meta(), &make_chapters(), &tmp))
+            .unwrap();
+        let (_, b) = rt
+            .block_on(create_kepub(&make_meta(), &make_chapters(), &tmp))
+            .unwrap();
         assert_eq!(a, b, "kepub md5 must be deterministic");
 
         let _ = std::fs::remove_dir_all(&tmp);

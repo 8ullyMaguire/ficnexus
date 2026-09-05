@@ -9,11 +9,11 @@
 // enable `tokio1-rustls-tls` (or `tokio1-native-tls`) and switch to
 // `SmtpTransport::starttls_relay` / `relay` instead.
 
-use lettre::message::{Attachment, Mailbox, Message, MultiPart, SinglePart};
-use lettre::message::header::ContentType;
-use lettre::transport::smtp::authentication::Credentials;
-use lettre::transport::smtp::SmtpTransport;
 use lettre::Transport;
+use lettre::message::header::ContentType;
+use lettre::message::{Attachment, Mailbox, Message, MultiPart, SinglePart};
+use lettre::transport::smtp::SmtpTransport;
+use lettre::transport::smtp::authentication::Credentials;
 use std::path::{Path, PathBuf};
 
 /// SMTP settings for the relay (mirrors Config's SMTP_* fields).
@@ -57,14 +57,17 @@ impl SmtpConfig {
 
 /// Build + send a plain (no-attachment) email with the given subject/body.
 /// Pure send path for notifications and the weekly digest.
-pub fn send_digest_email(cfg: &SmtpConfig, to: &str, subject: &str, body: &str) -> Result<(), String> {
+pub fn send_digest_email(
+    cfg: &SmtpConfig,
+    to: &str,
+    subject: &str,
+    body: &str,
+) -> Result<(), String> {
     let from: Mailbox = cfg
         .from
         .parse()
         .map_err(|e| format!("invalid from '{}': {}", cfg.from, e))?;
-    let to: Mailbox = to
-        .parse()
-        .map_err(|e| format!("invalid to '{to}': {e}"))?;
+    let to: Mailbox = to.parse().map_err(|e| format!("invalid to '{to}': {e}"))?;
     let msg = Message::builder()
         .from(from)
         .to(to)
@@ -101,11 +104,16 @@ pub fn build_kindle_message(
         .parse()
         .map_err(|e| format!("invalid to address '{}': {}", to, e))?;
 
-    let attachment_bytes = std::fs::read(attachment_path)
-        .map_err(|e| format!("failed to read attachment {}: {}", attachment_path.display(), e))?;
+    let attachment_bytes = std::fs::read(attachment_path).map_err(|e| {
+        format!(
+            "failed to read attachment {}: {}",
+            attachment_path.display(),
+            e
+        )
+    })?;
 
-    let content_type: ContentType = ContentType::parse("application/epub+zip")
-        .unwrap_or_else(|_| ContentType::TEXT_PLAIN);
+    let content_type: ContentType =
+        ContentType::parse("application/epub+zip").unwrap_or_else(|_| ContentType::TEXT_PLAIN);
 
     Message::builder()
         .from(from)
@@ -268,7 +276,12 @@ impl Mailer for MockMailer {
 
     fn clone_box(&self) -> Box<dyn Mailer> {
         Box::new(MockMailer {
-            sent: self.sent.lock().unwrap_or_else(|e| e.into_inner()).clone().into(),
+            sent: self
+                .sent
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone()
+                .into(),
             fail_count: std::sync::Mutex::new(0),
         })
     }
@@ -330,37 +343,43 @@ mod tests {
     #[test]
     fn build_kindle_message_rejects_bad_addresses() {
         let (path, _dir) = temp_epub();
-        assert!(build_kindle_message(
-            "not-an-address",
-            "my.kindle@example.com",
-            "s",
-            "b",
-            &path,
-            "test.epub",
-        )
-        .is_err());
-        assert!(build_kindle_message(
-            "fichub@example.com",
-            "not-an-address",
-            "s",
-            "b",
-            &path,
-            "test.epub",
-        )
-        .is_err());
+        assert!(
+            build_kindle_message(
+                "not-an-address",
+                "my.kindle@example.com",
+                "s",
+                "b",
+                &path,
+                "test.epub",
+            )
+            .is_err()
+        );
+        assert!(
+            build_kindle_message(
+                "fichub@example.com",
+                "not-an-address",
+                "s",
+                "b",
+                &path,
+                "test.epub",
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn build_kindle_message_missing_attachment_fails() {
-        assert!(build_kindle_message(
-            "fichub@example.com",
-            "my.kindle@example.com",
-            "s",
-            "b",
-            Path::new("/nonexistent/definitely/missing.epub"),
-            "test.epub",
-        )
-        .is_err());
+        assert!(
+            build_kindle_message(
+                "fichub@example.com",
+                "my.kindle@example.com",
+                "s",
+                "b",
+                Path::new("/nonexistent/definitely/missing.epub"),
+                "test.epub",
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -385,7 +404,10 @@ mod tests {
     fn validate_email_accepts_typical_addresses() {
         assert!(validate_email("my.kindle@free.kindle.com").is_ok());
         assert!(validate_email("user@example.com").is_ok());
-        assert!(validate_email("  spaced@example.com  ").is_ok(), "trims whitespace");
+        assert!(
+            validate_email("  spaced@example.com  ").is_ok(),
+            "trims whitespace"
+        );
     }
 
     #[test]
@@ -396,8 +418,14 @@ mod tests {
         assert!(validate_email("@example.com").is_err(), "empty local");
         assert!(validate_email("user@").is_err(), "empty domain");
         assert!(validate_email("user@nodot").is_err(), "domain without dot");
-        assert!(validate_email("user with space@example.com").is_err(), "space in local");
-        assert!(validate_email("user@exa mple.com").is_err(), "space in domain");
+        assert!(
+            validate_email("user with space@example.com").is_err(),
+            "space in local"
+        );
+        assert!(
+            validate_email("user@exa mple.com").is_err(),
+            "space in domain"
+        );
     }
 
     #[test]
@@ -464,8 +492,7 @@ struct TempDir(PathBuf);
 #[cfg(test)]
 impl TempDir {
     fn new() -> Self {
-        let dir =
-            std::env::temp_dir().join(format!("fichub_mailer_test_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("fichub_mailer_test_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         TempDir(dir)
     }

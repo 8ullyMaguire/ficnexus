@@ -12,10 +12,10 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
 use serde_json::Value;
 use tower::ServiceExt; // oneshot
@@ -54,8 +54,8 @@ async fn app() -> Router {
     let config = test_config();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -76,21 +76,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -110,7 +118,10 @@ async fn app() -> Router {
 
     Router::new()
         .route("/api/series/{id}", get(fichub::routes::series::get_series))
-        .route("/api/authors/{name}", get(fichub::routes::series::get_author))
+        .route(
+            "/api/authors/{name}",
+            get(fichub::routes::series::get_author),
+        )
         .with_state(state)
 }
 
@@ -118,8 +129,13 @@ async fn get_json(app: &Router, uri: &str) -> (StatusCode, Value) {
     let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 /// Seed a work + its default fic_info source. Returns (work_id, url_id).
@@ -232,9 +248,30 @@ async fn series_detail_ordered_with_next_in_series() {
     let db = pool().await;
     cleanup(&db).await;
 
-    let (w1, u1) = seed_work(&db, "seriesapi_a", "SeriesApiTest Alpha", "SeriesApiTest Author", 1000).await;
-    let (w2, u2) = seed_work(&db, "seriesapi_b", "SeriesApiTest Beta", "SeriesApiTest Author", 2000).await;
-    let (w3, u3) = seed_work(&db, "seriesapi_c", "SeriesApiTest Gamma", "SeriesApiTest Author", 3000).await;
+    let (w1, u1) = seed_work(
+        &db,
+        "seriesapi_a",
+        "SeriesApiTest Alpha",
+        "SeriesApiTest Author",
+        1000,
+    )
+    .await;
+    let (w2, u2) = seed_work(
+        &db,
+        "seriesapi_b",
+        "SeriesApiTest Beta",
+        "SeriesApiTest Author",
+        2000,
+    )
+    .await;
+    let (w3, u3) = seed_work(
+        &db,
+        "seriesapi_c",
+        "SeriesApiTest Gamma",
+        "SeriesApiTest Author",
+        3000,
+    )
+    .await;
     let sid = seed_series(&db, "SeriesApiTest Series", &[w1, w2, w3]).await;
 
     let router = app().await;
@@ -261,7 +298,10 @@ async fn series_detail_ordered_with_next_in_series() {
     assert_eq!(works[0]["next_in_series"]["url_id"], u2);
     assert_eq!(works[1]["next_in_series"]["work_id"], w3);
     assert_eq!(works[1]["next_in_series"]["url_id"], u3);
-    assert!(works[2]["next_in_series"].is_null(), "last work has no next");
+    assert!(
+        works[2]["next_in_series"].is_null(),
+        "last work has no next"
+    );
 
     cleanup(&db).await;
 }
@@ -291,8 +331,22 @@ async fn author_detail_aggregates_works_and_stats() {
     let db = pool().await;
     cleanup(&db).await;
 
-    let (w1, _u1) = seed_work(&db, "seriesapi_author_a", "SeriesApiTest Auth A", "SeriesApiTest Person", 1000).await;
-    let (w2, _u2) = seed_work(&db, "seriesapi_author_b", "SeriesApiTest Auth B", "SeriesApiTest Person", 2000).await;
+    let (w1, _u1) = seed_work(
+        &db,
+        "seriesapi_author_a",
+        "SeriesApiTest Auth A",
+        "SeriesApiTest Person",
+        1000,
+    )
+    .await;
+    let (w2, _u2) = seed_work(
+        &db,
+        "seriesapi_author_b",
+        "SeriesApiTest Auth B",
+        "SeriesApiTest Person",
+        2000,
+    )
+    .await;
     // Orphan source (no work yet) — must still surface in the bibliography.
     sqlx::query(
         r#"INSERT INTO fic_info (
@@ -318,8 +372,14 @@ async fn author_detail_aggregates_works_and_stats() {
     assert_eq!(body["author"]["total_words"], 3500);
 
     let works = body["works"].as_array().expect("works array");
-    let ids: Vec<i32> = works.iter().filter_map(|w| w["work_id"].as_i64().map(|v| v as i32)).collect();
-    assert!(ids.contains(&w1) && ids.contains(&w2), "canonical works present: {ids:?}");
+    let ids: Vec<i32> = works
+        .iter()
+        .filter_map(|w| w["work_id"].as_i64().map(|v| v as i32))
+        .collect();
+    assert!(
+        ids.contains(&w1) && ids.contains(&w2),
+        "canonical works present: {ids:?}"
+    );
 
     let orphans = body["orphans"].as_array().expect("orphans array");
     assert_eq!(orphans.len(), 1);

@@ -12,8 +12,8 @@
 use async_trait::async_trait;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct TouchFluffyTailScraper;
 
@@ -23,7 +23,11 @@ impl SiteScraper for TouchFluffyTailScraper {
         url.contains("touchfluffytail.org/story/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
         let doc = Html::parse_document(&html);
 
@@ -35,7 +39,8 @@ impl SiteScraper for TouchFluffyTailScraper {
         let mut tags: Vec<String> = Vec::new();
 
         // The story article.
-        let article_sel = Selector::parse("article[id^='post-']").map_err(|e| ScrapeError::ParseError(e.to_string()))?;
+        let article_sel = Selector::parse("article[id^='post-']")
+            .map_err(|e| ScrapeError::ParseError(e.to_string()))?;
         if let Some(article) = doc.select(&article_sel).next() {
             // Title
             if let Ok(h1_sel) = Selector::parse("h1.entry-title") {
@@ -78,7 +83,12 @@ impl SiteScraper for TouchFluffyTailScraper {
             return Err(ScrapeError::ParseError("touchfluffytail: no title".into()));
         }
 
-        let story_id = url.trim_end_matches('/').rsplit('/').next().unwrap_or("").to_string();
+        let story_id = url
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+            .to_string();
         let now = chrono::Utc::now().timestamp_millis();
         Ok(FicMetadata {
             url_id: format!("tft_{story_id}"),
@@ -108,7 +118,9 @@ impl SiteScraper for TouchFluffyTailScraper {
     ) -> Result<Vec<Chapter>, ScrapeError> {
         let content = fetch_chapter_text(client, &meta.source).await;
         if content.is_empty() {
-            return Err(ScrapeError::ParseError("touchfluffytail: no story text".into()));
+            return Err(ScrapeError::ParseError(
+                "touchfluffytail: no story text".into(),
+            ));
         }
         Ok(vec![Chapter {
             chapter_id: 1,
@@ -198,8 +210,15 @@ mod tests {
                     if let Some(el) = article.select(&ec_sel).next() {
                         for child in el.children() {
                             if let Some(cref) = scraper::ElementRef::wrap(child) {
-                                let is_rating = cref.value().attr("class").map(|c| c.contains("post-ratings")).unwrap_or(false);
-                                let has_rating = cref.select(&Selector::parse("div.post-ratings").unwrap()).next().is_some();
+                                let is_rating = cref
+                                    .value()
+                                    .attr("class")
+                                    .map(|c| c.contains("post-ratings"))
+                                    .unwrap_or(false);
+                                let has_rating = cref
+                                    .select(&Selector::parse("div.post-ratings").unwrap())
+                                    .next()
+                                    .is_some();
                                 if !is_rating && !has_rating {
                                     s.push_str(&cref.inner_html());
                                 }

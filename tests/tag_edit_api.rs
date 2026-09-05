@@ -13,12 +13,12 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::{delete, get, post, put},
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -51,8 +51,8 @@ async fn app() -> Router {
     config.tag_vote_limit_per_hour = 100_000;
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -80,17 +80,22 @@ async fn app() -> Router {
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -109,10 +114,22 @@ async fn app() -> Router {
     });
 
     Router::new()
-        .route("/api/curator/tags/{id}", put(fichub::tags::curator::update_tag))
-        .route("/api/curator/tags/{id}", delete(fichub::tags::curator::delete_tag))
-        .route("/api/curator/alias", post(fichub::tags::curator::create_alias))
-        .route("/api/curator/merge", post(fichub::tags::curator::merge_tags))
+        .route(
+            "/api/curator/tags/{id}",
+            put(fichub::tags::curator::update_tag),
+        )
+        .route(
+            "/api/curator/tags/{id}",
+            delete(fichub::tags::curator::delete_tag),
+        )
+        .route(
+            "/api/curator/alias",
+            post(fichub::tags::curator::create_alias),
+        )
+        .route(
+            "/api/curator/merge",
+            post(fichub::tags::curator::merge_tags),
+        )
         .route("/api/curator/flags", get(fichub::tags::curator::list_flags))
         .route(
             "/api/curator/flags/{id}/resolve",
@@ -181,8 +198,16 @@ async fn cleanup(pool: &sqlx::PgPool) {
         .await;
 }
 
-async fn put_json(app: &Router, uri: &str, token: Option<&str>, body: Value) -> (StatusCode, Value) {
-    let mut req = Request::builder().method("PUT").uri(uri).header("content-type", "application/json");
+async fn put_json(
+    app: &Router,
+    uri: &str,
+    token: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
+    let mut req = Request::builder()
+        .method("PUT")
+        .uri(uri)
+        .header("content-type", "application/json");
     if let Some(t) = token {
         req = req.header("authorization", t);
     }
@@ -192,8 +217,11 @@ async fn put_json(app: &Router, uri: &str, token: Option<&str>, body: Value) -> 
         .await
         .unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
-    let v: Value = serde_json::from_slice(&bytes).unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let v: Value = serde_json::from_slice(&bytes)
+        .unwrap_or(json!({ "raw": String::from_utf8_lossy(&bytes).to_string() }));
     (status, v)
 }
 
@@ -213,7 +241,13 @@ async fn tag_edit_updates_description_and_type() {
     let ca = curator_auth(curator, "tagedit_curator");
 
     // Anonymous → HTTP 400 err 401 (400-as-401 convention).
-    let (s, b) = put_json(&app, &format!("/api/curator/tags/{tag_id}"), None, json!({ "description": "nope" })).await;
+    let (s, b) = put_json(
+        &app,
+        &format!("/api/curator/tags/{tag_id}"),
+        None,
+        json!({ "description": "nope" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED, "no auth: {b}");
     assert_eq!(b["err"], 401, "no auth err: {b}");
 
@@ -227,15 +261,19 @@ async fn tag_edit_updates_description_and_type() {
     .await;
     assert_eq!(s, StatusCode::OK, "update: {b}");
     assert_eq!(b["err"], 0, "update err: {b}");
-    assert_eq!(b["tag"]["description"], "A curated description", "body: {b}");
+    assert_eq!(
+        b["tag"]["description"], "A curated description",
+        "body: {b}"
+    );
     assert_eq!(b["tag"]["tag_type_id"], 4, "body: {b}");
 
     // The DB row reflects the update.
-    let (desc, type_id): (Option<String>, i16) = sqlx::query_as("SELECT description, tag_type_id FROM tags WHERE id = $1")
-        .bind(tag_id)
-        .fetch_one(&db)
-        .await
-        .expect("tag row");
+    let (desc, type_id): (Option<String>, i16) =
+        sqlx::query_as("SELECT description, tag_type_id FROM tags WHERE id = $1")
+            .bind(tag_id)
+            .fetch_one(&db)
+            .await
+            .expect("tag row");
     assert_eq!(desc.as_deref(), Some("A curated description"));
     assert_eq!(type_id, 4);
 
@@ -253,12 +291,24 @@ async fn tag_edit_updates_description_and_type() {
     assert_eq!(b["tag"]["tag_type_id"], 4, "type preserved: {b}");
 
     // Empty update → err -1.
-    let (s, b) = put_json(&app, &format!("/api/curator/tags/{tag_id}"), Some(&ca), json!({})).await;
+    let (s, b) = put_json(
+        &app,
+        &format!("/api/curator/tags/{tag_id}"),
+        Some(&ca),
+        json!({}),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "empty update: {b}");
     assert_eq!(b["err"], -1, "empty update err: {b}");
 
     // Missing tag → err -5.
-    let (s, b) = put_json(&app, "/api/curator/tags/999999999", Some(&ca), json!({ "description": "x" })).await;
+    let (s, b) = put_json(
+        &app,
+        "/api/curator/tags/999999999",
+        Some(&ca),
+        json!({ "description": "x" }),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "missing tag: {b}");
     assert_eq!(b["err"], -5, "missing tag err: {b}");
 
@@ -286,7 +336,10 @@ async fn tag_edit_validates_tag_type_id() {
     .await;
     assert_eq!(s, StatusCode::OK, "bad type: {b}");
     assert_eq!(b["err"], -1, "bad type err: {b}");
-    assert!(b["msg"].to_string().contains("unknown tag_type_id"), "msg: {b}");
+    assert!(
+        b["msg"].to_string().contains("unknown tag_type_id"),
+        "msg: {b}"
+    );
 
     // A valid type is applied.
     let (s, b) = put_json(

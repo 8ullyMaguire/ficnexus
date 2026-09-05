@@ -1,16 +1,16 @@
 use axum::{
-    extract::{Query, State},
     Json,
+    extract::{Query, State},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::sync::Arc;
 
 use crate::error::{AppError, AppResult};
 use crate::search::builder::{
-    parse_tag_filters, FicSearchRow, SearchParams, SearchQueryBuilder, TagFilter,
+    FicSearchRow, SearchParams, SearchQueryBuilder, TagFilter, parse_tag_filters,
 };
 use crate::search::parser::{
     extract_excluded_terms, extract_field_queries, extract_fielded_terms, extract_text_tsquery,
@@ -89,28 +89,15 @@ impl SearchQueryParams {
     /// LLM-translated params go through the exact same parsing path as a
     /// hand-built query string.
     pub(super) fn into_search_params(self) -> AppResult<SearchParams> {
-        let include_tags = self
-            .include_tags
-            .as_deref()
-            .unwrap_or("")
-            .to_string();
-        let exclude_tags = self
-            .exclude_tags
-            .as_deref()
-            .unwrap_or("")
-            .to_string();
-        let include_any_tags = self
-            .include_any_tags
-            .as_deref()
-            .unwrap_or("")
-            .to_string();
+        let include_tags = self.include_tags.as_deref().unwrap_or("").to_string();
+        let exclude_tags = self.exclude_tags.as_deref().unwrap_or("").to_string();
+        let include_any_tags = self.include_any_tags.as_deref().unwrap_or("").to_string();
 
         let date_from = match self.date_from {
             Some(ref s) if !s.is_empty() => {
-                let dt = DateTime::parse_from_rfc3339(s)
-                    .map_err(|e| {
-                        AppError::BadRequest(format!("Invalid date_from '{}': {}", s, e))
-                    })?;
+                let dt = DateTime::parse_from_rfc3339(s).map_err(|e| {
+                    AppError::BadRequest(format!("Invalid date_from '{}': {}", s, e))
+                })?;
                 Some(dt.with_timezone(&Utc))
             }
             _ => None,
@@ -119,9 +106,7 @@ impl SearchQueryParams {
         let date_to = match self.date_to {
             Some(ref s) if !s.is_empty() => {
                 let dt = DateTime::parse_from_rfc3339(s)
-                    .map_err(|e| {
-                        AppError::BadRequest(format!("Invalid date_to '{}': {}", s, e))
-                    })?;
+                    .map_err(|e| AppError::BadRequest(format!("Invalid date_to '{}': {}", s, e)))?;
                 Some(dt.with_timezone(&Utc))
             }
             _ => None,
@@ -130,8 +115,7 @@ impl SearchQueryParams {
         // Parse primary_tag
         let primary_tag = match self.primary_tag {
             Some(ref s) if !s.is_empty() => {
-                let filters = parse_tag_filters(s)
-                    .map_err(|e| AppError::BadRequest(e))?;
+                let filters = parse_tag_filters(s).map_err(|e| AppError::BadRequest(e))?;
                 filters.into_iter().next()
             }
             _ => None,
@@ -139,11 +123,10 @@ impl SearchQueryParams {
 
         // Parse tag_ids
         let tag_ids = match self.tag_ids {
-            Some(ref s) if !s.is_empty() => {
-                s.split(',')
-                    .filter_map(|part| part.trim().parse::<i32>().ok())
-                    .collect()
-            }
+            Some(ref s) if !s.is_empty() => s
+                .split(',')
+                .filter_map(|part| part.trim().parse::<i32>().ok())
+                .collect(),
             _ => Vec::new(),
         };
 
@@ -161,10 +144,8 @@ impl SearchQueryParams {
         Ok(SearchParams {
             q: self.q.filter(|s| !s.is_empty()),
             fuzzy: false,
-            include_tags: parse_tag_filters(&include_tags)
-                .map_err(|e| AppError::BadRequest(e))?,
-            exclude_tags: parse_tag_filters(&exclude_tags)
-                .map_err(|e| AppError::BadRequest(e))?,
+            include_tags: parse_tag_filters(&include_tags).map_err(|e| AppError::BadRequest(e))?,
+            exclude_tags: parse_tag_filters(&exclude_tags).map_err(|e| AppError::BadRequest(e))?,
             exclude_tag_types,
             strict_gen: self.strict_gen.unwrap_or(false),
             include_any_tags: parse_tag_filters(&include_any_tags)
@@ -614,10 +595,7 @@ pub async fn run_search(
 
     // --- Execute count query ---
     let mut count_query = builder.build_count_query();
-    let total: (i64,) = count_query
-        .build_query_as()
-        .fetch_one(&state.db)
-        .await?;
+    let total: (i64,) = count_query.build_query_as().fetch_one(&state.db).await?;
     let mut total = total.0;
     let mut fuzzy_builder: Option<SearchQueryBuilder> = None;
 
@@ -672,7 +650,12 @@ pub async fn run_search(
         || search_params.max_bookmarks.is_some()
         || search_params.rating.is_some()
         || search_params.min_comments.is_some();
-    if total == 0 && search_params.q.is_some() && !has_advanced_filters && !has_boolean_ops && !search_params.fuzzy {
+    if total == 0
+        && search_params.q.is_some()
+        && !has_advanced_filters
+        && !has_boolean_ops
+        && !search_params.fuzzy
+    {
         let mut fuzzy_params = search_params.clone();
         fuzzy_params.fuzzy = true;
         let builder = SearchQueryBuilder::new(
@@ -702,10 +685,7 @@ pub async fn run_search(
     } else {
         builder.build_data_query()
     };
-    let rows: Vec<FicSearchRow> = data_query
-        .build_query_as()
-        .fetch_all(&state.db)
-        .await?;
+    let rows: Vec<FicSearchRow> = data_query.build_query_as().fetch_all(&state.db).await?;
 
     // --- Map rows to SearchResult ---
     let results: Vec<SearchResultData> = if rows.is_empty() {
@@ -781,8 +761,7 @@ pub async fn run_search(
                         })
                     })
                     .collect();
-                let (comment_count, kudos_count) =
-                    stats_by_fic.remove(&row.id).unwrap_or((0, 0));
+                let (comment_count, kudos_count) = stats_by_fic.remove(&row.id).unwrap_or((0, 0));
                 SearchResultData {
                     url_id: row.id,
                     title: row.title,

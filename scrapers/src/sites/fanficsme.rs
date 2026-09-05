@@ -20,8 +20,8 @@ use async_trait::async_trait;
 use chrono::TimeZone;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 use super::{http, login};
+use crate::{Chapter, FicMetadata, ScrapeError, SiteCredentials, SiteScraper};
 
 pub struct FanficsMeScraper;
 
@@ -82,15 +82,22 @@ impl SiteScraper for FanficsMeScraper {
         )
         .await?;
         // If the login page form is still present, credentials failed.
-        let check = http::fetch(client, "https://fanfics.me/").await.unwrap_or_default();
+        let check = http::fetch(client, "https://fanfics.me/")
+            .await
+            .unwrap_or_default();
         if check.contains(r#"name="autent""#) {
             return Err(ScrapeError::AuthRequired("fanfics.me login failed".into()));
         }
         Ok(())
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
-        let story_id = Self::story_id(url).ok_or_else(|| ScrapeError::ParseError("fanfics.me: bad url".into()))?;
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
+        let story_id = Self::story_id(url)
+            .ok_or_else(|| ScrapeError::ParseError("fanfics.me: bad url".into()))?;
         let html = http::fetch(client, url).await?;
         let doc = Html::parse_document(&html);
 
@@ -233,7 +240,8 @@ impl SiteScraper for FanficsMeScraper {
         client: &reqwest::Client,
         meta: &FicMetadata,
     ) -> Result<Vec<Chapter>, ScrapeError> {
-        let story_id = Self::story_id(&meta.source).ok_or_else(|| ScrapeError::ParseError("fanfics.me: bad url".into()))?;
+        let story_id = Self::story_id(&meta.source)
+            .ok_or_else(|| ScrapeError::ParseError("fanfics.me: bad url".into()))?;
         let html = http::fetch(client, &meta.source).await?;
 
         let links: Vec<(String, String)> = {

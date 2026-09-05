@@ -70,9 +70,17 @@ impl From<&ScrapeError> for ErrorKind {
             ScrapeError::RateLimited(_) => ErrorKind::Blocked,
             ScrapeError::Network(msg) => {
                 let lower = msg.to_lowercase();
-                if ["timeout", "timed out", "connect", "refused", "unreachable", "dns", "reset"]
-                    .iter()
-                    .any(|k| lower.contains(k))
+                if [
+                    "timeout",
+                    "timed out",
+                    "connect",
+                    "refused",
+                    "unreachable",
+                    "dns",
+                    "reset",
+                ]
+                .iter()
+                .any(|k| lower.contains(k))
                 {
                     ErrorKind::Timeout
                 } else {
@@ -142,8 +150,26 @@ fn is_known_anti_bot_domain(domain: &str) -> bool {
 /// usually means our parser hit an interstitial).
 pub fn classify(kind: &ErrorKind, domain: &str, message: &str) -> Class {
     let lower = message.to_lowercase();
-    let hints_block = ["403", "forbidden", "blocked", "cloudflare", "captcha", "rate limit", "too many requests", "429", "bot"];
-    let hints_timeout = ["timeout", "timed out", "connect", "refused", "unreachable", "dns", "reset"];
+    let hints_block = [
+        "403",
+        "forbidden",
+        "blocked",
+        "cloudflare",
+        "captcha",
+        "rate limit",
+        "too many requests",
+        "429",
+        "bot",
+    ];
+    let hints_timeout = [
+        "timeout",
+        "timed out",
+        "connect",
+        "refused",
+        "unreachable",
+        "dns",
+        "reset",
+    ];
 
     match kind {
         ErrorKind::Timeout => Class::Transient,
@@ -285,7 +311,10 @@ mod tests {
     fn error_kind_maps_scrape_error() {
         assert_eq!(ErrorKind::from(&ScrapeError::Blocked), ErrorKind::Blocked);
         assert_eq!(ErrorKind::from(&ScrapeError::NotFound), ErrorKind::NotFound);
-        assert_eq!(ErrorKind::from(&ScrapeError::ParseError("no h1".into())), ErrorKind::Parse);
+        assert_eq!(
+            ErrorKind::from(&ScrapeError::ParseError("no h1".into())),
+            ErrorKind::Parse
+        );
         assert_eq!(
             ErrorKind::from(&ScrapeError::Network("connection timed out".into())),
             ErrorKind::Timeout
@@ -302,17 +331,36 @@ mod tests {
 
     #[test]
     fn class_mapping_basics() {
-        assert_eq!(classify(&ErrorKind::Timeout, "x.com", "timeout"), Class::Transient);
-        assert_eq!(classify(&ErrorKind::NotFound, "x.com", "404"), Class::Transient);
-        assert_eq!(classify(&ErrorKind::Parse, "x.com", "no h1"), Class::Structural);
-        assert_eq!(classify(&ErrorKind::Export, "x.com", "epub failed"), Class::Systemic);
-        assert_eq!(classify(&ErrorKind::Unknown, "x.com", "weird"), Class::Transient);
+        assert_eq!(
+            classify(&ErrorKind::Timeout, "x.com", "timeout"),
+            Class::Transient
+        );
+        assert_eq!(
+            classify(&ErrorKind::NotFound, "x.com", "404"),
+            Class::Transient
+        );
+        assert_eq!(
+            classify(&ErrorKind::Parse, "x.com", "no h1"),
+            Class::Structural
+        );
+        assert_eq!(
+            classify(&ErrorKind::Export, "x.com", "epub failed"),
+            Class::Systemic
+        );
+        assert_eq!(
+            classify(&ErrorKind::Unknown, "x.com", "weird"),
+            Class::Transient
+        );
     }
 
     #[test]
     fn export_with_timeout_hint_is_transient() {
         assert_eq!(
-            classify(&ErrorKind::Export, "x.com", "connection refused while converting"),
+            classify(
+                &ErrorKind::Export,
+                "x.com",
+                "connection refused while converting"
+            ),
             Class::Transient
         );
     }
@@ -320,7 +368,11 @@ mod tests {
     #[test]
     fn blocked_on_antibot_domain_stays_blocked() {
         assert_eq!(
-            classify(&ErrorKind::Blocked, "archiveofourown.org", "got an error page"),
+            classify(
+                &ErrorKind::Blocked,
+                "archiveofourown.org",
+                "got an error page"
+            ),
             Class::Blocked
         );
         assert_eq!(
@@ -331,28 +383,54 @@ mod tests {
 
     #[test]
     fn blocked_elsewhere_without_hint_is_structural() {
-        assert_eq!(classify(&ErrorKind::Blocked, "somesite.org", "empty body"), Class::Structural);
-        assert_eq!(classify(&ErrorKind::Blocked, "somesite.org", "403 forbidden"), Class::Blocked);
+        assert_eq!(
+            classify(&ErrorKind::Blocked, "somesite.org", "empty body"),
+            Class::Structural
+        );
+        assert_eq!(
+            classify(&ErrorKind::Blocked, "somesite.org", "403 forbidden"),
+            Class::Blocked
+        );
     }
 
     #[test]
     fn fingerprint_is_stable_and_sensitive_to_kind() {
-        let a = fingerprint("https://example.com/story/123", &ErrorKind::Parse, "missing h1 on chapter 5");
-        let b = fingerprint("https://example.com/story/456", &ErrorKind::Parse, "missing h1 on chapter 9");
+        let a = fingerprint(
+            "https://example.com/story/123",
+            &ErrorKind::Parse,
+            "missing h1 on chapter 5",
+        );
+        let b = fingerprint(
+            "https://example.com/story/456",
+            &ErrorKind::Parse,
+            "missing h1 on chapter 9",
+        );
         // Story ids / chapter numbers normalize away: same signature.
         assert_eq!(a, b);
         assert_eq!(a.len(), 12);
         assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
 
         // Different kind → different fingerprint.
-        let c = fingerprint("https://example.com/story/123", &ErrorKind::Timeout, "missing h1 on chapter 5");
+        let c = fingerprint(
+            "https://example.com/story/123",
+            &ErrorKind::Timeout,
+            "missing h1 on chapter 5",
+        );
         assert_ne!(a, c);
     }
 
     #[test]
     fn fingerprint_ignores_digit_and_case_churn() {
-        let a = fingerprint("https://example.com/s/12345678/1/", &ErrorKind::Parse, "Chapter 42 exploded");
-        let b = fingerprint("https://example.com/s/99999999/2/", &ErrorKind::Parse, "chapter 7 exploded");
+        let a = fingerprint(
+            "https://example.com/s/12345678/1/",
+            &ErrorKind::Parse,
+            "Chapter 42 exploded",
+        );
+        let b = fingerprint(
+            "https://example.com/s/99999999/2/",
+            &ErrorKind::Parse,
+            "chapter 7 exploded",
+        );
         assert_eq!(a, b);
     }
 
@@ -366,7 +444,9 @@ mod tests {
     #[test]
     fn looks_like_fic_url_gate() {
         assert!(looks_like_fic_url("https://archiveofourown.org/works/123"));
-        assert!(looks_like_fic_url("https://www.fanfiction.net/s/123/1/Title"));
+        assert!(looks_like_fic_url(
+            "https://www.fanfiction.net/s/123/1/Title"
+        ));
         assert!(!looks_like_fic_url("https://example.com"));
         assert!(!looks_like_fic_url("not a url"));
         assert!(!looks_like_fic_url("https://localhost:8000/x"));
@@ -374,9 +454,18 @@ mod tests {
 
     #[test]
     fn url_domain_parses_ports_and_userinfo() {
-        assert_eq!(url_domain("https://www.fanfiction.net/s/1/").as_deref(), Some("www.fanfiction.net"));
-        assert_eq!(url_domain("https://example.com:8443/path").as_deref(), Some("example.com"));
-        assert_eq!(url_domain("http://user:pass@host.example/x").as_deref(), Some("host.example"));
+        assert_eq!(
+            url_domain("https://www.fanfiction.net/s/1/").as_deref(),
+            Some("www.fanfiction.net")
+        );
+        assert_eq!(
+            url_domain("https://example.com:8443/path").as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(
+            url_domain("http://user:pass@host.example/x").as_deref(),
+            Some("host.example")
+        );
         assert_eq!(url_domain("nonsense"), None);
     }
 

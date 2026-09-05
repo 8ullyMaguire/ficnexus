@@ -1,7 +1,7 @@
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::db::queries;
@@ -15,13 +15,16 @@ pub async fn list_locales_handler(
 ) -> Result<Json<Value>, AppError> {
     let locales = queries::get_locales(&state.db).await?;
 
-    let items: Vec<Value> = locales.into_iter().map(|l| {
-        json!({
-            "code": l.code,
-            "name": l.name,
-            "is_rtl": l.is_rtl,
+    let items: Vec<Value> = locales
+        .into_iter()
+        .map(|l| {
+            json!({
+                "code": l.code,
+                "name": l.name,
+                "is_rtl": l.is_rtl,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(json!({ "err": 0, "locales": items })))
 }
@@ -36,7 +39,8 @@ pub async fn get_ui_translations_handler(
     // Group by namespace
     let mut grouped = serde_json::Map::new();
     for t in translations {
-        let ns = grouped.entry(t.namespace.clone())
+        let ns = grouped
+            .entry(t.namespace.clone())
             .or_insert_with(|| json!({}));
         if let Some(obj) = ns.as_object_mut() {
             obj.insert(t.key, json!(t.value));
@@ -60,10 +64,14 @@ pub async fn upsert_work_translation_handler(
     Path(work_id): Path<i32>,
     Json(body): Json<WorkTranslationBody>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     if body.title.is_none() && body.summary.is_none() {
-        return Err(AppError::BadRequest("At least one of title or summary is required".to_string()));
+        return Err(AppError::BadRequest(
+            "At least one of title or summary is required".to_string(),
+        ));
     }
 
     queries::upsert_work_translation(
@@ -73,7 +81,8 @@ pub async fn upsert_work_translation_handler(
         body.title.as_deref(),
         body.summary.as_deref(),
         user_id,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(json!({ "err": 0, "msg": "Translation submitted" })))
 }
@@ -123,7 +132,9 @@ pub async fn get_chapter_translations(
             "translated_by": translated_by,
             "created_at": created_at.to_rfc3339(),
         }))),
-        None => Ok(Json(json!({"err": 0, "chapters": [], "locale_code": locale_code}))),
+        None => Ok(Json(
+            json!({"err": 0, "chapters": [], "locale_code": locale_code}),
+        )),
     }
 }
 
@@ -134,9 +145,12 @@ pub async fn upsert_chapter_translations(
     Path((work_id, locale_code)): Path<(i32, String)>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = user.user_id.ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    let user_id = user
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
-    let chapters = payload.get("chapters")
+    let chapters = payload
+        .get("chapters")
         .ok_or_else(|| AppError::BadRequest("chapters field required".to_string()))?;
 
     sqlx::query(
@@ -149,7 +163,8 @@ pub async fn upsert_chapter_translations(
     .execute(&state.db).await?;
 
     // Award XP for translation
-    let _ = queries::update_reputation_and_promote(&state.db, user_id, 15, "translation_submit").await;
+    let _ =
+        queries::update_reputation_and_promote(&state.db, user_id, 15, "translation_submit").await;
     let _ = queries::check_and_award_badges(&state.db, user_id, "translation_submit").await;
 
     let reputation: i32 = sqlx::query_scalar("SELECT reputation FROM users WHERE id = $1")

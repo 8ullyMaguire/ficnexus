@@ -14,8 +14,8 @@ use async_trait::async_trait;
 use chrono::TimeZone;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct FanfictionsFrScraper;
 
@@ -25,7 +25,11 @@ impl SiteScraper for FanfictionsFrScraper {
         url.contains("fanfictions.fr/fanfictions/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let html = http::fetch(client, url).await?;
 
         if html.contains("id=\"alertInactiveFic\"") {
@@ -232,7 +236,11 @@ mod tests {
     #[test]
     fn parses_story_id() {
         let url = "https://www.fanfictions.fr/fanfictions/hp/12345/chapters.html";
-        let id = url.split("/fanfictions/").nth(1).and_then(|s| s.split('/').nth(1)).unwrap();
+        let id = url
+            .split("/fanfictions/")
+            .nth(1)
+            .and_then(|s| s.split('/').nth(1))
+            .unwrap();
         assert_eq!(id, "12345");
     }
 
@@ -245,7 +253,8 @@ mod tests {
 
     #[test]
     fn extracts_chapter_body() {
-        let html = r#"<html><body><div id="readarea"><p>French story text.</p></div></body></html>"#;
+        let html =
+            r#"<html><body><div id="readarea"><p>French story text.</p></div></body></html>"#;
         let doc = Html::parse_document(html);
         let mut s = String::new();
         if let Ok(sel) = Selector::parse("div#readarea") {

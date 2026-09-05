@@ -219,7 +219,8 @@ pub trait SiteScraper: Send + Sync {
         Err(ScrapeError::AuthRequired("no login support".into()))
     }
     /// Fetch + parse metadata for `url`.
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError>;
+    async fn lookup(&self, client: &reqwest::Client, url: &str)
+    -> Result<FicMetadata, ScrapeError>;
     /// Fetch chapter contents for a work already looked up.
     async fn fetch_chapters(
         &self,
@@ -234,11 +235,7 @@ pub trait SiteScraper: Send + Sync {
     /// implementation fetches `url` and delegates to the same parsing
     /// used by [`lookup`](Self::lookup) when the adapter implements
     /// [`fetch_html`](Self::fetch_html).
-    async fn lookup_from_html(
-        &self,
-        _html: &str,
-        _url: &str,
-    ) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup_from_html(&self, _html: &str, _url: &str) -> Result<FicMetadata, ScrapeError> {
         Err(ScrapeError::Unsupported(
             "parse-from-HTML not implemented for this site".into(),
         ))
@@ -257,17 +254,17 @@ pub trait SiteScraper: Send + Sync {
     /// Fetch the raw HTML for `url` (used by the default `lookup` /
     /// `fetch_chapters` when the adapter delegates to the `_from_html`
     /// variants). Adapters may override for site-specific headers.
-    async fn fetch_html(
-        &self,
-        client: &reqwest::Client,
-        url: &str,
-    ) -> Result<String, ScrapeError> {
-        let resp = client.get(url).send().await
+    async fn fetch_html(&self, client: &reqwest::Client, url: &str) -> Result<String, ScrapeError> {
+        let resp = client
+            .get(url)
+            .send()
+            .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
         if !resp.status().is_success() {
             return Err(ScrapeError::Blocked);
         }
-        resp.text().await
+        resp.text()
+            .await
             .map_err(|e| ScrapeError::Network(e.to_string()))
     }
     /// Optional: extract tags for a work.

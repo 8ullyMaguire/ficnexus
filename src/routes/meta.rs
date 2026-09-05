@@ -1,15 +1,15 @@
 use axum::{
-    extract::{Query, State},
     Json,
+    extract::{Query, State},
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
-use crate::error::AppError;
-use crate::server::AppState;
 use crate::db::queries;
+use crate::error::AppError;
 use crate::scrape::author_link::LlmClient;
+use crate::server::AppState;
 
 use async_trait::async_trait;
 
@@ -54,11 +54,15 @@ pub async fn meta_handler(
     }
 
     // Find scraper (prefer native scraper, fall back to FanFicFare)
-    let scraper = state.scraper_registry.find_specific_or_fff(query)
+    let scraper = state
+        .scraper_registry
+        .find_specific_or_fff(query)
         .ok_or_else(|| AppError::BadRequest(format!("unsupported URL: {}", query)))?;
 
     // Lookup metadata only (no chapters fetch)
-    let mut meta = scraper.lookup(&state.http_client, query).await
+    let mut meta = scraper
+        .lookup(&state.http_client, query)
+        .await
         .map_err(|e| AppError::ScrapeError(e.to_string()))?;
 
     // Author-link enrichment: if the scraper didn't return an author
@@ -96,9 +100,16 @@ pub async fn meta_handler(
     let fic_blacklist = queries::check_fic_blacklist(&state.db, &meta.url_id).await?;
 
     let slug = {
-        let sanitized: String = meta.title
+        let sanitized: String = meta
+            .title
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         let re = regex_lite::Regex::new(r"_+").unwrap();
         let slug = re.replace_all(&sanitized, "_").to_string();
@@ -155,13 +166,21 @@ async fn handle_hash_lookup_meta(
     state: &Arc<AppState>,
     hash: &str,
 ) -> Result<Json<Value>, AppError> {
-    let fic = queries::get_fic_info(&state.db, hash).await?
+    let fic = queries::get_fic_info(&state.db, hash)
+        .await?
         .ok_or_else(|| AppError::NotFound(format!("fic not found: {}", hash)))?;
 
     let slug = {
-        let sanitized: String = fic.title
+        let sanitized: String = fic
+            .title
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         let re = regex_lite::Regex::new(r"_+").unwrap();
         let slug = re.replace_all(&sanitized, "_").to_string();

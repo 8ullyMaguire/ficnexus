@@ -23,10 +23,10 @@ use std::io::Read;
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode},
     routing::get,
-    Router,
 };
 use tower::ServiceExt; // oneshot
 
@@ -67,8 +67,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -89,21 +89,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false, // dynamic rate limiting off in tests
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false, // dynamic rate limiting off in tests
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -155,11 +163,15 @@ async fn get_export(auth: Option<&str>) -> axum::response::Response {
     if let Some(token) = auth {
         builder = builder.header("Authorization", token);
     }
-    app.oneshot(builder.body(Body::empty()).unwrap()).await.unwrap()
+    app.oneshot(builder.body(Body::empty()).unwrap())
+        .await
+        .unwrap()
 }
 
 /// Unzip the response body and return a map of entry-name → parsed JSON.
-async fn unzip_json(response: axum::response::Response) -> std::collections::HashMap<String, serde_json::Value> {
+async fn unzip_json(
+    response: axum::response::Response,
+) -> std::collections::HashMap<String, serde_json::Value> {
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read body");
@@ -232,12 +244,7 @@ async fn seed_fic(pool: &sqlx::PgPool, id: &str, title: &str) {
 }
 
 /// Remove ONLY the rows the seeding helpers create, so tests are re-runnable.
-async fn cleanup(
-    pool: &sqlx::PgPool,
-    username: &str,
-    work_titles: &[&str],
-    fic_ids: &[&str],
-) {
+async fn cleanup(pool: &sqlx::PgPool, username: &str, work_titles: &[&str], fic_ids: &[&str]) {
     let user_id: Option<i32> = sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
         .bind(username)
         .fetch_optional(pool)
@@ -323,8 +330,7 @@ async fn user_export_anonymous_denied() {
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read body");
-    let body: serde_json::Value =
-        serde_json::from_slice(&bytes).expect("denial must be JSON");
+    let body: serde_json::Value = serde_json::from_slice(&bytes).expect("denial must be JSON");
     assert_eq!(body["err"], 401, "business code must be 401: {body}");
     assert_eq!(body["msg"], "Login required", "{body}");
 }
@@ -379,11 +385,12 @@ async fn user_export_contains_all_expected_data() {
     .execute(&db)
     .await
     .expect("seed shelf");
-    let shelf_id: i32 = sqlx::query_scalar("SELECT id FROM shelves WHERE user_id = $1 AND name = 'Favorites'")
-        .bind(user_id)
-        .fetch_one(&db)
-        .await
-        .expect("shelf lookup");
+    let shelf_id: i32 =
+        sqlx::query_scalar("SELECT id FROM shelves WHERE user_id = $1 AND name = 'Favorites'")
+            .bind(user_id)
+            .fetch_one(&db)
+            .await
+            .expect("shelf lookup");
     sqlx::query("INSERT INTO work_shelves (shelf_id, work_id) VALUES ($1, $2) ON CONFLICT (shelf_id, work_id) DO NOTHING")
         .bind(shelf_id)
         .bind(work_id)
@@ -404,14 +411,12 @@ async fn user_export_contains_all_expected_data() {
     .expect("seed reading_stats");
 
     // Comment. No unique constraint; cleanup removes by user_id.
-    sqlx::query(
-        "INSERT INTO comments (url_id, user_id, body) VALUES ($1, $2, 'great story!')",
-    )
-    .bind("userexportit_fic_a")
-    .bind(user_id)
-    .execute(&db)
-    .await
-    .expect("seed comment");
+    sqlx::query("INSERT INTO comments (url_id, user_id, body) VALUES ($1, $2, 'great story!')")
+        .bind("userexportit_fic_a")
+        .bind(user_id)
+        .execute(&db)
+        .await
+        .expect("seed comment");
 
     // Follow a work. Idempotent: unique index (follower_id, COALESCE(work_id,0), ...).
     sqlx::query(
@@ -480,7 +485,11 @@ async fn user_export_contains_all_expected_data() {
 
     // ── Fetch + unzip ────────────────────────────────────────────────
     let response = get_export(Some(&auth_header(user_id, user))).await;
-    assert_eq!(response.status(), StatusCode::OK, "signed-in export must be 200");
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "signed-in export must be 200"
+    );
 
     // Content-Disposition carries a clear filename.
     let disposition = response
@@ -505,21 +514,37 @@ async fn user_export_contains_all_expected_data() {
     // bookmarks.json — both rows, notes present, private flag present.
     let bookmarks = files["bookmarks.json"]["bookmarks"].as_array().unwrap();
     assert_eq!(bookmarks.len(), 2, "{files:?}");
-    let notes: Vec<&str> = bookmarks.iter().map(|b| b["notes"].as_str().unwrap()).collect();
-    assert!(notes.contains(&"favorite"), "bookmark note missing: {bookmarks:?}");
-    assert!(notes.contains(&"private note"), "private bookmark note missing: {bookmarks:?}");
+    let notes: Vec<&str> = bookmarks
+        .iter()
+        .map(|b| b["notes"].as_str().unwrap())
+        .collect();
+    assert!(
+        notes.contains(&"favorite"),
+        "bookmark note missing: {bookmarks:?}"
+    );
+    assert!(
+        notes.contains(&"private note"),
+        "private bookmark note missing: {bookmarks:?}"
+    );
 
     // notes.json — same bookmark rows (the notes surface).
     let note_bookmarks = files["notes.json"]["notes"].as_array().unwrap();
     assert_eq!(note_bookmarks.len(), 2, "{files:?}");
-    assert!(note_bookmarks.iter().any(|b| b["notes"] == "private note"), "{files:?}");
+    assert!(
+        note_bookmarks.iter().any(|b| b["notes"] == "private note"),
+        "{files:?}"
+    );
 
     // shelves.json — the shelf with its work.
     let shelves = files["shelves.json"]["shelves"].as_array().unwrap();
     assert_eq!(shelves.len(), 1, "{files:?}");
     assert_eq!(shelves[0]["name"], "Favorites", "{files:?}");
     assert_eq!(shelves[0]["description"], "my favs", "{files:?}");
-    assert_eq!(shelves[0]["works"].as_array().unwrap(), &[work_id], "{files:?}");
+    assert_eq!(
+        shelves[0]["works"].as_array().unwrap(),
+        &[work_id],
+        "{files:?}"
+    );
 
     // reading.json — status + words read + chapter.
     let reading = files["reading.json"]["reading_stats"].as_array().unwrap();
@@ -550,7 +575,10 @@ async fn user_export_contains_all_expected_data() {
     // progress.json — quest row + streak.
     let progress = &files["progress.json"];
     let quests = progress["quests"].as_array().unwrap();
-    assert!(!quests.is_empty(), "quest progress must be exported: {progress}");
+    assert!(
+        !quests.is_empty(),
+        "quest progress must be exported: {progress}"
+    );
     let streak = progress["login_streak"].as_object().expect("streak object");
     assert_eq!(streak["current_streak"], 2, "{progress}");
     assert_eq!(streak["longest_streak"], 5, "{progress}");
@@ -568,7 +596,10 @@ async fn user_export_contains_all_expected_data() {
         "progress.json",
     ];
     for name in expected_names {
-        assert!(files.contains_key(name), "missing entry {name} in {files:?}");
+        assert!(
+            files.contains_key(name),
+            "missing entry {name} in {files:?}"
+        );
     }
 
     cleanup(
@@ -623,24 +654,16 @@ async fn user_export_does_not_leak_other_users_data() {
     assert_eq!(response.status(), StatusCode::OK);
     let files = unzip_json(response).await;
     let bookmarks = files["bookmarks.json"]["bookmarks"].as_array().unwrap();
-    assert_eq!(bookmarks.len(), 1, "user A export must contain only A's data: {bookmarks:?}");
+    assert_eq!(
+        bookmarks.len(),
+        1,
+        "user A export must contain only A's data: {bookmarks:?}"
+    );
     assert_eq!(bookmarks[0]["notes"], "A secret", "{bookmarks:?}");
     let note_notes = files["notes.json"]["notes"].as_array().unwrap();
     assert_eq!(note_notes.len(), 1, "{note_notes:?}");
     assert_eq!(note_notes[0]["notes"], "A secret", "{note_notes:?}");
 
-    cleanup(
-        &db,
-        user_a,
-        &["Userexport A Work"],
-        &["userexportit_fic_a"],
-    )
-    .await;
-    cleanup(
-        &db,
-        user_b,
-        &["Userexport B Work"],
-        &["userexportit_fic_b"],
-    )
-    .await;
+    cleanup(&db, user_a, &["Userexport A Work"], &["userexportit_fic_a"]).await;
+    cleanup(&db, user_b, &["Userexport B Work"], &["userexportit_fic_b"]).await;
 }

@@ -13,26 +13,37 @@ use async_trait::async_trait;
 use regex_lite::Regex;
 use scraper::{Html, Selector};
 
-use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 use super::http;
+use crate::{Chapter, FicMetadata, ScrapeError, SiteScraper};
 
 pub struct FictionalleyScraper;
 
 impl FictionalleyScraper {
     fn story_id(url: &str) -> Option<(String, String)> {
-        let m = Regex::new(r"fictionalley(-archive)?\.org/authors/([a-zA-Z0-9_]+)/([a-zA-Z0-9_]+)\.html").ok()?;
+        let m = Regex::new(
+            r"fictionalley(-archive)?\.org/authors/([a-zA-Z0-9_]+)/([a-zA-Z0-9_]+)\.html",
+        )
+        .ok()?;
         let c = m.captures(url)?;
-        Some((c.get(2)?.as_str().to_string(), c.get(3)?.as_str().to_string()))
+        Some((
+            c.get(2)?.as_str().to_string(),
+            c.get(3)?.as_str().to_string(),
+        ))
     }
 }
 
 #[async_trait]
 impl SiteScraper for FictionalleyScraper {
     fn can_handle(&self, url: &str) -> bool {
-        url.contains("fictionalley-archive.org/authors/") || url.contains("fictionalley.org/authors/")
+        url.contains("fictionalley-archive.org/authors/")
+            || url.contains("fictionalley.org/authors/")
     }
 
-    async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError> {
+    async fn lookup(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+    ) -> Result<FicMetadata, ScrapeError> {
         let (auth, story_id) = Self::story_id(url)
             .ok_or_else(|| ScrapeError::ParseError("fictionalley: bad url".into()))?;
         let html = http::fetch(client, url).await?;
@@ -224,7 +235,10 @@ mod tests {
 
     #[test]
     fn parses_story_id() {
-        let (auth, id) = FictionalleyScraper::story_id("https://www.fictionalley-archive.org/authors/drt/DA.html").unwrap();
+        let (auth, id) = FictionalleyScraper::story_id(
+            "https://www.fictionalley-archive.org/authors/drt/DA.html",
+        )
+        .unwrap();
         assert_eq!(auth, "drt");
         assert_eq!(id, "DA");
         assert!(FictionalleyScraper::story_id("https://x.com/foo").is_none());
@@ -232,10 +246,15 @@ mod tests {
 
     #[test]
     fn extracts_chapter_body() {
-        let html = r#"<html><body><main id="content"><div><p>Story text.</p></div></main></body></html>"#;
+        let html =
+            r#"<html><body><main id="content"><div><p>Story text.</p></div></main></body></html>"#;
         let doc = Html::parse_document(html);
         let sel = Selector::parse("main#content div:not([class])").unwrap();
-        let s = doc.select(&sel).next().map(|el| el.inner_html()).unwrap_or_default();
+        let s = doc
+            .select(&sel)
+            .next()
+            .map(|el| el.inner_html())
+            .unwrap_or_default();
         assert!(s.contains("Story text."));
     }
 
@@ -243,6 +262,9 @@ mod tests {
     fn normalizes_chapter_url() {
         let href = "/authors/drt/DA02.html";
         let url = format!("https://www.fictionalley-archive.org{href}");
-        assert_eq!(url, "https://www.fictionalley-archive.org/authors/drt/DA02.html");
+        assert_eq!(
+            url,
+            "https://www.fictionalley-archive.org/authors/drt/DA02.html"
+        );
     }
 }

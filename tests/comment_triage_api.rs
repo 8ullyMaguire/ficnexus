@@ -13,12 +13,12 @@
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
-    body::Body,
-    http::{header, Request, StatusCode},
-    routing::get,
     Router,
+    body::Body,
+    http::{Request, StatusCode, header},
+    routing::get,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt; // oneshot
 
 static DB_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -52,8 +52,8 @@ async fn app() -> Router {
     let config = fichub::config::Config::from_env();
     let db = pool().await;
 
-    let redis_client = redis::Client::open(config.redis_url.clone())
-        .expect("invalid REDIS_URL for test");
+    let redis_client =
+        redis::Client::open(config.redis_url.clone()).expect("invalid REDIS_URL for test");
     let redis = redis_client
         .get_multiplexed_async_connection()
         .await
@@ -75,21 +75,29 @@ async fn app() -> Router {
         config: config.clone(),
         db: db.clone(),
         redis: redis.clone(),
-        health_redis: redis_client.get_multiplexed_async_connection().await.expect("health redis conn"),
+        health_redis: redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("health redis conn"),
         http_client: http_client.clone(),
         scraper_registry: scraper_registry.clone(),
         cache_semaphores: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-        rate_limiter: Box::new(fichub::limiter::redis_bucket::RedisBucketLimiter::new(
-            redis_client
-                .get_multiplexed_async_connection()
-                .await
-                .expect("redis"),
-            false,
-        )
-        .await
-        .expect("rate limiter")),
-        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
-            vec![std::sync::Arc::new(fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new())],
+        rate_limiter: Box::new(
+            fichub::limiter::redis_bucket::RedisBucketLimiter::new(
+                redis_client
+                    .get_multiplexed_async_connection()
+                    .await
+                    .expect("redis"),
+                false,
+            )
+            .await
+            .expect("rate limiter"),
+        ),
+        recommender_engine: fichub::recommender::engine::RecommendationEngine::new(db.clone()),
+        strategy_registry: fichub::recommender::registry::StrategyRegistry::new(
+            vec![std::sync::Arc::new(
+                fichub::recommender::legacy_cooccur::LegacyCooccurStrategy::new(),
+            )],
             "cooccur",
         ),
 
@@ -215,11 +223,12 @@ async fn seed_work(pool: &sqlx::PgPool, url_id: &str, title: &str, author: &str)
 /// Insert a comment row directly and return its id. Used by the tests that
 /// must not depend on Ollama (triage rows are inserted via `seed_triage`).
 async fn seed_comment(pool: &sqlx::PgPool, work_id: i32, user_id: i32, body: &str) -> i64 {
-    let url_id = sqlx::query_scalar::<_, String>("SELECT default_source_id FROM works WHERE id = $1")
-        .bind(work_id)
-        .fetch_one(pool)
-        .await
-        .expect("work url_id lookup failed");
+    let url_id =
+        sqlx::query_scalar::<_, String>("SELECT default_source_id FROM works WHERE id = $1")
+            .bind(work_id)
+            .fetch_one(pool)
+            .await
+            .expect("work url_id lookup failed");
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO comments (user_id, work_id, url_id, parent_id, body, constructive)
          VALUES ($1, $2, $3, NULL, $4, TRUE) RETURNING id",
@@ -299,8 +308,13 @@ async fn get_json(app: &Router, uri: &str, token: Option<&str>) -> (StatusCode, 
     let req = builder.body(Body::empty()).unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 async fn post_json(
@@ -319,8 +333,13 @@ async fn post_json(
         .unwrap();
     let resp = app.clone().oneshot(req).await.unwrap();
     let status = resp.status();
-    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────
@@ -336,7 +355,13 @@ async fn posting_comment_succeeds_even_with_ollama_down() {
     let db = pool().await;
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME).await;
-    let (work_id, _) = seed_work(&db, "triage-post-a", &format!("{TITLE_PREFIX} Post A"), "Author A").await;
+    let (work_id, _) = seed_work(
+        &db,
+        "triage-post-a",
+        &format!("{TITLE_PREFIX} Post A"),
+        "Author A",
+    )
+    .await;
     let app = app().await;
     let token = auth_header(user_id, 0, USERNAME);
 
@@ -364,11 +389,12 @@ async fn posting_comment_succeeds_even_with_ollama_down() {
 
     // The comment row exists; triage row may or may not (Ollama is down, so
     // expect none — but never a failed post).
-    let comment_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM comments WHERE id = $1)")
-        .bind(comment_id)
-        .fetch_one(&db)
-        .await
-        .expect("comment check");
+    let comment_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM comments WHERE id = $1)")
+            .bind(comment_id)
+            .fetch_one(&db)
+            .await
+            .expect("comment check");
     assert!(comment_exists, "comment should be stored");
     let triage_exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM comment_triage WHERE comment_id = $1)")
@@ -390,7 +416,13 @@ async fn admin_endpoint_returns_pending_triage_items() {
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME).await;
     let admin_id = seed_user(&db, ADMIN_USERNAME).await;
-    let (work_id, _) = seed_work(&db, "triage-admin-a", &format!("{TITLE_PREFIX} Admin A"), "Author A").await;
+    let (work_id, _) = seed_work(
+        &db,
+        "triage-admin-a",
+        &format!("{TITLE_PREFIX} Admin A"),
+        "Author A",
+    )
+    .await;
     let app = app().await;
     let admin_token = auth_header(admin_id, 10, ADMIN_USERNAME);
 
@@ -408,7 +440,10 @@ async fn admin_endpoint_returns_pending_triage_items() {
     let items = body["items"].as_array().expect("items array");
     assert_eq!(items.len(), 2, "only flagged items, got: {body}");
 
-    let toxic = items.iter().find(|i| i["comment_id"].as_i64() == Some(toxic_id)).expect("toxic item");
+    let toxic = items
+        .iter()
+        .find(|i| i["comment_id"].as_i64() == Some(toxic_id))
+        .expect("toxic item");
     assert_eq!(toxic["category"], "toxic");
     assert_eq!(toxic["reason"], "slurs and death wish");
     assert!((toxic["confidence"].as_f64().unwrap() - 0.9).abs() < 1e-6);
@@ -417,12 +452,19 @@ async fn admin_endpoint_returns_pending_triage_items() {
     assert_eq!(toxic["title"], format!("{TITLE_PREFIX} Admin A"));
     assert_eq!(toxic["user_id"].as_i64(), Some(user_id as i64));
 
-    let spam = items.iter().find(|i| i["comment_id"].as_i64() == Some(spam_id)).expect("spam item");
+    let spam = items
+        .iter()
+        .find(|i| i["comment_id"].as_i64() == Some(spam_id))
+        .expect("spam item");
     assert_eq!(spam["category"], "spam");
     assert_eq!(spam["reason"], "promotional link");
 
     // The fine row must not appear in the review queue.
-    assert!(!items.iter().any(|i| i["comment_id"].as_i64() == Some(fine_id)));
+    assert!(
+        !items
+            .iter()
+            .any(|i| i["comment_id"].as_i64() == Some(fine_id))
+    );
 }
 
 /// Role < 10 gets 403 on the admin moderation endpoint.
@@ -433,7 +475,13 @@ async fn admin_endpoint_forbids_role_below_10() {
     let db = pool().await;
     cleanup(&db).await;
     let user_id = seed_user(&db, USERNAME).await;
-    let (work_id, _) = seed_work(&db, "triage-forbid-a", &format!("{TITLE_PREFIX} Forbid A"), "Author A").await;
+    let (work_id, _) = seed_work(
+        &db,
+        "triage-forbid-a",
+        &format!("{TITLE_PREFIX} Forbid A"),
+        "Author A",
+    )
+    .await;
     let app = app().await;
     let token = auth_header(user_id, 0, USERNAME);
 

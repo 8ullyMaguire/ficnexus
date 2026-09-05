@@ -1,20 +1,16 @@
 use axum::{
     extract::{Query, State},
-    http::{header, HeaderMap},
+    http::{HeaderMap, header},
     response::IntoResponse,
 };
 use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::error::{AppError, AppResult};
-use crate::search::builder::{
-    parse_tag_filters, FicSearchRow, SearchParams, SearchQueryBuilder,
-};
+use crate::search::builder::{FicSearchRow, SearchParams, SearchQueryBuilder, parse_tag_filters};
 use crate::server::AppState;
 
-use super::{
-    build_feed, fic_entry, html_escape, iso_now, opds_response, FeedKind,
-};
+use super::{FeedKind, build_feed, fic_entry, html_escape, iso_now, opds_response};
 
 /// Raw query parameters for OPDS search (stringly typed)
 #[derive(Debug, Deserialize)]
@@ -69,10 +65,8 @@ fn into_search_params(raw: SearchQueryParams) -> AppResult<SearchParams> {
     Ok(SearchParams {
         q: raw.q.filter(|s| !s.is_empty()),
         fuzzy: false,
-        include_tags: parse_tag_filters(&include_tags)
-            .map_err(|e| AppError::BadRequest(e))?,
-        exclude_tags: parse_tag_filters(&exclude_tags)
-            .map_err(|e| AppError::BadRequest(e))?,
+        include_tags: parse_tag_filters(&include_tags).map_err(|e| AppError::BadRequest(e))?,
+        exclude_tags: parse_tag_filters(&exclude_tags).map_err(|e| AppError::BadRequest(e))?,
         exclude_tag_types: raw
             .exclude_tag_types
             .as_deref()
@@ -188,7 +182,10 @@ pub async fn search_feed(
     if wants_opensearch {
         let body = opensearch_description();
         return Ok((
-            [(header::CONTENT_TYPE, "application/opensearchdescription+xml")],
+            [(
+                header::CONTENT_TYPE,
+                "application/opensearchdescription+xml",
+            )],
             body,
         ));
     }
@@ -208,23 +205,22 @@ pub async fn search_feed(
         ..search_params
     };
 
-    let builder =
-        SearchQueryBuilder::new(capped_params, state.config.tag_hidden_threshold, true, true, true);
+    let builder = SearchQueryBuilder::new(
+        capped_params,
+        state.config.tag_hidden_threshold,
+        true,
+        true,
+        true,
+    );
 
     // Execute count query
     let mut count_query = builder.build_count_query();
-    let total: (i64,) = count_query
-        .build_query_as()
-        .fetch_one(&state.db)
-        .await?;
+    let total: (i64,) = count_query.build_query_as().fetch_one(&state.db).await?;
     let total = total.0;
 
     // Execute data query
     let mut data_query = builder.build_data_query();
-    let rows: Vec<FicSearchRow> = data_query
-        .build_query_as()
-        .fetch_all(&state.db)
-        .await?;
+    let rows: Vec<FicSearchRow> = data_query.build_query_as().fetch_all(&state.db).await?;
 
     let now = iso_now();
     let query_str = builder.params.q.as_deref().unwrap_or("");
@@ -234,10 +230,7 @@ pub async fn search_feed(
 
     let mut entries = String::new();
     for row in &rows {
-        let updated = row
-            .fic_updated
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string();
+        let updated = row.fic_updated.format("%Y-%m-%dT%H:%M:%SZ").to_string();
         let acq = acq_map.get(&row.id).map(|v| v.as_slice()).unwrap_or(&[]);
         entries.push_str(&fic_entry(
             &row.id,

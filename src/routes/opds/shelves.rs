@@ -9,9 +9,7 @@ use std::sync::Arc;
 use crate::error::AppError;
 use crate::server::AppState;
 
-use super::{
-    build_feed, fic_entry, html_escape, iso_now, opds_response, FeedKind,
-};
+use super::{FeedKind, build_feed, fic_entry, html_escape, iso_now, opds_response};
 
 /// Query params for shelf authentication
 #[derive(Debug, Deserialize)]
@@ -64,9 +62,7 @@ fn verify_token(
 /// failing on a JSON 404.
 fn auth_required_feed(state: &Arc<AppState>) -> ([(header::HeaderName, &'static str); 1], String) {
     let now = iso_now();
-    let login = format!(
-        "/opds/shelves?token=YOUR_TOKEN"
-    );
+    let login = format!("/opds/shelves?token=YOUR_TOKEN");
     let entries = format!(
         r#"  <entry>
     <title>Authentication required</title>
@@ -119,10 +115,7 @@ pub async fn shelf_list(
     let mut entries = String::new();
 
     for row in &rows {
-        let desc = row
-            .description
-            .as_deref()
-            .unwrap_or("A reading shelf");
+        let desc = row.description.as_deref().unwrap_or("A reading shelf");
         let created = row
             .created_at
             .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
@@ -170,12 +163,11 @@ pub async fn shelf_contents(
     }
 
     // Verify shelf exists
-    let shelf_name: Option<String> = sqlx::query_scalar(
-        "SELECT name FROM opds_shelves WHERE id = $1",
-    )
-    .bind(shelf_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let shelf_name: Option<String> =
+        sqlx::query_scalar("SELECT name FROM opds_shelves WHERE id = $1")
+            .bind(shelf_id)
+            .fetch_optional(&state.db)
+            .await?;
 
     let shelf_name = match shelf_name {
         Some(name) => name,
@@ -212,12 +204,10 @@ pub async fn shelf_contents(
     .fetch_all(&state.db)
     .await?;
 
-    let total: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM opds_shelf_items WHERE shelf_id = $1",
-    )
-    .bind(shelf_id)
-    .fetch_one(&state.db)
-    .await?;
+    let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM opds_shelf_items WHERE shelf_id = $1")
+        .bind(shelf_id)
+        .fetch_one(&state.db)
+        .await?;
 
     let now = iso_now();
     let base_url = state.config.opds_base_url.as_deref();
@@ -226,10 +216,7 @@ pub async fn shelf_contents(
     let mut entries = String::new();
 
     for row in &rows {
-        let updated = row
-            .fic_updated
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string();
+        let updated = row.fic_updated.format("%Y-%m-%dT%H:%M:%SZ").to_string();
         let acq = acq_map.get(&row.id).map(|v| v.as_slice()).unwrap_or(&[]);
         entries.push_str(&fic_entry(
             &row.id,
