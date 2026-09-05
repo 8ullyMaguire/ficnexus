@@ -32,8 +32,43 @@ import TranslatePageButton from '$lib/components/TranslatePageButton.svelte';
   if (!trimmed) return `Read ${fic.meta.title} by ${fic.meta.author} on FicHub.`;
   return trimmed.length > 155 ? trimmed.slice(0, 152).trimEnd() + '…' : trimmed;
  });
+ // ── Slug URL support (Task 13) ────────────────────────────────
+ // The [urlId] param absorbs both the legacy bare url_id and the new
+ // canonical `/works/{slug}.{work_id}` form. Parse the trailing `.id`
+ // here so the rest of the page keeps using the url_id-based API.
+ const parsedTail = $derived.by(() => {
+  const raw = urlId ?? '';
+  const dot = raw.lastIndexOf('.');
+  const numericId =
+    dot > 0 && /^\d+$/.test(raw.slice(dot + 1)) ? Number(raw.slice(dot + 1)) : null;
+  return { raw, numericId };
+ });
+
+ /** Tiny client-side slug helper (mirrors server work_url_slug). */
+ function deriveSlug(title: string | null | undefined): string {
+  if (!title) return 'work';
+  const cleaned = title
+   .split('')
+   .filter((c: string) => /[A-Za-z0-9 \-']/.test(c))
+   .join('')
+   .replace(/'/g, '')
+   .split(/\s+/)
+   .filter(Boolean)
+   .join('-')
+   .toLowerCase()
+   .replace(/^-+|-+$/g, '')
+   .slice(0, 60);
+  return cleaned || 'work';
+ }
+
+ const slugFromId = $derived.by(() => deriveSlug(fic?.meta?.title));
+
  const canonicalUrl = $derived.by(() => {
   if (typeof window === 'undefined') return '';
+  if (workId && slugFromId) {
+    return `${window.location.origin}/works/${slugFromId}.${workId}`;
+  }
+  // Fallback to the legacy form when we don't have workId yet.
   return `${window.location.origin}/works/${encodeURIComponent(urlId)}`;
  });
 
