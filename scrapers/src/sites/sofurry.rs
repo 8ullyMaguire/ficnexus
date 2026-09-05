@@ -187,10 +187,7 @@ impl SiteScraper for SoFurryScraper {
                 let content = if display_url.is_empty() {
                     String::new()
                 } else {
-                    match http::fetch(client, &display_url).await {
-                        Ok(body) => body,
-                        Err(_) => String::new(),
-                    }
+                    http::fetch(client, &display_url).await.unwrap_or_default()
                 };
                 chapters.push(Chapter {
                     chapter_id: i as i32 + 1,

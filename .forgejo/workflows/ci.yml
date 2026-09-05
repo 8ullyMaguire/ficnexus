@@ -41,12 +41,11 @@ jobs:
           key: rust-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: rust-${{ runner.os }}-
 
-      - name: cargo fmt --check (advisory)
-        run: . "$HOME/.cargo/env" && cargo fmt --check || true
+      - name: cargo fmt --check
+        run: . "$HOME/.cargo/env" && cargo fmt --check
 
-      - name: cargo clippy (advisory)
-        continue-on-error: true
-        run: . "$HOME/.cargo/env" && cargo clippy --workspace -- -D warnings
+      - name: cargo clippy
+        run: . "$HOME/.cargo/env" && cargo clippy --workspace -- -D clippy::correctness -D clippy::suspicious
 
       - name: cargo test --lib
         env:

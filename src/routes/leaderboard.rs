@@ -3,8 +3,8 @@
 //! Issue #12: leaderboard with categories — authors, curators, translators,
 //! developers, readers, and an overall composite.
 
-use axum::extract::{Query, State};
 use axum::Json;
+use axum::extract::{Query, State};
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -32,9 +32,8 @@ pub async fn leaderboard_handler(
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let category = match &params.category {
-        Some(s) => LeaderboardCategory::parse(s).ok_or_else(|| {
-            AppError::BadRequest(format!("unknown category: {s}"))
-        })?,
+        Some(s) => LeaderboardCategory::parse(s)
+            .ok_or_else(|| AppError::BadRequest(format!("unknown category: {s}")))?,
         None => LeaderboardCategory::All,
     };
 

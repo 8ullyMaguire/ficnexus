@@ -1977,10 +1977,7 @@ pub async fn get_work_sources(pool: &PgPool, work_id: i32) -> AppResult<Vec<FicI
 /// Given a url_id (fic_info.id), resolve the work_id and the canonical slug.
 ///
 /// Used by the redirect handler to canonicalise `/works/{url_id}` → `/works/{slug}.{id}`.
-pub async fn get_work_slug_target(
-    pool: &PgPool,
-    url_id: &str,
-) -> AppResult<Option<(i32, String)>> {
+pub async fn get_work_slug_target(pool: &PgPool, url_id: &str) -> AppResult<Option<(i32, String)>> {
     let row: Option<(i32, Option<String>)> = sqlx::query_as(
         "SELECT w.id, COALESCE(w.canonical_title, fi.title) AS title
          FROM works w
@@ -3750,16 +3747,12 @@ pub const ALLOWED_FORMATS: &[&str] = &["epub", "pdf", "mobi", "html", "azw3", "k
 
 /// Get a user's preferred download formats.
 /// Returns `["epub"]` if the user has no settings yet.
-pub async fn get_user_format_preferences(
-    pool: &PgPool,
-    user_id: i32,
-) -> AppResult<Vec<String>> {
-    let row: Option<(serde_json::Value,)> = sqlx::query_as(
-        "SELECT settings FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+pub async fn get_user_format_preferences(pool: &PgPool, user_id: i32) -> AppResult<Vec<String>> {
+    let row: Option<(serde_json::Value,)> =
+        sqlx::query_as("SELECT settings FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
 
     if let Some((settings,)) = row {
         if let Some(formats) = settings.get("formats").and_then(|v| v.as_array()) {
@@ -3857,10 +3850,7 @@ pub async fn upsert_visitor_state(
 }
 
 /// Delete a visitor state row (after merge on registration).
-pub async fn delete_visitor_state(
-    pool: &PgPool,
-    visitor_id: uuid::Uuid,
-) -> AppResult<()> {
+pub async fn delete_visitor_state(pool: &PgPool, visitor_id: uuid::Uuid) -> AppResult<()> {
     sqlx::query("DELETE FROM visitor_state WHERE visitor_id = $1")
         .bind(visitor_id)
         .execute(pool)
@@ -3870,11 +3860,10 @@ pub async fn delete_visitor_state(
 
 /// Delete visitor state rows older than 30 days (cron cleanup).
 pub async fn cleanup_stale_visitor_state(pool: &PgPool) -> AppResult<u64> {
-    let result = sqlx::query(
-        "DELETE FROM visitor_state WHERE updated_at < now() - interval '30 days'",
-    )
-    .execute(pool)
-    .await?;
+    let result =
+        sqlx::query("DELETE FROM visitor_state WHERE updated_at < now() - interval '30 days'")
+            .execute(pool)
+            .await?;
     Ok(result.rows_affected())
 }
 
@@ -3888,7 +3877,6 @@ pub struct VisitorStateRow {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
-
 
 /// Merge anonymous visitor state into a newly-registered user account.
 ///
@@ -3952,9 +3940,15 @@ pub async fn merge_visitor_state_into_user(
                 serde_json::Value::Object(o) => o,
                 _ => continue,
             };
-            let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("Imported search");
+            let name = obj
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Imported search");
             let query_text = obj.get("query_text").and_then(|v| v.as_str()).unwrap_or("");
-            let query_json = obj.get("query_json").cloned().unwrap_or(serde_json::Value::Null);
+            let query_json = obj
+                .get("query_json")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
 
             sqlx::query(
                 "INSERT INTO saved_searches (user_id, name, query_text, query_json, alert_mode)

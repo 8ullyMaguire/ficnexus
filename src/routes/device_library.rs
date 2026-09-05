@@ -29,9 +29,7 @@ type HmacSha256 = Hmac<Sha256>;
 /// to bookmark/follow before accepting.
 fn require_consent(headers: &HeaderMap) -> Result<(), AppError> {
     if !crate::visitor::has_cookie_consent(headers) {
-        return Err(AppError::Forbidden(
-            "cookie consent required".to_string(),
-        ));
+        return Err(AppError::Forbidden("cookie consent required".to_string()));
     }
     Ok(())
 }
@@ -63,8 +61,8 @@ pub struct DeviceFollow {
 
 /// Compute HMAC-SHA256 using the `hmac` crate (constant-time under the hood).
 fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
-    let mut mac = <HmacSha256 as KeyInit>::new_from_slice(key)
-        .expect("HMAC accepts any key length");
+    let mut mac =
+        <HmacSha256 as KeyInit>::new_from_slice(key).expect("HMAC accepts any key length");
     mac.update(data);
     mac.finalize().into_bytes().into()
 }

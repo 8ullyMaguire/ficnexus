@@ -76,9 +76,8 @@ pub async fn work_redirect_handler(
     State(state): State<Arc<AppState>>,
     Path(tail): Path<String>,
 ) -> Result<Response, AppError> {
-    let parsed = parse_work_tail(&tail).ok_or_else(|| {
-        AppError::NotFound(format!("work not found: {tail}"))
-    })?;
+    let parsed = parse_work_tail(&tail)
+        .ok_or_else(|| AppError::NotFound(format!("work not found: {tail}")))?;
     // For Id, the DB lookup returns (url_id, slug) — we re-use the slug and
     // the input work_id. For UrlId, the DB lookup returns (work_id, slug).
     let (work_id, slug) = match parsed {
@@ -88,11 +87,9 @@ pub async fn work_redirect_handler(
                 .ok_or_else(|| AppError::NotFound(format!("work {id} not found")))?;
             (id, slug)
         }
-        WorkTail::UrlId(uid) => {
-            queries::get_work_slug_target(&state.db, &uid)
-                .await?
-                .ok_or_else(|| AppError::NotFound(format!("work {uid} not found")))?
-        }
+        WorkTail::UrlId(uid) => queries::get_work_slug_target(&state.db, &uid)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("work {uid} not found")))?,
     };
     let url = canonical_url(&slug, work_id);
     // 308 Permanent — preserves method + body, picked up by crawlers.
@@ -143,7 +140,7 @@ pub async fn canonical_for_work(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_work_tail, canonical_url, WorkTail};
+    use super::{WorkTail, canonical_url, parse_work_tail};
 
     #[test]
     fn parses_numeric_id() {

@@ -110,7 +110,10 @@ mod tests {
         let reject_fic = fic("unknown", "unknown", 100);
 
         assert_eq!(classify(&accept_fic), QualityVerdict::Accept);
-        assert!(matches!(classify(&suspicious_fic), QualityVerdict::Suspicious(_)));
+        assert!(matches!(
+            classify(&suspicious_fic),
+            QualityVerdict::Suspicious(_)
+        ));
         assert!(matches!(classify(&reject_fic), QualityVerdict::Reject(_)));
     }
 }

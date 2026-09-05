@@ -2085,10 +2085,7 @@ async fn build_router(state: Arc<AppState>) -> Router {
         // Work detail page canonical URL redirects (308).
         // These are registered before the SPA fallback so they shadow it
         // for any path starting with /works/ or /work/.
-        .route(
-            "/works",
-            get(crate::routes::redirects::works_root_redirect),
-        )
+        .route("/works", get(crate::routes::redirects::works_root_redirect))
         .route(
             "/works/{tail}",
             get(crate::routes::redirects::work_redirect_handler),

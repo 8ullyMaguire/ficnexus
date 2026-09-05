@@ -4,12 +4,14 @@
 //! - GET /api/user/preferences/formats → {"formats": [...], "available": [...]}
 //! - PUT /api/user/preferences/formats → validates + saves
 
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::db::queries::{save_user_format_preferences, get_user_format_preferences, ALLOWED_FORMATS};
+use crate::db::queries::{
+    ALLOWED_FORMATS, get_user_format_preferences, save_user_format_preferences,
+};
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
 use crate::server::AppState;
@@ -25,9 +27,9 @@ pub async fn get_format_preferences(
     State(state): State<Arc<AppState>>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| {
-        AppError::BadRequest("authentication required".into())
-    })?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::BadRequest("authentication required".into()))?;
 
     let formats = get_user_format_preferences(&state.db, user_id).await?;
 
@@ -46,9 +48,9 @@ pub async fn update_format_preferences(
     auth: AuthUser,
     Json(body): Json<FormatPreferencesBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let user_id = auth.user_id.ok_or_else(|| {
-        AppError::BadRequest("authentication required".into())
-    })?;
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::BadRequest("authentication required".into()))?;
 
     save_user_format_preferences(&state.db, user_id, &body.formats).await?;
 

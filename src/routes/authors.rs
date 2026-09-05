@@ -253,7 +253,9 @@ pub async fn add_social(
     .fetch_one(&state.db)
     .await?;
 
-    Ok(Json(json!({ "err": 0, "proposal_id": proposal_id, "status": "pending" })))
+    Ok(Json(
+        json!({ "err": 0, "proposal_id": proposal_id, "status": "pending" }),
+    ))
 }
 
 /// DELETE /api/authors/{id}/socials/{social_id} — propose removing a social link (curator quorum).
@@ -265,12 +267,13 @@ pub async fn remove_social(
     let uid = crate::routes::curator_content::require_curator(&user)?;
 
     // Fetch the existing social link so we can snapshot it in the proposal.
-    let existing: Option<(String, String, String)> =
-        sqlx::query_as("SELECT platform, url, label FROM author_socials WHERE id = $1 AND profile_id = $2")
-            .bind(social_id)
-            .bind(id)
-            .fetch_optional(&state.db)
-            .await?;
+    let existing: Option<(String, String, String)> = sqlx::query_as(
+        "SELECT platform, url, label FROM author_socials WHERE id = $1 AND profile_id = $2",
+    )
+    .bind(social_id)
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await?;
 
     let (platform, url, label) = match existing {
         Some(s) => s,
@@ -290,7 +293,9 @@ pub async fn remove_social(
     .fetch_one(&state.db)
     .await?;
 
-    Ok(Json(json!({ "err": 0, "proposal_id": proposal_id, "status": "pending" })))
+    Ok(Json(
+        json!({ "err": 0, "proposal_id": proposal_id, "status": "pending" }),
+    ))
 }
 
 // ── Curator social proposal voting ──────────────────────────────────────────
@@ -321,13 +326,19 @@ pub async fn vote_social_proposal(
     .await?;
     let (status, proposed_by, action) = match proposal {
         Some(p) => p,
-        None => return Err(AppError::NotFound(format!("proposal {proposal_id} not found"))),
+        None => {
+            return Err(AppError::NotFound(format!(
+                "proposal {proposal_id} not found"
+            )));
+        }
     };
     if status != "pending" {
         return Err(AppError::BadRequest(format!("proposal already {status}")));
     }
     if proposed_by == uid {
-        return Err(AppError::BadRequest("cannot vote on your own proposal".into()));
+        return Err(AppError::BadRequest(
+            "cannot vote on your own proposal".into(),
+        ));
     }
 
     // Upsert vote.
@@ -442,7 +453,10 @@ pub async fn vote_social_proposal(
             ("vote", json!(vote)),
             ("upvotes", json!(upvotes)),
             ("downvotes", json!(downvotes)),
-            ("new_status", json!(new_status.clone().unwrap_or_else(|| "pending".into()))),
+            (
+                "new_status",
+                json!(new_status.clone().unwrap_or_else(|| "pending".into())),
+            ),
             ("action", json!(action)),
             ("applied", json!(applied)),
         ],
@@ -465,7 +479,10 @@ pub async fn list_social_proposals(
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<Value>, AppError> {
     let _uid = crate::routes::curator_content::require_curator(&user)?;
-    let status_filter = params.get("status").map(|s| s.as_str()).unwrap_or("pending");
+    let status_filter = params
+        .get("status")
+        .map(|s| s.as_str())
+        .unwrap_or("pending");
 
     let proposals: Vec<(i64, i32, String, String, String, String, String, i64, i64)> =
         sqlx::query_as(
@@ -481,19 +498,21 @@ pub async fn list_social_proposals(
 
     let items: Vec<Value> = proposals
         .into_iter()
-        .map(|(id, pid, action, platform, url, label, status, up, down)| {
-            json!({
-                "id": id,
-                "profile_id": pid,
-                "action": action,
-                "platform": platform,
-                "url": url,
-                "label": label,
-                "status": status,
-                "upvotes": up,
-                "downvotes": down,
-            })
-        })
+        .map(
+            |(id, pid, action, platform, url, label, status, up, down)| {
+                json!({
+                    "id": id,
+                    "profile_id": pid,
+                    "action": action,
+                    "platform": platform,
+                    "url": url,
+                    "label": label,
+                    "status": status,
+                    "upvotes": up,
+                    "downvotes": down,
+                })
+            },
+        )
         .collect();
 
     Ok(Json(json!({ "err": 0, "proposals": items })))

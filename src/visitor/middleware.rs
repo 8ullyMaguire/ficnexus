@@ -60,7 +60,7 @@ pub async fn visitor_middleware(mut request: Request, next: Next) -> Response {
     let consented = crate::visitor::has_cookie_consent(request.headers());
 
     // Always expose a VisitorId to handlers, even for the first request.
-    let visitor_id = existing.unwrap_or_else(VisitorId::new);
+    let visitor_id = existing.unwrap_or_default();
     request.extensions_mut().insert(visitor_id);
 
     let mut response = next.run(request).await;
@@ -123,10 +123,8 @@ mod tests {
         let id = VisitorId::new();
         let cookie_str = format!("{VISITOR_COOKIE_NAME}={}", id.to_cookie_string());
         let mut req = axum::extract::Request::new(axum::body::Body::empty());
-        req.headers_mut().insert(
-            "cookie",
-            cookie_str.parse().expect("valid header value"),
-        );
+        req.headers_mut()
+            .insert("cookie", cookie_str.parse().expect("valid header value"));
         let parsed = extract_visitor_id(&req).expect("present");
         assert_eq!(parsed, id);
     }

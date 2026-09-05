@@ -219,7 +219,9 @@ pub async fn epub_handler(
                 reason,
             )
             .await;
-            return Err(AppError::BadRequest(format!("work held for review: {reason}")));
+            return Err(AppError::BadRequest(format!(
+                "work held for review: {reason}"
+            )));
         }
         crate::scrape::quality::QualityVerdict::Accept => {}
     }

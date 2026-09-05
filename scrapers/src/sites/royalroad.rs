@@ -209,9 +209,7 @@ impl SiteScraper for RoyalRoadScraper {
 
 /// Extract a number that follows a given label in text.
 /// Finds patterns like "Words: 123,456" or "Words 123456" (case-insensitive).
-
-/// Extract the true word count from the Pages tooltip text
-/// ("... calculated from 297,036 words.") used by current RoyalRoad pages.
+/// Extract the true word count from the Pages tooltip text ("... calculated from 297,036 words.") used by current RoyalRoad pages.
 fn extract_words_from_pages_tooltip(html: &str) -> Option<i64> {
     let re = regex_lite::Regex::new(r"calculated from ([\d,]+) words").ok()?;
     let caps = re.captures(html)?;
