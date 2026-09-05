@@ -67,6 +67,11 @@ pub struct AppState {
     pub mailer: Box<dyn crate::services::mailer::Mailer>,
 }
 
+/// Redirect to root — used by legacy redirect routes.
+async fn redirect_to_root() -> Redirect {
+    Redirect::to("/")
+}
+
 /// Build and run the HTTP server
 pub async fn run(config: Config) {
     // Connect to PostgreSQL
@@ -346,14 +351,9 @@ pub async fn run(config: Config) {
     .expect("Server error");
 }
 
-/// Build the Axum router with all routes
-async fn build_router(state: Arc<AppState>) -> Router {
-    let frontend_dir = state.config.frontend_dir.clone();
 
-    // Redirect handler functions (avoid closures with async blocks)
-    async fn redirect_to_root() -> Redirect {
-        Redirect::to("/")
-    }
+/// Route chunk: Core Api
+fn chunk_core_api() -> impl Into<Router<Arc<AppState>>> {
     Router::new()
         // API routes
         .route("/api/", get(routes::api_docs::api_docs_handler))
@@ -388,6 +388,13 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/sitemaps/works-{shard}.xml",
             get(routes::sitemap::sitemap_works_handler),
         )
+}
+
+
+
+/// Route chunk: Device Download
+fn chunk_device_download() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
         // Anonymous device library (Tier-2)
         .route(
             "/api/v1/device/library",
@@ -496,23 +503,13 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/api/recipes/{id}/publish",
             axum::routing::post(crate::routes::recipes::publish_recipe),
         )
-        // Per-fic community suggestions (auth-based, URL-scrapeable, votable)
-        .route(
-            "/api/fic-suggestions",
-            get(crate::fic_suggestions::list_suggestions),
-        )
-        .route(
-            "/api/fic-suggestions",
-            axum::routing::post(crate::fic_suggestions::create_suggestion),
-        )
-        .route(
-            "/api/fic-suggestions/{id}/vote",
-            axum::routing::post(crate::fic_suggestions::vote_suggestion),
-        )
-        .route(
-            "/api/fic-suggestions/{id}/remove",
-            axum::routing::post(crate::fic_suggestions::remove_suggestion),
-        )
+}
+
+
+
+/// Route chunk: Tags Curator
+fn chunk_tags_curator() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
         // Tag routes (v3)
         .route(
             "/api/tags/submit",
@@ -623,10 +620,13 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/api/curator/work-deletions",
             axum::routing::get(crate::routes::work_delete::list_delete_requests),
         )
-        .route(
-            "/api/curator/work-deletions/{id}/resolve",
-            axum::routing::post(crate::routes::work_delete::resolve_delete_request),
-        )
+}
+
+
+
+/// Route chunk: Series Author
+fn chunk_series_author() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
         // Series routes
         .route("/api/series/{id}", get(crate::routes::series::get_series))
         .route(
@@ -682,16 +682,13 @@ async fn build_router(state: Arc<AppState>) -> Router {
         )
         // Advanced search route
         .route("/api/search", get(crate::search::routes::search_handler))
-        // Ask the Archive — natural-language search via Ollama
-        .route(
-            "/api/search/ask",
-            axum::routing::post(crate::search::ask::ask_handler),
-        )
-        // Full-text search over fic bodies ("fics where X says Y")
-        .route(
-            "/api/search/body",
-            axum::routing::get(crate::search::body::body_search_handler),
-        )
+}
+
+
+
+/// Route chunk: Discovery
+fn chunk_discovery() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
         // Blind Date with a Fic — random discovery with title/fandom hidden
         .route(
             "/api/blind-date",
@@ -796,6 +793,13 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/api/blocks/{user_id}",
             axum::routing::delete(crate::routes::subsystems::unblock_user),
         )
+}
+
+
+
+/// Route chunk: Social Kudos
+fn chunk_social_kudos() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
         // Similar / vector search routes
         .route(
             "/api/search/similar/{work_id}",
@@ -936,6 +940,13 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/api/user/preferences/formats",
             axum::routing::put(crate::routes::user_preferences::update_format_preferences),
         )
+}
+
+
+
+/// Route chunk: Dmca Notifications
+fn chunk_dmca_notifications() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
         // DMCA / copyright takedowns
         .route(
             "/api/copyright/notice",
@@ -1021,6 +1032,13 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/api/follows/check/{target_type}/{target_id}",
             get(crate::routes::follows::check_follow_handler),
         )
+}
+
+
+
+/// Route chunk: Forum Activitypub
+fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
         // ── Forum (F2: categories + topic list, read side) ────────────
         .route(
             "/api/forum/categories",
@@ -1215,6 +1233,13 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/api/activitypub/status",
             get(crate::activitypub::ap_status),
         )
+}
+
+
+
+/// Route chunk: Requests Translate
+fn chunk_requests_translate() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
         // ── Fic Requests (prompt board) ──────────────────────────────
         .route(
             "/api/requests",
@@ -1304,6 +1329,13 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/api/follows/followers/{user_id}",
             get(crate::routes::follows::get_followers_handler),
         )
+}
+
+
+
+/// Route chunk: Collections Status
+fn chunk_collections_status() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
         // Follow updates feed + refresh-fic (program items 6 & 7)
         .route(
             "/api/v1/updates",
@@ -1557,11 +1589,13 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/api/reading/history/clear",
             axum::routing::post(crate::routes::quests::clear_read_history_handler),
         )
-        // Entity recommendations: similar tags/fandoms/authors/collections/users.
-        .route(
-            "/api/v0/recommendations/entities",
-            get(crate::recommender::routes::entity_recs_handler),
-        )
+}
+
+
+
+/// Route chunk: Content Translation
+fn chunk_content_translation() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
         // Public fic-content APIs — reader HTML, export URLs, meta, similar.
         // Served fresh when online, stale (cached) copy when offline so
         // previously-opened fics keep reading without a connection.
@@ -1634,23 +1668,13 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/api/fandoms/{slug}",
             get(crate::routes::fandom::get_fandom),
         )
-        // Work proposal routes
-        .route(
-            "/api/work-proposals",
-            axum::routing::post(crate::routes::work_proposals::create_proposal_handler),
-        )
-        .route(
-            "/api/work-proposals",
-            get(crate::routes::work_proposals::list_proposals_handler),
-        )
-        .route(
-            "/api/work-proposals/{id}",
-            get(crate::routes::work_proposals::get_proposal_handler),
-        )
-        .route(
-            "/api/work-proposals/{id}/vote",
-            axum::routing::post(crate::routes::work_proposals::vote_proposal_handler),
-        )
+}
+
+
+
+/// Route chunk: Comments Upload
+fn chunk_comments_upload() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
         // Threaded comment routes
         .route(
             "/api/works/{url_id}/comments",
@@ -1734,6 +1758,13 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/opds/manifest",
             get(crate::routes::opds::manifest::manifest),
         )
+}
+
+
+
+/// Route chunk: Feeds Admin
+fn chunk_feeds_admin() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
         // RSS/Atom feeds. The per-fic route uses a bare {url_id} segment
         // (axum 0.8 forbids mixed literal+param segments like {url_id}.xml);
         // the handler strips a trailing ".xml" so /feed/works/<id>.xml works.
@@ -1779,11 +1810,13 @@ async fn build_router(state: Arc<AppState>) -> Router {
             axum::routing::put(crate::routes::trust::admin_set_trust),
         )
         .route("/api/admin/digest", get(crate::routes::trust::admin_digest))
-        // Extension marketplace (trust-gated publishing, open gallery).
-        .nest(
-            "/api/extensions",
-            crate::routes::extensions::router(state.clone()),
-        )
+}
+
+
+
+/// Route chunk: Customization Redirects
+fn chunk_customization_redirects() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
         // ── Admin routes ────────────────────────────────────────────
         .route(
             "/api/admin/heal",
@@ -2108,12 +2141,38 @@ async fn build_router(state: Arc<AppState>) -> Router {
             "/api/works/{id}/canonical",
             get(crate::routes::redirects::canonical_for_work),
         )
-        // Static frontend
+}
+
+
+
+/// Build the Axum router with all routes.
+/// Route chain split into domain chunks (Task 14 refactor).
+async fn build_router(state: Arc<AppState>) -> Router {
+    let frontend_dir = state.config.frontend_dir.clone();
+
+    let merged = chunk_core_api()
+        .into()
+        .merge(chunk_device_download().into())
+        .merge(chunk_tags_curator().into())
+        .merge(chunk_series_author().into())
+        .merge(chunk_discovery().into())
+        .merge(chunk_social_kudos().into())
+        .merge(chunk_dmca_notifications().into())
+        .merge(chunk_forum_activitypub().into())
+        .merge(chunk_requests_translate().into())
+        .merge(chunk_collections_status().into())
+        .merge(chunk_content_translation().into())
+        .merge(chunk_comments_upload().into())
+        .merge(chunk_feeds_admin().into())
+        .merge(chunk_customization_redirects().into());
+
+    merged.with_state(state.clone())
+
         .fallback_service(
             crate::frontend::cache_headers::CacheHeadersLayer.layer(
-                ServeDir::new(&frontend_dir)
+                ServeDir::new(&state.config.frontend_dir)
                     .append_index_html_on_directories(true)
-                    .fallback(ServeFile::new(frontend_dir.join("index.html"))),
+                    .fallback(ServeFile::new(state.config.frontend_dir.join("index.html"))),
             ),
         )
         // Middleware
@@ -2127,9 +2186,8 @@ async fn build_router(state: Arc<AppState>) -> Router {
         .layer(axum::middleware::from_fn(visitor_middleware))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
-        // Shared state
-        .with_state(state)
 }
+
 
 /// Remote info handler: GET /api/remote
 async fn remote_handler(
