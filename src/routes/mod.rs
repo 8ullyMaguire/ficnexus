@@ -2,6 +2,7 @@ pub mod admin;
 pub mod analytics;
 pub mod api_docs;
 pub mod authors;
+pub mod authors_fuzzy;
 pub mod auth;
 pub mod auto_tag;
 pub mod badges;
