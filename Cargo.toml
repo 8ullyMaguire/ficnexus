@@ -62,7 +62,7 @@ tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 axum-prometheus = "0.10"
 
 # UUIDs
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 
 # Hashing
 md-5 = "0.11"

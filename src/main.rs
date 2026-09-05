@@ -21,6 +21,7 @@ pub mod server;
 pub mod services;
 pub mod tags;
 pub mod trending;
+pub mod visitor;
 pub mod works;
 
 /// Matches `@username` tokens (FicNexus usernames: 2-32 alphanumeric/underscore)

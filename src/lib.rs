@@ -1,3 +1,4 @@
+pub mod activitypub;
 pub mod body_cache;
 pub mod cache;
 pub mod config;
@@ -5,12 +6,13 @@ pub mod crypto;
 pub mod db;
 pub mod error;
 pub mod export;
+pub mod fic_suggestions;
 pub mod frontend;
 pub mod heal;
-pub mod fic_suggestions;
 pub mod ingest;
 pub mod limiter;
 pub mod modlog;
+pub mod progression;
 pub mod recommender;
 pub mod roadmap_seed;
 pub mod routes;
@@ -18,11 +20,10 @@ pub mod scrape;
 pub mod search;
 pub mod server;
 pub mod services;
-pub mod activitypub;
 pub mod tags;
 pub mod trending;
+pub mod visitor;
 pub mod works;
-pub mod progression;
 
 /// Re-export key functions for integration testing.
 pub use routes::export::{build_info_string, build_meta_json, generate_slug};
