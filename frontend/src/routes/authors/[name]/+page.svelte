@@ -5,6 +5,7 @@
   import { auth } from '$lib/stores/auth.svelte';
   import { formatWords, stripHtml } from '$lib/util';
   import { getPref } from '$lib/prefs';
+  import WorkListFilters from '$lib/ui/archive/WorkListFilters.svelte';
 
   let { data } = $props();
   const authorName = $derived(decodeURIComponent(data.name));
@@ -82,6 +83,75 @@
     if (!author?.bio) return '';
     return isArchive ? author.bio : stripHtml(author.bio);
   }
+
+  // ── Filter state (for the sidebar) ────────────────────────────────
+  type WorkEntry = AuthorWork | AuthorOrphan;
+
+  interface FilterState {
+    sort: string;
+    complete: boolean | null;
+    minWords: number | null;
+    maxWords: number | null;
+    includeTags: string;
+    excludeTags: string;
+  }
+
+  let filters = $state<FilterState>({
+    sort: 'updated',
+    complete: null,
+    minWords: null,
+    maxWords: null,
+    includeTags: '',
+    excludeTags: '',
+  });
+
+  // All works combined for client-side filtering.
+  let allWorks = $derived<WorkEntry[]>([...works, ...orphans]);
+
+  function applyFilters(
+    ws: WorkEntry[],
+    f: FilterState,
+  ): WorkEntry[] {
+    let result = ws;
+    if (f.complete === true) {
+      result = result.filter((w) => w.status === 'complete');
+    } else if (f.complete === false) {
+      result = result.filter((w) => w.status !== 'complete');
+    }
+    if (f.minWords != null && f.minWords > 0) {
+      result = result.filter((w) => w.words >= (f.minWords ?? 0));
+    }
+    if (f.maxWords != null && f.maxWords > 0) {
+      result = result.filter((w) => w.words <= (f.maxWords ?? Infinity));
+    }
+    switch (f.sort) {
+      case 'words':
+        return [...result].sort((a, b) => b.words - a.words);
+      case 'title':
+        return [...result].sort((a, b) =>
+          a.canonical_title.localeCompare(b.canonical_title),
+        );
+      default:
+        return result; // 'updated'/'created' — already sorted from API
+    }
+  }
+
+  let filteredWorks = $derived(applyFilters(allWorks, filters));
+
+  function handleFilterApply(e: CustomEvent<FilterState>) {
+    filters = e.detail;
+  }
+
+  function handleFilterClear() {
+    filters = {
+      sort: 'updated',
+      complete: null,
+      minWords: null,
+      maxWords: null,
+      includeTags: '',
+      excludeTags: '',
+    };
+  }
 </script>
 
 {#if loading}
@@ -91,7 +161,10 @@
 {:else if author}
   <div class="author-page">
     {#if isArchive}
-      <fieldset class="archive-fieldset">
+      <div class="archive-page">
+        <WorkListFilters on:apply={handleFilterApply} on:clear={handleFilterClear} />
+        <main class="archive-main">
+        <fieldset class="archive-fieldset">
         <legend class="archive-legend">About {author.name}</legend>
         <div class="archive-author-header">
           <div class="archive-author-avatar">
@@ -173,25 +246,23 @@
 
       <fieldset class="archive-fieldset">
         <legend class="archive-legend">Works by {author.name}</legend>
-        {#if works.length === 0 && orphans.length === 0}
+        {#if allWorks.length === 0}
           <p class="archive-muted">No works by this author yet.</p>
+        {:else if filteredWorks.length === 0}
+          <p class="archive-muted">No works match the current filters.</p>
         {:else}
           <ul class="archive-work-list">
-            {#each works as w (w.work_id)}
+            {#each filteredWorks as w (w.work_id ?? w.url_id)}
               <li>
                 <a class="archive-work-link" href={workHref(w)}><strong>{w.canonical_title}</strong></a>
                 <span class="archive-work-meta">{formatWords(w.words)} words · {w.chapters} ch · {w.status}</span>
               </li>
             {/each}
-            {#each orphans as o (o.url_id)}
-              <li>
-                <a class="archive-work-link" href={workHref(o)}><strong>{o.canonical_title}</strong></a>
-                <span class="archive-work-meta">{formatWords(o.words)} words · {o.chapters} ch · {o.status}</span>
-              </li>
-            {/each}
           </ul>
         {/if}
       </fieldset>
+        </main>
+      </div>
     {:else}
       <div class="author-header card">
         <div class="avatar-wrapper">
@@ -291,6 +362,22 @@
 <style>
   .author-page { max-width: var(--max-width); margin: 0 auto; padding: 1rem; }
   .back-link { margin-top: 1.5rem; }
+
+  /* Archive two-column layout (sidebar + main) */
+  .archive-page {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 1rem;
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 1rem;
+  }
+  .archive-main { min-width: 0; }
+  @media (max-width: 720px) {
+    .archive-page {
+      grid-template-columns: 1fr;
+    }
+  }
   /* Modern UI. */
   .author-header { display: flex; align-items: flex-start; gap: 1rem; }
   .avatar-wrapper { flex-shrink: 0; }
