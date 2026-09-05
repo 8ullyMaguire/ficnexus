@@ -7,6 +7,7 @@
 
 pub mod registry;
 pub mod wayback;
+pub mod quality;
 
 pub use fanfic_scrapers::sites;
 pub use fanfic_scrapers::author_link;
