@@ -6,11 +6,33 @@ use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::server::AppState;
+use crate::trending::Timeframe;
 
 #[derive(Debug, Deserialize)]
 pub struct TrendingQuery {
+    /// Backward-compat: integer day count (e.g. `?days=7`).
     pub days: Option<i32>,
+    /// Flexible timeframe string (e.g. `?timeframe=2w`, `?timeframe=3m`,
+    /// `?timeframe=1y`). Overrides `days` when both are set.
+    pub timeframe: Option<String>,
     pub limit: Option<i64>,
+}
+
+/// Resolve a [`TrendingQuery`] into a concrete [`Timeframe`].
+///
+/// `?timeframe=` takes precedence; falls back to `?days=`; defaults to
+/// [`Timeframe::DEFAULT`] (7 days). Returns just the `days` field so
+/// handlers stay focused on the SQL.
+fn resolve_timeframe(q: &TrendingQuery) -> i32 {
+    if let Some(tf) = &q.timeframe {
+        if let Some(parsed) = Timeframe::parse(tf) {
+            return parsed.days;
+        }
+    }
+    if let Some(d) = q.days {
+        return Timeframe::from_days(d).days;
+    }
+    Timeframe::DEFAULT.days
 }
 
 /// GET /api/v1/trending/tag/{tag_type_id}/{tag_name}
@@ -21,7 +43,7 @@ pub async fn trending_by_tag_handler(
     Path((tag_type_id, tag_name)): Path<(i16, String)>,
     Query(params): Query<TrendingQuery>,
 ) -> Result<Json<Value>, AppError> {
-    let days = params.days.unwrap_or(7).max(1).min(365);
+    let days = resolve_timeframe(&params);
     let limit = params.limit.unwrap_or(20).min(50).max(1);
 
     // Find the tag first (resolve aliases)
@@ -121,7 +143,7 @@ pub async fn trending_general_handler(
     State(state): State<Arc<AppState>>,
     Query(params): Query<TrendingQuery>,
 ) -> Result<Json<Value>, AppError> {
-    let days = params.days.unwrap_or(7).max(1).min(365);
+    let days = resolve_timeframe(&params);
     let limit = params.limit.unwrap_or(20).min(50).max(1);
 
     let rows = sqlx::query_as::<_, (String, String, String, i64, i32, String, i64, i64)>(
@@ -170,7 +192,7 @@ pub async fn trending_tags_handler(
     State(state): State<Arc<AppState>>,
     Query(params): Query<TrendingQuery>,
 ) -> Result<Json<Value>, AppError> {
-    let days = params.days.unwrap_or(7).max(1).min(365);
+    let days = resolve_timeframe(&params);
     let limit = params.limit.unwrap_or(20).min(50).max(1);
 
     let rows = sqlx::query_as::<_, (i32, String, i16, String, i64)>(
@@ -204,4 +226,42 @@ pub async fn trending_tags_handler(
         "trending_tags": items,
         "days": days,
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn q(days: Option<i32>, tf: Option<&str>) -> TrendingQuery {
+        TrendingQuery {
+            days,
+            timeframe: tf.map(String::from),
+            limit: None,
+        }
+    }
+
+    #[test]
+    fn resolve_timeframe_prefers_timeframe_param() {
+        assert_eq!(resolve_timeframe(&q(Some(7), Some("2w"))), 14);
+        assert_eq!(resolve_timeframe(&q(Some(7), Some("3m"))), 90);
+    }
+
+    #[test]
+    fn resolve_timeframe_falls_back_to_days() {
+        assert_eq!(resolve_timeframe(&q(Some(30), None)), 30);
+        // Out-of-range days value gets clamped to MAX_DAYS
+        let huge = 5 * 366 + 1000;
+        assert_eq!(resolve_timeframe(&q(Some(huge), None)), 5 * 366);
+    }
+
+    #[test]
+    fn resolve_timeframe_uses_default() {
+        assert_eq!(resolve_timeframe(&q(None, None)), 7);
+    }
+
+    #[test]
+    fn resolve_timeframe_ignores_garbage_timeframe() {
+        // Bad timeframe string → fall through to days
+        assert_eq!(resolve_timeframe(&q(Some(5), Some("garbage"))), 5);
+    }
 }
