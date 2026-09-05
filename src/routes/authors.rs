@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
+use crate::routes::authors_fuzzy::suggest_alternatives;
 use crate::server::AppState;
 
 // ── Helper structs ──────────────────────────────────────────────────────────
@@ -42,7 +43,9 @@ pub async fn search_authors(
         .fetch_all(&state.db)
         .await?;
 
-        return Ok(Json(json!({"err": 0, "items": rows, "page": params.page.unwrap_or(1)})));
+        return Ok(Json(
+            json!({"err": 0, "items": rows, "page": params.page.unwrap_or(1)}),
+        ));
     }
 
     let query = format!("%{}%", params.q.unwrap_or_default());
@@ -64,21 +67,64 @@ pub async fn search_authors(
     .fetch_all(&state.db)
     .await?;
 
-    Ok(Json(json!({"err": 0, "items": rows, "page": params.page.unwrap_or(1)})))
+    Ok(Json(
+        json!({"err": 0, "items": rows, "page": params.page.unwrap_or(1)}),
+    ))
 }
 
-/// GET /api/authors/{id} — get author profile with socials and linked accounts
+/// GET /api/authors/{id} — get author profile with socials and linked accounts.
+///
+/// On miss (unknown id), returns HTTP 404 with a `suggestions` array of
+/// close name matches so the frontend can offer "Did you mean: X?" instead
+/// of dead-ending.
 pub async fn get_author_profile(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    let profile = sqlx::query_as::<_, (i32, String, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>)>(
+    let profile = sqlx::query_as::<
+        _,
+        (
+            i32,
+            String,
+            Option<String>,
+            Option<String>,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(
         "SELECT id, canonical_name, bio, avatar_url, created_at FROM author_profiles WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Author not found".into()))?;
+    .await?;
+
+    let profile = match profile {
+        Some(p) => p,
+        None => {
+            // Fetch recent canonical names and suggest fuzzy matches.
+            let recent_names: Vec<(i32, String)> = sqlx::query_as(
+                "SELECT id, canonical_name FROM author_profiles ORDER BY updated_at DESC LIMIT 50",
+            )
+            .fetch_all(&state.db)
+            .await
+            .unwrap_or_default();
+
+            let suggestions: Vec<Value> = suggest_alternatives(
+                &id.to_string(),
+                &recent_names,
+                5,
+                |(_, name)| name.as_str(),
+            )
+            .into_iter()
+            .map(|(sid, name)| {
+                json!({ "id": sid, "canonical_name": name })
+            })
+            .collect();
+
+            return Err(AppError::NotFound(
+                json!({"err": -5, "msg": "Author not found", "suggestions": suggestions}).to_string(),
+            ));
+        }
+    };
 
     let links = sqlx::query_as::<_, (i32, String, String, Option<i32>, chrono::DateTime<chrono::Utc>)>(
         "SELECT id, source_author, source_url, source_id, created_at FROM author_profile_links WHERE profile_id = $1",
@@ -146,11 +192,13 @@ pub async fn update_author_profile(
     let badge_text = payload.get("badge_text").and_then(|v| v.as_str());
 
     if let Some(name) = canonical_name {
-        sqlx::query("UPDATE author_profiles SET canonical_name = $1, updated_at = NOW() WHERE id = $2")
-            .bind(name)
-            .bind(id)
-            .execute(&state.db)
-            .await?;
+        sqlx::query(
+            "UPDATE author_profiles SET canonical_name = $1, updated_at = NOW() WHERE id = $2",
+        )
+        .bind(name)
+        .bind(id)
+        .execute(&state.db)
+        .await?;
     }
     if let Some(b) = bio {
         sqlx::query("UPDATE author_profiles SET bio = $1, updated_at = NOW() WHERE id = $2")
@@ -295,7 +343,19 @@ pub async fn pending_merges(
         return Err(AppError::Forbidden("Curator access required".into()));
     }
 
-    let rows = sqlx::query_as::<_, (i32, String, String, i32, String, Option<String>, i32, String)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i32,
+            String,
+            String,
+            i32,
+            String,
+            Option<String>,
+            i32,
+            String,
+        ),
+    >(
         r#"SELECT amp.id, amp.source_author, amp.source_url, amp.target_profile_id,
                   ap.canonical_name, u.username, amp.proposed_by, amp.created_at::text
            FROM author_merge_proposals amp
@@ -307,7 +367,8 @@ pub async fn pending_merges(
     .fetch_all(&state.db)
     .await?;
 
-    Ok(Json(json!({"err": 0, "items": rows.into_iter().map(|r| json!({
+    Ok(Json(
+        json!({"err": 0, "items": rows.into_iter().map(|r| json!({
         "id": r.0,
         "source_author": r.1,
         "source_url": r.2,
@@ -315,7 +376,8 @@ pub async fn pending_merges(
         "target_name": r.4,
         "proposed_by": r.5,
         "created_at": r.7,
-    })).collect::<Vec<_>>()})))
+    })).collect::<Vec<_>>()}),
+    ))
 }
 
 /// POST /api/curator/authors/approve/{proposal_id}
@@ -386,6 +448,7 @@ mod tests {
     use crate::error::AppError;
     use crate::routes::auth::AuthUser;
     use crate::routes::authors::AuthorSearchParams;
+    use serde_json::json;
 
     #[test]
     fn test_search_params_defaults() {
@@ -470,10 +533,17 @@ mod tests {
     }
 
     #[test]
-    fn test_apperror_not_found() {
-        let err = AppError::NotFound("Author not found".into());
+    fn test_apperror_not_found_includes_suggestions() {
+        let body = json!({"err": -5, "msg": "Author not found", "suggestions": [{"id": 1, "canonical_name": "alice"}]});
+        let err = AppError::NotFound(body.to_string());
         match err {
-            AppError::NotFound(msg) => assert_eq!(msg, "Author not found"),
+            AppError::NotFound(msg) => {
+                let parsed: serde_json::Value = serde_json::from_str(&msg).expect("valid JSON");
+                assert_eq!(parsed["err"], -5);
+                assert_eq!(parsed["msg"], "Author not found");
+                assert!(parsed["suggestions"].is_array());
+                assert_eq!(parsed["suggestions"][0]["canonical_name"], "alice");
+            }
             _ => panic!("Wrong error variant"),
         }
     }
