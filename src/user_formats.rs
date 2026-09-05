@@ -5,7 +5,10 @@
 //! - Multiple formats → download produces a zip
 //! - Author/collection/series/list pages → always zip with all preferred formats
 
+
 use serde::{Deserialize, Serialize};
+use axum::{extract::State, response::Json};
+use crate::server::AppState;
 
 /// All formats the system can produce.
 pub const AVAILABLE_FORMATS: &[&str] = &["epub", "pdf", "mobi", "html", "azw3", "kepub", "docx"];
@@ -124,5 +127,55 @@ mod tests {
                 expected
             );
         }
+    }
+}
+
+
+// ── API endpoint ───────────────────────────────────────────────────────────
+
+use std::sync::Arc;
+
+/// GET /api/formats — canonical list of available download formats.
+/// Cache for 1 hour (the list changes rarely per the plan).
+/// Response shape: { err: 0, formats: [{ id, label, description, calibre_only }] }
+/// Pure response body — factored out so it can be unit-tested.
+pub fn formats_response() -> serde_json::Value {
+    serde_json::json!({
+        "err": 0,
+        "formats": [
+            { "id": "epub",  "label": "EPUB",     "description": "Standard ebook format (widely compatible)", "calibre_only": false },
+            { "id": "html",  "label": "HTML",     "description": "Web page archive (works everywhere)",        "calibre_only": false },
+            { "id": "txt",   "label": "TXT",      "description": "Plain text (works everywhere)",             "calibre_only": false },
+            { "id": "md",    "label": "Markdown", "description": "Markdown source (works everywhere)",      "calibre_only": false },
+            { "id": "pdf",   "label": "PDF",      "description": "Print-ready PDF (Calibre-rendered)",       "calibre_only": true  },
+            { "id": "mobi",  "label": "MOBI",     "description": "Kindle format (Calibre-rendered)",          "calibre_only": true  },
+            { "id": "azw3",  "label": "AZW3",     "description": "Kindle KF8 format (Calibre-rendered)",       "calibre_only": true  },
+            { "id": "kepub", "label": "KEPUB",    "description": "Kobo EPUB variant (Calibre-rendered)",     "calibre_only": true  },
+            { "id": "docx",  "label": "DOCX",     "description": "Word document (Calibre-rendered)",          "calibre_only": true  },
+        ]
+    })
+}
+
+pub async fn list_formats(
+    _axum_state: State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    Json(formats_response())
+}
+
+#[cfg(test)]
+mod api_tests {
+    use super::*;
+
+    #[test]
+    fn list_formats_response_shape() {
+        let json = formats_response();
+        assert_eq!(json.get("err").and_then(|v| v.as_i64()), Some(0));
+        let formats = json.get("formats").and_then(|v| v.as_array()).unwrap();
+        let ids: Vec<_> = formats.iter().filter_map(|f| f.get("id").and_then(|v| v.as_str())).collect();
+        assert!(ids.contains(&"epub"));
+        assert!(ids.contains(&"mobi"));
+        assert!(ids.contains(&"pdf"));
+        assert_eq!(ids.len(), formats.len()); // no null ids
+        assert_eq!(ids.len(), 9); // all 9 formats present
     }
 }

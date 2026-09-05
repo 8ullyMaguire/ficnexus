@@ -365,6 +365,11 @@ async fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/meta", get(routes::meta::meta_handler))
         .route("/api/remote", get(remote_handler))
         .route("/api/health", get(routes::health::health_handler))
+        // Format list endpoint
+        .route(
+            "/api/formats",
+            get(crate::user_formats::list_formats),
+        )
         // Cache download routes
         .route(
             "/cache/{etype}/{url_id}/{fname}",
@@ -2116,7 +2121,7 @@ async fn build_router(state: Arc<AppState>) -> Router {
             state.clone(),
             crate::routes::analytics::track_usage,
         ))
-        // Visitor funnel — mint a `vh_vis` cookie on first request and
+        // Visitor funnel — mint a `fh_vis` cookie on first request and
         // expose the parsed VisitorId to downstream handlers via request
         // extensions so the register/login flows can merge anonymous state.
         .layer(axum::middleware::from_fn(visitor_middleware))

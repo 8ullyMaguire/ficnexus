@@ -12,7 +12,7 @@ use cookie::{Cookie, SameSite};
 use crate::visitor::VisitorId;
 
 /// Name of the signed visitor ID cookie.
-pub const VISITOR_COOKIE_NAME: &str = "vh_vis";
+pub const VISITOR_COOKIE_NAME: &str = "fh_vis";
 
 /// Max age of the visitor cookie (30 days, in seconds).
 pub const VISITOR_COOKIE_MAX_AGE_SECONDS: i64 = 60 * 60 * 24 * 30;
@@ -48,7 +48,7 @@ pub fn create_visitor_cookie(visitor_id: &VisitorId) -> Cookie<'static> {
 
 /// Middleware that ensures a visitor ID cookie is present.
 ///
-/// If the incoming request already has a `vh_vis` cookie, its `VisitorId`
+/// If the incoming request already has a `fh_vis` cookie, its `VisitorId`
 /// is exposed to downstream handlers via `request.extensions()`. If not,
 /// a fresh ID is minted and attached to the request extensions.
 /// A `Set-Cookie` header is only added when `fh_consent=granted` is present

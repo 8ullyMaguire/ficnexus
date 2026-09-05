@@ -2,7 +2,7 @@
 //!
 //! Issue #6: anonymous users should get trust-0 functionality, with their
 //! data merging into their account on registration. A signed cookie
-//! `vh_vis` (UUID v4) identifies the visitor across requests.
+//! `fh_vis` (UUID v4) identifies the visitor across requests.
 
 pub mod middleware;
 
@@ -54,7 +54,7 @@ impl Default for VisitorId {
 }
 
 /// Cookie name for the visitor ID.
-pub const VISITOR_COOKIE_NAME: &str = "vh_vis";
+pub const VISITOR_COOKIE_NAME: &str = "fh_vis";
 
 /// Cookie lifetime in seconds (90 days).
 pub const VISITOR_COOKIE_MAX_AGE: i64 = 90 * 24 * 60 * 60;
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn cookie_name_is_expected() {
-        assert_eq!(VISITOR_COOKIE_NAME, "vh_vis");
+        assert_eq!(VISITOR_COOKIE_NAME, "fh_vis");
     }
 
     #[test]
