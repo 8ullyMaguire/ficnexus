@@ -1666,6 +1666,71 @@ pub fn generate_slug(title: &str, url_id: &str) -> String {
     format!("{}-{}", slug, url_id)
 }
 
+/// URL slug for a work page: lowercase, hyphenated. Empty/undecorable
+/// titles fall back to "work". Cap length to keep URLs sane.
+///
+/// This is the cosmetic part of the canonical work URL
+/// `/works/{title_slug}.{work_id}`. The slug is parsed-but-not-trusted
+/// by the server (only the trailing `.{id}` is load-bearing) so a
+/// changed title does not break links.
+pub fn work_url_slug(title: &str) -> String {
+    let cleaned: String = title
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || c.is_whitespace() || matches!(c, '-' | '\''))
+        .collect();
+    let s = cleaned
+        .replace('\'', "")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("-")
+        .to_lowercase();
+    let s = s.trim_matches('-').to_string();
+    if s.is_empty() {
+        "work".into()
+    } else {
+        s.chars().take(60).collect()
+    }
+}
+
+#[cfg(test)]
+mod work_url_slug_tests {
+    use super::work_url_slug;
+
+    #[test]
+    fn normal_title() {
+        assert_eq!(work_url_slug("The Long Way Home"), "the-long-way-home");
+    }
+
+    #[test]
+    fn strips_unicode() {
+        // Non-ASCII chars are dropped, only the ASCII letters survive.
+        assert_eq!(work_url_slug("Café 'au lait'"), "caf-au-lait");
+    }
+
+    #[test]
+    fn empty_string_yields_work() {
+        assert_eq!(work_url_slug(""), "work");
+    }
+
+    #[test]
+    fn punctuation_only_yields_work() {
+        assert_eq!(work_url_slug("??!!@@##"), "work");
+    }
+
+    #[test]
+    fn long_title_truncated() {
+        let long = "a".repeat(100);
+        let out = work_url_slug(&long);
+        assert!(out.len() <= 60);
+        assert_eq!(out, "a".repeat(60));
+    }
+
+    #[test]
+    fn leading_trailing_hyphens_trimmed() {
+        assert_eq!(work_url_slug("  --title--  "), "title");
+    }
+}
+
 /// Build the info string shown to users
 pub fn build_info_string(meta: &FicMetadata) -> (String, Vec<String>) {
     let relative_time = {

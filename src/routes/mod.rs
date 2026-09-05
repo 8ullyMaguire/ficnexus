@@ -45,6 +45,7 @@ pub mod quests;
 pub mod reactions;
 pub mod reader;
 pub mod recipes;
+pub mod redirects;
 pub mod reports;
 pub mod requests;
 pub mod leaderboard;
