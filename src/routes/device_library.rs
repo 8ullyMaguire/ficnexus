@@ -11,10 +11,30 @@ use axum::extract::State;
 use axum::http::header::{HeaderMap, HeaderValue, SET_COOKIE};
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
+use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use std::sync::Arc;
+use subtle::ConstantTimeEq;
+
+type HmacSha256 = Hmac<Sha256>;
+
+/// Return 403 if the request does not carry `fh_consent=granted`.
+///
+/// Device-library endpoints (anonymous bookmarks, follows) persist state
+/// in a tracking cookie, so they require the user has accepted the
+/// cookie consent. The frontend's ConsentToast already shows on first
+/// visit; this 403 lets it know to surface the toast if the user tries
+/// to bookmark/follow before accepting.
+fn require_consent(headers: &HeaderMap) -> Result<(), AppError> {
+    if !crate::visitor::has_cookie_consent(headers) {
+        return Err(AppError::Forbidden(
+            "cookie consent required".to_string(),
+        ));
+    }
+    Ok(())
+}
 
 use crate::db::queries;
 use crate::error::AppError;
@@ -41,32 +61,12 @@ pub struct DeviceFollow {
     pub author_name: Option<String>,
 }
 
-/// Compute HMAC-SHA256 manually using the `sha2` crate.
+/// Compute HMAC-SHA256 using the `hmac` crate (constant-time under the hood).
 fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
-    const BLOCK_SIZE: usize = 64;
-    let mut key_padded = [0u8; BLOCK_SIZE];
-    if key.len() <= BLOCK_SIZE {
-        key_padded[..key.len()].copy_from_slice(key);
-    } else {
-        let hash = Sha256::digest(key);
-        key_padded[..hash.len()].copy_from_slice(&hash);
-    }
-    let mut ipad = key_padded;
-    let mut opad = key_padded;
-    for b in &mut ipad {
-        *b ^= 0x36;
-    }
-    for b in &mut opad {
-        *b ^= 0x5c;
-    }
-    let mut inner = Sha256::new();
-    inner.update(&ipad);
-    inner.update(data);
-    let inner_hash = inner.finalize();
-    let mut outer = Sha256::new();
-    outer.update(&opad);
-    outer.update(&inner_hash);
-    outer.finalize().into()
+    let mut mac = <HmacSha256 as KeyInit>::new_from_slice(key)
+        .expect("HMAC accepts any key length");
+    mac.update(data);
+    mac.finalize().into_bytes().into()
 }
 
 /// Sign a JSON payload with HMAC-SHA256 and return `base64(json).base64(sig)`.
@@ -79,6 +79,9 @@ fn sign_json(value: &Value, secret: &str) -> Result<String, AppError> {
 }
 
 /// Verify and decode a signed cookie payload. Returns `None` if invalid.
+///
+/// Uses constant-time comparison (`subtle::ConstantTimeEq`) to prevent
+/// timing side-channel attacks on the signature.
 fn verify_cookie(signed: &str, secret: &str) -> Option<DeviceLibrary> {
     let (b64_json, b64_sig) = signed.split_once('.')?;
     let expected = hmac_sha256(secret.as_bytes(), b64_json.as_bytes());
@@ -86,7 +89,8 @@ fn verify_cookie(signed: &str, secret: &str) -> Option<DeviceLibrary> {
         .decode(b64_sig)
         .ok()?;
     let provided: [u8; 32] = provided_bytes.try_into().ok()?;
-    if expected != provided {
+    // Constant-time compare — protects against timing attacks.
+    if expected.ct_eq(&provided).unwrap_u8() != 1 {
         return None;
     }
     let json = base64::engine::general_purpose::STANDARD
@@ -156,6 +160,7 @@ pub async fn add_device_bookmark(
     headers: HeaderMap,
     Json(body): Json<DeviceBookmarkBody>,
 ) -> Result<Response, AppError> {
+    require_consent(&headers)?;
     if queries::get_work(&state.db, body.work_id).await?.is_none() {
         return Err(AppError::NotFound(format!(
             "Work {} not found",
@@ -181,6 +186,7 @@ pub async fn remove_device_bookmark(
     headers: HeaderMap,
     axum::extract::Path(work_id): axum::extract::Path<i32>,
 ) -> Result<Response, AppError> {
+    require_consent(&headers)?;
     let mut library = read_or_init(&headers);
     if library.bookmarks.contains(&work_id) {
         library.bookmarks.retain(|id| *id != work_id);
@@ -206,6 +212,7 @@ pub async fn add_device_follow(
     headers: HeaderMap,
     Json(body): Json<DeviceFollowBody>,
 ) -> Result<Response, AppError> {
+    require_consent(&headers)?;
     let mut library = read_or_init(&headers);
 
     let follow = DeviceFollow {
@@ -236,6 +243,7 @@ pub async fn remove_device_follow(
     headers: HeaderMap,
     Json(body): Json<DeviceFollowBody>,
 ) -> Result<Response, AppError> {
+    require_consent(&headers)?;
     let mut library = read_or_init(&headers);
 
     library.follows.retain(|f| {
@@ -383,6 +391,15 @@ mod tests {
     }
 
     #[test]
+    fn verify_rejects_cookie_signed_with_other_secret() {
+        // Guard against someone accidentally hardcoding a key in the future.
+        let value = serde_json::to_value(&DeviceLibrary::default()).unwrap();
+        let signed_with_a = sign_json(&value, "secret-key-alpha").unwrap();
+        // Any other key (even similarly-formatted) must reject.
+        assert!(verify_cookie(&signed_with_a, "secret-key-beta").is_none());
+    }
+
+    #[test]
     fn verify_rejects_garbage() {
         assert!(verify_cookie("not-a-valid-cookie", TEST_SECRET).is_none());
         assert!(verify_cookie("", TEST_SECRET).is_none());
@@ -447,5 +464,48 @@ mod tests {
         let tampered: String = tampered.into_iter().collect();
         assert_ne!(tampered, payload);
         assert!(verify_cookie(&tampered, TEST_SECRET).is_none());
+    }
+
+    // ── Consent gate tests ───────────────────────────────────────────
+
+    fn header_map(cookie: Option<&str>) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        if let Some(c) = cookie {
+            h.insert(
+                axum::http::header::COOKIE,
+                c.parse().expect("valid header value"),
+            );
+        }
+        h
+    }
+
+    #[test]
+    fn consent_gate_allows_with_granted() {
+        let h = header_map(Some("fh_consent=granted"));
+        assert!(require_consent(&h).is_ok());
+    }
+
+    #[test]
+    fn consent_gate_denied_returns_err() {
+        let h = header_map(Some("fh_consent=denied"));
+        assert!(require_consent(&h).is_err());
+    }
+
+    #[test]
+    fn consent_gate_no_cookie_returns_err() {
+        let h = header_map(None);
+        assert!(require_consent(&h).is_err());
+    }
+
+    #[test]
+    fn consent_gate_garbage_returns_err() {
+        let h = header_map(Some("fh_consent=garbage"));
+        assert!(require_consent(&h).is_err());
+    }
+
+    #[test]
+    fn consent_gate_mixed_cookies() {
+        let h = header_map(Some("foo=bar; fh_consent=granted; baz=qux"));
+        assert!(require_consent(&h).is_ok());
     }
 }

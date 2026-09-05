@@ -50,12 +50,14 @@ pub fn create_visitor_cookie(visitor_id: &VisitorId) -> Cookie<'static> {
 ///
 /// If the incoming request already has a `vh_vis` cookie, its `VisitorId`
 /// is exposed to downstream handlers via `request.extensions()`. If not,
-/// a fresh ID is minted, attached to the request extensions, and a
-/// `Set-Cookie: vh_vis=...` header is added to the response so the
-/// browser persists it for subsequent requests.
+/// a fresh ID is minted and attached to the request extensions.
+/// A `Set-Cookie` header is only added when `fh_consent=granted` is present
+/// (GDPR/privacy compliance — no tracking cookies without consent).
 pub async fn visitor_middleware(mut request: Request, next: Next) -> Response {
+    // Extract headers before consuming the request.
     let existing = extract_visitor_id(&request);
     let has_cookie = existing.is_some();
+    let consented = crate::visitor::has_cookie_consent(request.headers());
 
     // Always expose a VisitorId to handlers, even for the first request.
     let visitor_id = existing.unwrap_or_else(VisitorId::new);
@@ -63,7 +65,8 @@ pub async fn visitor_middleware(mut request: Request, next: Next) -> Response {
 
     let mut response = next.run(request).await;
 
-    if !has_cookie {
+    // Only set the visitor cookie if the user has given cookie consent.
+    if !has_cookie && consented {
         let cookie = create_visitor_cookie(&visitor_id);
         if let Ok(header_value) = cookie.encoded().to_string().parse() {
             response.headers_mut().append("set-cookie", header_value);

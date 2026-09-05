@@ -66,9 +66,14 @@ axum-prometheus = "0.10"
 # UUIDs
 uuid = { version = "1", features = ["v4", "serde"] }
 
+# HTTP types (used by visitor consent check)
+http = "1"
+
 # Hashing
 md-5 = "0.11"
 sha2 = "0.11"
+hmac = "0.13"
+subtle = "2"
 
 # Date/time
 chrono = { version = "0.4", default-features = false, features = ["serde", "std"] }
