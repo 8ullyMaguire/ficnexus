@@ -3757,10 +3757,85 @@ pub async fn save_user_format_preferences(
             $1::jsonb
         ) WHERE id = $2",
     )
-    .bind(formats_value)
     .bind(user_id)
     .execute(pool)
     .await?;
 
     Ok(())
+}
+
+// ── Visitor state (anonymous funnel) ────────────────────────────────
+
+/// Load visitor state by visitor ID. Returns None if not found.
+pub async fn get_visitor_state(
+    pool: &PgPool,
+    visitor_id: uuid::Uuid,
+) -> AppResult<Option<VisitorStateRow>> {
+    let row = sqlx::query_as::<_, VisitorStateRow>(
+        "SELECT visitor_id, ratings, saved_searches, bookmarks, created_at, updated_at
+         FROM visitor_state WHERE visitor_id = $1",
+    )
+    .bind(visitor_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+/// Upsert visitor state (insert or update on conflict).
+pub async fn upsert_visitor_state(
+    pool: &PgPool,
+    visitor_id: uuid::Uuid,
+    ratings: &serde_json::Value,
+    saved_searches: &serde_json::Value,
+    bookmarks: &serde_json::Value,
+) -> AppResult<()> {
+    sqlx::query(
+        "INSERT INTO visitor_state (visitor_id, ratings, saved_searches, bookmarks, updated_at)
+         VALUES ($1, $2, $3, $4, now())
+         ON CONFLICT (visitor_id) DO UPDATE SET
+           ratings = EXCLUDED.ratings,
+           saved_searches = EXCLUDED.saved_searches,
+           bookmarks = EXCLUDED.bookmarks,
+           updated_at = now()",
+    )
+    .bind(visitor_id)
+    .bind(ratings)
+    .bind(saved_searches)
+    .bind(bookmarks)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Delete a visitor state row (after merge on registration).
+pub async fn delete_visitor_state(
+    pool: &PgPool,
+    visitor_id: uuid::Uuid,
+) -> AppResult<()> {
+    sqlx::query("DELETE FROM visitor_state WHERE visitor_id = $1")
+        .bind(visitor_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Delete visitor state rows older than 30 days (cron cleanup).
+pub async fn cleanup_stale_visitor_state(pool: &PgPool) -> AppResult<u64> {
+    let result = sqlx::query(
+        "DELETE FROM visitor_state WHERE updated_at < now() - interval '30 days'",
+    )
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Visitor state row from the database.
+#[derive(Debug, sqlx::FromRow)]
+pub struct VisitorStateRow {
+    pub visitor_id: uuid::Uuid,
+    pub ratings: serde_json::Value,
+    pub saved_searches: serde_json::Value,
+    pub bookmarks: serde_json::Value,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }

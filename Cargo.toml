@@ -18,6 +18,8 @@ resolver = "2"
 [dependencies]
 # Web framework & runtime
 axum = { version = "0.8", features = ["multipart"] }
+cookie = { version = "0.18", features = ["percent-encode", "signed"] }
+time = "0.3"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.7", features = ["cors", "compression-gzip", "trace", "fs"] }

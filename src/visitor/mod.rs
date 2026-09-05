@@ -4,6 +4,8 @@
 //! data merging into their account on registration. A signed cookie
 //! `vh_vis` (UUID v4) identifies the visitor across requests.
 
+pub mod middleware;
+
 use axum::extract::Request;
 use axum::response::Response;
 use serde::{Deserialize, Serialize};
