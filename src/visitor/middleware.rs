@@ -47,13 +47,23 @@ pub fn create_visitor_cookie(visitor_id: &VisitorId) -> Cookie<'static> {
 }
 
 /// Middleware that ensures a visitor ID cookie is present.
-pub async fn visitor_middleware(request: Request, next: Next) -> Response {
-    let has_cookie = extract_visitor_id(&request).is_some();
+///
+/// If the incoming request already has a `vh_vis` cookie, its `VisitorId`
+/// is exposed to downstream handlers via `request.extensions()`. If not,
+/// a fresh ID is minted, attached to the request extensions, and a
+/// `Set-Cookie: vh_vis=...` header is added to the response so the
+/// browser persists it for subsequent requests.
+pub async fn visitor_middleware(mut request: Request, next: Next) -> Response {
+    let existing = extract_visitor_id(&request);
+    let has_cookie = existing.is_some();
+
+    // Always expose a VisitorId to handlers, even for the first request.
+    let visitor_id = existing.unwrap_or_else(VisitorId::new);
+    request.extensions_mut().insert(visitor_id);
 
     let mut response = next.run(request).await;
 
     if !has_cookie {
-        let visitor_id = VisitorId::new();
         let cookie = create_visitor_cookie(&visitor_id);
         if let Ok(header_value) = cookie.encoded().to_string().parse() {
             response.headers_mut().append("set-cookie", header_value);
@@ -96,5 +106,33 @@ mod tests {
         assert!(max_age.is_some());
         let seconds = max_age.unwrap().whole_seconds();
         assert_eq!(seconds, 60 * 60 * 24 * 30);
+    }
+
+    #[test]
+    fn extract_returns_none_when_cookie_absent() {
+        // No Cookie header → no visitor id.
+        let req = axum::extract::Request::new(axum::body::Body::empty());
+        assert!(extract_visitor_id(&req).is_none());
+    }
+
+    #[test]
+    fn extract_parses_present_cookie() {
+        let id = VisitorId::new();
+        let cookie_str = format!("{VISITOR_COOKIE_NAME}={}", id.to_cookie_string());
+        let mut req = axum::extract::Request::new(axum::body::Body::empty());
+        req.headers_mut().insert(
+            "cookie",
+            cookie_str.parse().expect("valid header value"),
+        );
+        let parsed = extract_visitor_id(&req).expect("present");
+        assert_eq!(parsed, id);
+    }
+
+    #[test]
+    fn extract_ignores_unrelated_cookies() {
+        let mut req = axum::extract::Request::new(axum::body::Body::empty());
+        req.headers_mut()
+            .insert("cookie", "foo=bar; other=stuff".parse().unwrap());
+        assert!(extract_visitor_id(&req).is_none());
     }
 }

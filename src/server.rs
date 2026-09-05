@@ -23,6 +23,7 @@ use crate::limiter;
 use crate::recommender::{engine::RecommendationEngine, worker::CollectionWorker};
 use crate::routes;
 use crate::scrape::registry::ScraperRegistry;
+use crate::visitor::middleware::visitor_middleware;
 
 /// Shared application state accessible by all handlers
 pub struct AppState {
@@ -2084,6 +2085,10 @@ async fn build_router(state: Arc<AppState>) -> Router {
             state.clone(),
             crate::routes::analytics::track_usage,
         ))
+        // Visitor funnel — mint a `vh_vis` cookie on first request and
+        // expose the parsed VisitorId to downstream handlers via request
+        // extensions so the register/login flows can merge anonymous state.
+        .layer(axum::middleware::from_fn(visitor_middleware))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
         // Shared state

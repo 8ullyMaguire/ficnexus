@@ -17,6 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// POST /api/v1/auth/register
 pub async fn register_handler(
     State(state): State<Arc<AppState>>,
+    visitor: Option<axum::Extension<crate::visitor::VisitorId>>,
     Json(body): Json<RegisterRequest>,
 ) -> Result<Json<Value>, AppError> {
     // ── Tiered rate limit (auth tier: 10/min per IP) ──────────────────
@@ -74,6 +75,25 @@ pub async fn register_handler(
     }
 
     let result = auth::register_user(&state.db, body, &secret).await?;
+
+    // Merge anonymous visitor state into the new account (best-effort; never
+    // blocks registration success).
+    if let Some(axum::Extension(visitor_id)) = visitor {
+        if let Err(e) = crate::db::queries::merge_visitor_state_into_user(
+            &state.db,
+            visitor_id.0,
+            result.user.id,
+        )
+        .await
+        {
+            tracing::warn!(
+                visitor_id = %visitor_id.0,
+                user_id = result.user.id,
+                error = %e,
+                "failed to merge visitor state on registration"
+            );
+        }
+    }
 
     let refresh = auth::create_refresh_token(result.user.id, &secret)?;
 
