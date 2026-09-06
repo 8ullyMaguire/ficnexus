@@ -52,7 +52,8 @@ pub async fn sitemap_index_handler(State(state): State<Arc<AppState>>) -> impl I
 }
 
 /// One row: the url_id plus the last meaningful update timestamp.
-type SitemapRow = (String, Option<chrono::DateTime<chrono::Utc>>);
+/// url_id, work_id, canonical_title, updated
+type SitemapRow = (String, Option<i32>, Option<String>, Option<chrono::DateTime<chrono::Utc>>);
 
 fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;")
@@ -79,11 +80,14 @@ pub async fn sitemap_works_handler(
     }
 
     let rows: Vec<SitemapRow> = sqlx::query_as::<_, SitemapRow>(
-        r#"SELECT id AS url_id,
-                  GREATEST(fic_updated, updated) AS updated
-           FROM fic_info
-           WHERE LOWER(LEFT(id, 1)) = $1
-           ORDER BY id
+        r#"SELECT fi.id AS url_id,
+                  w.id AS work_id,
+                  w.canonical_title AS canonical_title,
+                  GREATEST(fi.fic_updated, fi.updated) AS updated
+           FROM fic_info fi
+           JOIN works w ON w.id = fi.work_id
+           WHERE LOWER(LEFT(fi.id, 1)) = $1
+           ORDER BY fi.id
            LIMIT 50000"#,
     )
     .bind(shard_char.to_string())
@@ -97,8 +101,29 @@ pub async fn sitemap_works_handler(
          <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n",
     );
     for row in rows {
-        let (url_id, updated) = row;
-        let loc = format!("{origin}/works/{}", xml_escape(&url_id));
+        let (url_id, work_id, canonical_title, updated) = row;
+        let slug = work_id
+            .zip(canonical_title.as_ref())
+            .map(|(wid, title)| {
+                let cleaned: String = title
+                    .chars()
+                    .filter(|c| c.is_ascii_alphanumeric() || c.is_whitespace() || matches!(c, '-' | '\''))
+                    .collect();
+                let slug = cleaned
+                    .replace('\'', "")
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join("-")
+                    .to_lowercase()
+                    .trim_matches('-')
+                    .chars()
+                    .take(60)
+                    .collect::<String>();
+                let slug = if slug.is_empty() { "work".to_string() } else { slug };
+                format!("{}.{}", slug, wid)
+            })
+            .unwrap_or_else(|| url_id.clone());
+        let loc = format!("{origin}/works/{}", xml_escape(&slug));
         match updated {
             Some(ts) => xml.push_str(&format!(
                 "  <url>\n    <loc>{loc}</loc>\n    <lastmod>{}</lastmod>\n  </url>\n",

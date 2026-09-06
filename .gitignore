@@ -55,3 +55,6 @@ books/
 qa/
 cache/
 *.log
+
+# Unison sync tmp
+.unison.*.tmp
