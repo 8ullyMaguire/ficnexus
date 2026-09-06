@@ -251,6 +251,11 @@ pub trait SiteScraper: Send + Sync {
             "fetch-chapters-from-HTML not implemented for this site".into(),
         ))
     }
+    /// Extract tags from raw HTML (e.g. from Wayback Machine).
+    /// Default: empty vec. Adapters can override for tag parsing.
+    async fn extract_tags_from_html(&self, _html: &str) -> Result<Vec<ExtractedTag>, ScrapeError> {
+        Ok(vec![])
+    }
     /// Fetch the raw HTML for `url` (used by the default `lookup` /
     /// `fetch_chapters` when the adapter delegates to the `_from_html`
     /// variants). Adapters may override for site-specific headers.

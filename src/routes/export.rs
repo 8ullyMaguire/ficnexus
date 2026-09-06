@@ -2095,7 +2095,9 @@ mod tests {
         assert!((mins as f64 - 42.0).abs() < 1.0);
 
         // High dialogue (many quotes): ~300 wpm → same 10k words = ~33 min.
-        let dialogue = vec!["He said.".to_string(); 500].join(" ");
+        // Use a string with 1000 quotes (≈50% dialogue ratio → capped to 1.0)
+        // so WPM = 300 and 10k words = 33 min vs 42 min for narrative.
+        let dialogue = "\"He said.\" \"She replied.\" ".repeat(500);
         let mins_dialogue = super::estimate_reading_minutes(10_000, &dialogue);
         assert!(mins_dialogue < mins, "dialogue-heavy text should estimate fewer minutes");
     }

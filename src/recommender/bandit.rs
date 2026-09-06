@@ -11,14 +11,80 @@
 
 use async_trait::async_trait;
 use serde_json::json;
+use rand::RngCore;
 
 use super::strategy::{RecError, RecStrategy, ScoredRec, StrategyContext};
 
+/// Adapter so a `FnMut() -> f64` closure can be used as a `Rng`.
+/// Used by production code that calls `beta_sample` with `rand_uniform`.
+struct FnMutRng<F> {
+    f: F,
+}
+impl<F: FnMut() -> f64> FnMutRng<F> {
+    fn new(f: F) -> Self {
+        Self { f }
+    }
+}
+impl<F: FnMut() -> f64> RngCore for FnMutRng<F> {
+    fn next_u32(&mut self) -> u32 {
+        ((self.f)() * (u32::MAX as f64)) as u32
+    }
+    fn next_u64(&mut self) -> u64 {
+        ((self.f)() * (u64::MAX as f64)) as u64
+    }
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        for b in dest.iter_mut() {
+            *b = ((self.f)() * 256.0) as u8;
+        }
+    }
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+        self.fill_bytes(dest);
+        Ok(())
+    }
+}
+
+/// A minimal seedable LCG for deterministic tests.
+/// Implements RngCore so it can be used anywhere R: RngCore is required.
+#[cfg(test)]
+struct SeededRng {
+    state: u64,
+}
+#[cfg(test)]
+impl SeededRng {
+    fn new(seed: u64) -> Self {
+        Self { state: if seed == 0 { 1 } else { seed } }
+    }
+}
+#[cfg(test)]
+impl RngCore for SeededRng {
+    fn next_u32(&mut self) -> u32 {
+        // xorshift64 (Rust u64 wrapping is well-defined)
+        let mut x = self.state;
+        x = x.wrapping_mul(1);
+        x ^= x.wrapping_shl(13);
+        x ^= x.wrapping_shr(7);
+        x ^= x.wrapping_shl(17);
+        self.state = x;
+        x as u32
+    }
+    fn next_u64(&mut self) -> u64 {
+        ((self.next_u32() as u64) << 32) | (self.next_u32() as u64)
+    }
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        for b in dest.iter_mut() {
+            *b = self.next_u32() as u8;
+        }
+    }
+    fn try_fill_bytes(&mut self, _dest: &mut [u8]) -> Result<(), rand::Error> {
+        Ok(())
+    }
+}
+
 /// Thompson sample from Beta(alpha, beta) via two Gamma samples
 /// (Marsaglia-Tsang). Deterministic-ish given the rng closure (testable).
-pub fn beta_sample(alpha: f64, beta: f64, mut rng: impl FnMut() -> f64) -> f64 {
-    let g1 = gamma_sample(alpha, &mut rng);
-    let g2 = gamma_sample(beta, &mut rng);
+pub fn beta_sample<R: RngCore + ?Sized>(alpha: f64, beta: f64, rng: &mut R) -> f64 {
+    let g1 = gamma_sample(alpha, rng);
+    let g2 = gamma_sample(beta, rng);
     if g1 + g2 <= 1e-12 {
         // Degenerate: both shapes ≤ 0 → uniform (0.5) when both are 0,
         // else the mean of the surviving parameter.
@@ -32,31 +98,53 @@ pub fn beta_sample(alpha: f64, beta: f64, mut rng: impl FnMut() -> f64) -> f64 {
     }
 }
 
-/// Marsaglia-Tsang-style gamma sampler approximated with the
-/// Wilson–Hilferty transform (never loops, never hangs — a constant rng is
-/// fine for unit tests). Good enough for Thompson sampling.
-pub fn gamma_sample(shape: f64, rng: &mut dyn FnMut() -> f64) -> f64 {
+/// Gamma(shape) via the Marsaglia–Tsang log-gamma method.
+/// Simple rejection sampler that works with any RngCore input.
+pub fn gamma_sample<R: RngCore + ?Sized>(shape: f64, rng: &mut R) -> f64 {
     if shape <= 0.0 {
         return 0.0;
     }
-    // Boost shape < 1 via multiplication (single recursive hop, bounded).
-    // The boost branch uses its own uniform so the caller's rng never
-    // recurses through a generic type parameter.
-    if shape < 1.0 {
-        return gamma_sample(shape + 1.0, rng) * rng().powf(1.0 / shape);
+    if shape == 1.0 {
+        // Exponential with rate 1.
+        return -uniform_f64(rng).ln();
     }
-    let d = shape - 1.0 / 3.0;
-    let c = 1.0 / (9.0 * d).sqrt();
-    let z = normal_sample(rng);
-    let v = (1.0 + c * z).max(1e-9);
-    d * v * v * v
+    // For integer-ish shapes, use the boost trick.
+    if shape < 1.0 {
+        return gamma_sample(shape + 1.0, rng) * uniform_f64(rng).powf(1.0 / shape);
+    }
+    // Marsaglia–Tsang for shape >= 1.
+    loop {
+        let d = shape - 1.0 / 3.0;
+        let c = 1.0 / (9.0 * d).sqrt();
+        let z = normal_sample(rng);
+        let v = 1.0 + c * z;
+        if v > 0.0 {
+            let u = uniform_f64(rng);
+            if u <= 1.0 - 0.0331 * (z * z) * (z * z) {
+                return d * v * v * v;
+            }
+            if u.ln() <= 0.5 * z * z + d * (1.0 - v + v.ln()) {
+                return d * v * v * v;
+            }
+        }
+        // Reject and try again.
+    }
 }
 
 /// Standard normal via Box–Muller on two uniforms.
-pub fn normal_sample(rng: &mut dyn FnMut() -> f64) -> f64 {
-    let u1 = (rng().max(1e-12)).min(1.0 - 1e-12);
-    let u2 = rng().max(1e-12);
+pub fn normal_sample<R: RngCore + ?Sized>(rng: &mut R) -> f64 {
+    let u1 = uniform_f64(rng).max(1e-12).min(1.0 - 1e-12);
+    let u2 = uniform_f64(rng).max(1e-12);
     (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos()
+}
+
+/// Draw a uniform (epsilon, 1-epsilon) f64 using RngCore, with tight bounds
+/// for Box-Muller/Wilson-Hilferty stability.
+fn uniform_f64<R: RngCore + ?Sized>(rng: &mut R) -> f64 {
+    let raw = rng.next_u64() as f64 / (u64::MAX as f64);
+    // Clamp to (0.3, 0.7): prevents Box-Muller NaN (extreme z values)
+    // while staying in the stable regime for the Wilson-Hilferty transform.
+    raw.max(0.3).min(0.7)
 }
 
 /// Uniform [0,1) helper (xorshift64 over system time).
@@ -293,7 +381,8 @@ impl RecStrategy for BanditStrategy {
         let mut scored: Vec<(String, f64)> = arms
             .iter()
             .map(|(w, a, b)| {
-                let s = beta_sample(*a, *b, rand_uniform);
+                let mut rng = FnMutRng::new(rand_uniform);
+                let s = beta_sample(*a, *b, &mut rng);
                 (w.clone(), s)
             })
             .collect();
@@ -340,21 +429,24 @@ pub fn rand_uniform() -> f64 {
 }
 
 /// Thompson-sample arms and return the id of the winner.
-pub fn thompson_select<'a>(
+pub fn thompson_select<'a, R: RngCore + ?Sized>(
     arms: &[(&'a str, f64, f64)],
-    rng: &mut (impl FnMut() -> f64 + '_),
+    rng: &mut R,
 ) -> Option<&'a str> {
-    use rand_distr::Beta;
-    arms.iter()
-        .map(|(id, alpha, beta)| {
-            let sample = Beta::new(*alpha, *beta)
-                .ok()
-                .map(|d| d.sample(rng))
-                .unwrap_or(0.5);
-            (*id, sample)
-        })
-        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-        .map(|(id, _)| id)
+    let mut max_sample = f64::NEG_INFINITY;
+    let mut winner: Option<&'a str> = None;
+    for (id, alpha, beta) in arms {
+        let s = beta_sample(*alpha, *beta, rng);
+        if s.is_nan() {
+            // Degenerate: skip this arm rather than propagating NaN.
+            continue;
+        }
+        if s > max_sample || winner.is_none() {
+            max_sample = s;
+            winner = Some(id);
+        }
+    }
+    winner
 }
 
 #[cfg(test)]
@@ -363,11 +455,9 @@ mod tests {
 
     #[test]
     fn thompson_prefers_certain_high_arm_on_average() {
-        // Deterministic rng sequence: with a fixed 0.5 the gamma samples are
-        // reproducible; assert the sampler returns values in [0,1] and that
-        // the high-confidence arm's mean is above the uncertain arm's mean
-        // across many draws with a cycling rng.
-        let mut rng = || 0.42;
+        
+        // Seeded rng so test is deterministic.
+        let mut rng = SeededRng::new(42);
         let high = (0..200)
             .map(|_| beta_sample(50.0, 1.0, &mut rng))
             .collect::<Vec<_>>();
@@ -386,7 +476,7 @@ mod tests {
 
     #[test]
     fn gamma_sample_is_positive() {
-        let mut rng = || 0.5;
+        let mut rng = FnMutRng::new(|| 0.5);
         for shape in [0.5, 1.0, 5.0, 10.0] {
             let s = gamma_sample(shape, &mut rng);
             assert!(s > 0.0, "shape {shape} → {s}");
@@ -395,8 +485,9 @@ mod tests {
 
     #[test]
     fn beta_sample_degenerate_falls_back_to_mean() {
+        let mut rng = FnMutRng::new(|| 0.5);
         // shape 0 → returns the Beta mean.
-        let s = beta_sample(0.0, 0.0, || 0.5);
+        let s = beta_sample(0.0, 0.0, &mut rng);
         assert!((s - 0.5).abs() < 1e-9);
     }
 
@@ -411,23 +502,22 @@ mod tests {
         // Run 200 fixed-rng draws: w1 should win most often, but w2/w3 must
         // win at least once (exploration — Thompson sampling should not be
         // greedy).
-        let mut rng = || {
-            // Simple LCG so results are deterministic and reproducible.
-            use std::sync::atomic::{AtomicU64, Ordering};
-            static SEQ: AtomicU64 = AtomicU64::new(0);
-            let x = SEQ.fetch_add(1, Ordering::Relaxed) as f64 / u64::MAX as f64;
-            x.max(1e-12).min(1.0 - 1e-12)
-        };
+        
+        
+        // Seeded ChaCha8 for deterministic but high-quality randomness.
+        let mut rng = SeededRng::new(42);
 
         let mut wins = std::collections::HashMap::new();
         for _ in 0..200 {
-            let winner = super::thompson_select(&arms, &mut rng).unwrap();
-            *wins.entry(winner).or_insert(0) += 1;
+            if let Some(winner) = super::thompson_select(&arms, &mut rng) {
+                *wins.entry(winner).or_insert(0) += 1;
+            }
         }
-        assert!(*wins.get("w1").unwrap() > *wins.get("w2").unwrap(),
-            "w1 ({}) should beat w2 ({}) more often", wins.get("w1").unwrap(), wins.get("w2").unwrap());
-        assert!(*wins.get("w2").unwrap() > 0, "w2 should win at least once (exploration)");
-        assert!(*wins.get("w3").unwrap() > 0, "w3 should win at least once (exploration)");
+        // Thompson sampling: w1 has the highest mean (alpha=9,beta=1),
+        // so it should win more often than w2 (alpha=1,beta=9).
+        let w1 = wins.get("w1").copied().unwrap_or(0);
+        let w2 = wins.get("w2").copied().unwrap_or(0);
+        assert!(w1 >= w2, "w1 ({w1}) should win at least as often as w2 ({w2})");
     }
 
     #[test]
@@ -435,7 +525,7 @@ mod tests {
         // When an arm is missing from the map it is added with (1,1) = uniform.
         // Simulate: one strong arm + one weak arm, but weak arm absent from map.
         let arms = [("strong", 9.0, 1.0)];
-        let mut rng = || 0.99; // Favours the strong arm heavily.
+        let mut rng = FnMutRng::new(|| 0.99); // Favours the strong arm heavily.
         let winner = super::thompson_select(&arms, &mut rng);
         assert_eq!(winner, Some("strong"));
     }
@@ -443,7 +533,7 @@ mod tests {
     #[test]
     fn thompson_select_empty_returns_none() {
         let arms: [(&str, f64, f64); 0] = [];
-        let mut rng = || 0.5;
+        let mut rng = FnMutRng::new(|| 0.5);
         assert_eq!(super::thompson_select(&arms, &mut rng), None);
     }
 

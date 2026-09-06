@@ -716,7 +716,7 @@ fn chunk_discovery() -> impl Into<Router<Arc<AppState>>> {
         // Personalized "For You" chips from bookmark tag affinities
         .route(
             "/api/search/chips",
-            get(crate::search::routes::search_chips_handler),
+            get(crate::routes::search::search_chips_handler),
         )
         // Per-user search history chips
         .route(
@@ -2005,6 +2005,15 @@ fn chunk_customization_redirects() -> impl Into<Router<Arc<AppState>>> {
             "/api/admin/auto-tag/backfill",
             axum::routing::post(crate::routes::auto_tag::auto_tag_backfill),
         )
+        // Meta store backfill (new): admin tag/meta recovery for already-scraped works
+        .route(
+            "/api/admin/backfill/tags/dry-run",
+            axum::routing::get(crate::routes::backfill::backfill_dry_run),
+        )
+        .route(
+            "/api/admin/backfill/tags/run",
+            axum::routing::post(crate::routes::backfill::backfill_run),
+        )
         .route(
             "/api/admin/auto-tag/queue",
             get(crate::routes::auto_tag::auto_tag_queue),
@@ -2168,7 +2177,7 @@ fn chunk_customization_redirects() -> impl Into<Router<Arc<AppState>>> {
 /// Build the Axum router with all routes.
 /// Route chain split into domain chunks (Task 14 refactor).
 async fn build_router(state: Arc<AppState>) -> Router {
-    let frontend_dir = state.config.frontend_dir.clone();
+    let _frontend_dir = state.config.frontend_dir.clone();
 
     let merged = chunk_core_api()
         .into()

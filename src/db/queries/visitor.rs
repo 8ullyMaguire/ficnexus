@@ -1,8 +1,5 @@
-use crate::db::models::*;
 use super::VisitorStateRow;
-use crate::error::{AppError, AppResult};
-use chrono::Datelike;
-use chrono::{DateTime, Utc};
+use crate::error::AppResult;
 use sqlx::{PgPool, Row};
 
 // ── Visitor state (anonymous funnel) ────────────────────────────────

@@ -228,6 +228,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "requires Redis on localhost:6379"]
     async fn cache_roundtrip() {
         let client = redis::Client::open("redis://localhost:6379".to_string())
             .expect("invalid redis url for test");
@@ -253,6 +254,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires Redis on localhost:6379"]
     async fn cache_miss_on_unknown_query() {
         let client = redis::Client::open("redis://localhost:6379".to_string())
             .expect("invalid redis url for test");
@@ -287,6 +289,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires Redis on localhost:6379"]
     async fn response_cache_roundtrip() {
         let client = redis::Client::open("redis://localhost:6379".to_string())
             .expect("invalid redis url for test");

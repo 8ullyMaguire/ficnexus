@@ -34,9 +34,7 @@ pub async fn run_training_pipeline(
     ollama: &crate::services::ollama::OllamaClient,
     registry: &crate::recommender::registry::StrategyRegistry,
 ) -> Vec<serde_json::Value> {
-    use crate::recommender::registry::build_context;
-
-    let ctx = build_context(
+    let ctx = crate::recommender::registry::build_context(
         db.clone(),
         std::sync::Arc::new(config.clone()),
         http_client.clone(),

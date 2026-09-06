@@ -1,7 +1,6 @@
 use crate::db::models::*;
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use chrono::Datelike;
-use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
 use super::ReadingHistoryEntry;
 use super::update_reputation_and_promote;

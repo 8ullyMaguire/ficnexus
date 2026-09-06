@@ -1,7 +1,4 @@
-use crate::db::models::*;
 use crate::error::{AppError, AppResult};
-use chrono::Datelike;
-use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
 
 // ── User format preferences ─────────────────────────────────────────

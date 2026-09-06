@@ -12,6 +12,7 @@ pub mod heal;
 pub mod ingest;
 pub mod leaderboard;
 pub mod limiter;
+pub mod meta_store;
 pub mod modlog;
 pub mod progression;
 pub mod recommender;

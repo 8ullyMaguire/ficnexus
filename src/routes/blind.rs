@@ -14,7 +14,6 @@
 
 use axum::Json;
 use axum::extract::{Query, State};
-use rand::prelude::*;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -67,7 +66,6 @@ pub async fn blind_date_handler(
         })
         .unwrap_or_default();
 
-    // 1. Pull up to 200 eligible fics (capped for Thompson sampling perf).
     let eligible: Vec<(String, String, i64, i32, String)> = sqlx::query_as(
         r#"
         SELECT fi.id, fi.description, fi.words, fi.chapters, fi.status
@@ -87,49 +85,16 @@ pub async fn blind_date_handler(
         return Ok(Json(json!({ "err": 0, "fic": null })));
     }
 
-    // 2. Load bandit arms for the eligible set (strategy = 'blind_date').
-    //    Missing arms default to (1, 1) = uniform prior.
-    let url_ids: Vec<&str> = eligible.iter().map(|(id, ..)| id.as_str()).collect();
-    let arms: Vec<(String, f64, f64)> = {
-        let rows: Vec<(String, f64, f64)> = sqlx::query_as(
-            r#"SELECT work_id, alpha, beta FROM rec_bandit_arms
-               WHERE strategy = 'blind_date' AND work_id = ANY($1)"#,
-        )
-        .bind(&url_ids)
-        .fetch_all(&state.db)
-        .await
-        .unwrap_or_default();
-        rows
-    };
-    let arm_map: std::collections::HashMap<&str, (f64, f64)> = arms
-        .iter()
-        .map(|(id, a, b)| (id.as_str(), (*a, *b)))
-        .collect();
+    // Pick a random fic from the eligible set.
+    let chosen_idx = (rand::random::<u64>() as usize) % eligible.len();
 
-    // 3. Thompson sample: draw from Beta(alpha, beta) for each arm and pick max.
-    use rand_distr::{Beta, Distribution};
-    let mut rng = rand::thread_rng();
-    let best = eligible
-        .iter()
-        .map(|(id, ..)| id.as_str())
-        .map(|id| {
-            let (alpha, beta) = arm_map.get(id).copied().unwrap_or((1.0, 1.0));
-            let sample = Beta::new(alpha, beta)
-                .map(|d| d.sample(&mut rng))
-                .unwrap_or(0.5);
-            (id, sample)
-        })
-        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-        .map(|(id, _)| *id)
-        .unwrap();
-
-    // 4. Look up the chosen fic's full metadata.
+    // Look up the chosen fic's full metadata.
     let (url_id, description, words, chapters, status) = eligible
         .into_iter()
-        .find(|(id, ..)| id == best)
+        .nth(chosen_idx)
         .unwrap();
 
-    // 5. Log the impression to usage_events (best-effort; never fails the pick).
+    // Log the impression to usage_events (best-effort; never fails the pick).
     let client_id = params.client_id.as_deref().filter(|s| !s.is_empty());
     let _ = sqlx::query(
         r#"INSERT INTO usage_events (client_id, path, event_type, user_agent)
@@ -140,7 +105,7 @@ pub async fn blind_date_handler(
     .execute(&state.db)
     .await;
 
-    // 6. Core tropes: character (2) + freeform (4) tags by score.
+    // Core tropes: character (2) + freeform (4) tags by score.
     let tag_rows: Vec<(String, i32)> = sqlx::query_as(
         r#"
         SELECT t.name, ft.score::int4
@@ -155,10 +120,11 @@ pub async fn blind_date_handler(
     .bind(&url_id)
     .bind(TROPE_COUNT as i32)
     .fetch_all(&state.db)
-    .await?;
+    .await
+    .unwrap_or_default();
     let tropes = top_tropes(tag_rows, TROPE_COUNT);
 
-    // 7. Nonce for the signed reveal.
+    // Nonce for the signed reveal.
     let nonce = random_hex();
 
     Ok(Json(json!({

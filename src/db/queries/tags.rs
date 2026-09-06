@@ -1,7 +1,5 @@
 use crate::db::models::*;
-use crate::error::{AppError, AppResult};
-use chrono::Datelike;
-use chrono::{DateTime, Utc};
+use crate::error::AppResult;
 use sqlx::{PgPool, Row};
 
 // ── Tag-related queries (v3) ─────────────────────────────────────────────

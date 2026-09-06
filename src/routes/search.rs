@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::error::AppError;
+use crate::routes::auth::AuthUser;
 use crate::server::AppState;
 
 /// Query parameters for the similar-by-vector endpoint.
@@ -264,10 +265,10 @@ pub async fn similar_by_bookmarks(
 /// vector-path stays warm for future use.
 pub async fn search_chips_handler(
     State(state): State<Arc<AppState>>,
-    auth: Option<AuthUser>,
+    auth: AuthUser,
 ) -> Result<Json<Value>, AppError> {
     // Static defaults for unauthenticated users.
-    let Some(auth) = auth else {
+    if auth.user_id.is_none() {
         return Ok(Json(json!({
             "chips": ["Popular", "Updated Today", "Completed", "One-Shot"],
             "personalized": false,
@@ -361,16 +362,18 @@ fn compute_centroid(texts: &[String]) -> Vec<f32> {
     }
     let dim = first.len();
     let mut sum = first;
+    let mut valid_count = 1usize; // first is always valid
     for text in &texts[1..] {
         let vec = parse_vector(text);
         if vec.len() != dim {
             continue;
         }
+        valid_count += 1;
         for (i, v) in vec.into_iter().enumerate() {
             sum[i] += v;
         }
     }
-    let n = texts.len() as f32;
+    let n = valid_count as f32;
     for v in &mut sum {
         *v /= n;
     }

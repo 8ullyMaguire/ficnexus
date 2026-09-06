@@ -17,6 +17,11 @@ pub struct Config {
     /// cache of all gathered fanfiction). Defaults to the attach drive:
     /// /public/literature/fichub/bodies.
     pub body_cache_dir: PathBuf,
+    /// Directory for the metadata-pass provenance store (META_DIR). Each
+    /// scrape/fallback pass writes a versioned JSON file so future scrapers
+    /// can re-merge previously scraped works without re-fetching bodies.
+    /// Defaults to `<body_cache_dir>/../meta`.
+    pub meta_dir: PathBuf,
     pub app_port: u16,
     pub frontend_dir: PathBuf,
     pub trusted_proxies: Vec<String>,
@@ -93,6 +98,52 @@ pub struct Config {
     pub wayback_max_snapshot_age_days: i32,
     /// CDX API requests per second (rate limit; default 1).
     pub wayback_cdx_rate_limit_per_sec: u64,
+    /// FicHub.net metadata fallback kill-switch (default on).
+    pub fichub_fallback_enabled: bool,
+    /// Opportunistic tag top-up from Wayback snapshots (default off).
+    pub tag_topup_enabled: bool,
+    /// Use Redis for stateful rate limiting (default off = in-memory).
+    pub rs_use_redis: bool,
+    /// Master switch for the Redis rate limiter (default off).
+    pub rs_rate_limiter_enabled: bool,
+    /// Redis connection pool size (0 = use default of 10).
+    pub rs_redis_pool_size: u32,
+    /// Redis timeout in milliseconds.
+    pub rs_redis_timeout_ms: u64,
+    /// Reconnect delay in milliseconds.
+    pub rs_redis_reconnect_ms: u64,
+    /// Maximum retry attempts.
+    pub rs_redis_max_retries: u32,
+    /// Base retry delay in milliseconds.
+    pub rs_redis_retry_base_ms: u64,
+    /// Maximum retry delay cap in milliseconds.
+    pub rs_redis_retry_cap_ms: u64,
+    /// Redis key prefix (e.g. "fichub:").
+    pub rs_redis_key_prefix: String,
+    /// Redis hash tag pattern (e.g. "{rl}").
+    pub rs_redis_hash_tag: String,
+    /// Enable Redis compression (default off).
+    pub rs_redis_compression: bool,
+    /// Compression threshold in bytes.
+    pub rs_redis_compression_threshold: usize,
+    /// Compression level (1-9 for gzip).
+    pub rs_redis_compression_level: i32,
+    /// Compression algorithm (e.g. "gzip").
+    pub rs_redis_compression_algo: String,
+    /// Minimum size in bytes for compression to apply.
+    pub rs_redis_compression_min_size: usize,
+    /// Maximum size in bytes for compression.
+    pub rs_redis_compression_max_size: usize,
+    /// Compression window size.
+    pub rs_redis_compression_window: usize,
+    /// Compression memory level (1-9).
+    pub rs_redis_compression_mem_level: i32,
+    /// Compression strategy flags.
+    pub rs_redis_compression_strategy: i32,
+    /// Compression chunk size.
+    pub rs_redis_compression_chunk_size: usize,
+    /// Compression destination size hint.
+    pub rs_redis_compression_dst_size: usize,
     /// OPDS shelf shared token for authenticated access
     pub opds_shelf_token: String,
     /// Base URL for OPDS feeds (used for xml:base on relative URLs).
@@ -136,6 +187,14 @@ pub struct Config {
     /// Master switch; when false the tiered limiter only applies the legacy
     /// static-delay behavior (test/dev mode, same as `dynamic_rate_limit`).
     pub rl_tiered_enabled: bool,
+    /// Capacity of the static-delays tier (applies to all IPs, no per-IP bucket).
+    pub rl_static_capacity: f64,
+    /// Refill rate of the static-delays tier, tokens/second.
+    pub rl_static_flow: f64,
+    /// Extra capacity on top of static for identified clients.
+    pub rl_static_client_capacity: f64,
+    /// Extra refill rate for identified clients on the static tier.
+    pub rl_static_client_flow: f64,
     /// ── Proof-of-work (PoW) challenge for shadowbanned clients ──────
     /// Leading zero BITS the SHA-256(challenge || nonce) hex must start with.
     /// 16 bits ≈ 65k hashes ≈ 0.1–1s on a laptop; 4 bits for cheap tests.
@@ -310,6 +369,185 @@ pub struct Config {
 }
 
 impl Config {
+    /// Build a Config with inert defaults for tests. Only `meta_dir` (and the
+    /// cache/body dirs) matter to the metadata store; everything else is a
+    /// placeholder so the struct can be constructed without env vars.
+    #[cfg(test)]
+    pub fn for_test(meta_dir: PathBuf) -> Self {
+        Self {
+            database_url: String::new(),
+            redis_url: String::new(),
+            cache_dir: meta_dir.clone(),
+            secondary_cache_dir: None,
+            export_version: 0,
+            dynamic_rate_limit: false,
+            node_name: String::new(),
+            calibre_container: String::new(),
+            tmp_dir: meta_dir.clone(),
+            body_cache_dir: meta_dir.clone(),
+            frontend_dir: meta_dir.clone(),
+            app_port: 0,
+            meta_dir: meta_dir,
+            trusted_proxies: Vec::new(),
+            ip_tag_sources: Vec::new(),
+            maxmind_db: None,
+            rec_default_delay_secs: 0,
+            rec_site_rate_limits: std::collections::HashMap::new(),
+            rec_max_favourite_pages: 0,
+            rec_max_user_favourite_pages: 0,
+            rec_max_recommendations: 0,
+            rec_min_favouriters_for_collab: 0,
+            rec_voting_boost_gamma: 0.0,
+            rec_cache_ttl_hours: 0,
+            rec_suggest_limit_per_hour: 0,
+            rec_vote_limit_per_hour: 0,
+            rec_precompute_enabled: false,
+            rec_precompute_interval_hours: 0,
+            rec_enable_cross_site: false,
+            rec_engine_mode: RecEngineMode::Legacy,
+            rec_strategies: String::new(),
+            rec_decay_halflife_days: 0.0,
+            rec_embed_model: String::new(),
+            rec_embed_dim: 0,
+            rec_mf_factors: 0,
+            rec_mf_iters: 0,
+            rec_mf_train_min_signals: 0,
+            rec_bandit_slots: 0,
+            rec_train_every_h: 0,
+            rec_shadow_mode: false,
+            rec_curator_prior: None,
+            rec_prior_floor: 0.0,
+            rec_curator_tau: 0.0,
+            rec_strategy_timeout_secs: 0,
+            rec_external_url: None,
+            curator_token: None,
+            tag_hidden_threshold: 0,
+            tag_auto_delete_threshold: None,
+            tag_submit_limit_per_hour: 0,
+            tag_vote_limit_per_hour: 0,
+            search_max_per_page: 0,
+            max_upload_bytes: 0,
+            wayback_fallback_enabled: false,
+            wayback_max_snapshot_age_days: 0,
+            wayback_cdx_rate_limit_per_sec: 0,
+            fichub_fallback_enabled: false,
+            tag_topup_enabled: false,
+            rs_use_redis: false,
+            rs_rate_limiter_enabled: false,
+            rs_redis_pool_size: 0,
+            rs_redis_timeout_ms: 0,
+            rs_redis_reconnect_ms: 0,
+            rs_redis_max_retries: 0,
+            rs_redis_retry_base_ms: 0,
+            rs_redis_retry_cap_ms: 0,
+            rs_redis_key_prefix: String::new(),
+            rs_redis_hash_tag: String::new(),
+            rs_redis_compression: false,
+            rs_redis_compression_threshold: 0,
+            rs_redis_compression_level: 0,
+            rs_redis_compression_algo: String::new(),
+            rs_redis_compression_min_size: 0,
+            rs_redis_compression_max_size: 0,
+            rs_redis_compression_window: 0,
+            rs_redis_compression_mem_level: 0,
+            rs_redis_compression_strategy: 0,
+            rs_redis_compression_chunk_size: 0,
+            rs_redis_compression_dst_size: 0,
+            opds_shelf_token: String::new(),
+            opds_base_url: None,
+            public_origin: String::new(),
+            rl_download_capacity: 0.0,
+            rl_download_flow: 0.0,
+            rl_auth_capacity: 0.0,
+            rl_auth_flow: 0.0,
+            rl_search_capacity: 0.0,
+            rl_search_flow: 0.0,
+            rl_client_bonus_capacity: 0.0,
+            rl_client_bonus_flow: 0.0,
+            rl_nat_multiplier: 0.0,
+            rl_shadowban_capacity: 0.0,
+            rl_shadowban_flow: 0.0,
+            rl_shadowban_ttl: 0,
+            rl_tiered_enabled: false,
+            rl_static_capacity: 0.0,
+            rl_static_flow: 0.0,
+            rl_static_client_capacity: 0.0,
+            rl_static_client_flow: 0.0,
+            pow_difficulty: 0,
+            pow_ttl_secs: 0,
+            ollama_url: String::new(),
+            ollama_embed_model: String::new(),
+            ollama_chat_model: String::new(),
+            smtp_host: String::new(),
+            smtp_port: 0,
+            smtp_user: String::new(),
+            smtp_pass: String::new(),
+            smtp_from: String::new(),
+            agent_enabled: false,
+            agent_model: String::new(),
+            agent_api_key: None,
+            agent_base_url: String::new(),
+            agent_ollama_url: String::new(),
+            translation_enabled: false,
+            translate_llm_enabled: false,
+            translate_model: String::new(),
+            translate_chunk_chars: 0,
+            translate_global_budget_per_hour: 0,
+            translate_user_budget_per_hour: 0,
+            translate_badge_machine: false,
+            translate_auto_approve_machine: false,
+            translate_locales: Vec::new(),
+            translate_reading_locale_ask: false,
+            translate_ui_strings: false,
+            translate_keep_machine_on_dismiss: false,
+            translate_points_approved: 0,
+            translate_points_improved: 0,
+            translate_points_reviewed: 0,
+            translate_points_flag: 0,
+            translate_points_daily_cap: 0,
+            proposal_quorum_translate: 0,
+            proposal_quorum_content_fix: 0,
+            proposal_quorum_post_edit: 0,
+            proposal_quorum_doc_edit: 0,
+            proposal_quorum_work_deletion: 0,
+            proposals_per_user_per_day: 0,
+            agent_max_runs_per_day: 0,
+            agent_cooldown_domain_secs: 0,
+            agent_use_on_fly: false,
+            agent_extract_max_snapshot_chars: 0,
+            forum_points_per_window: 0,
+            forum_window_hours: 0,
+            forum_mod_min_level: 0,
+            forum_mod_min_exp: 0,
+            forum_mod_min_age_days: 0,
+            forum_mod_pool_min: 0,
+            forum_meta_min_level: 0,
+            forum_meta_min_exp: 0,
+            forum_meta_min_age_days: 0,
+            forum_meta_min_posts: 0,
+            forum_meta_ratings: 0,
+            forum_meta_pool_min: 0,
+            forum_meta_audit_window: 0,
+            forum_meta_min_rated: 0,
+            forum_meta_unfair_rate: 0.0,
+            forum_meta_cooldown_days: 0,
+            forum_curator_level: 0,
+            forum_admin_level: 0,
+            forum_exp_per_level: 0,
+            forum_exp_topic_create: 0,
+            forum_exp_post_create: 0,
+            forum_exp_mod_received: 0,
+            forum_exp_mod_daily_cap: 0,
+            forum_public_read: false,
+            activitypub_enabled: false,
+            activitypub_domain: None,
+            activitypub_allow_loopback: false,
+            trust_preference_similarity_enabled: false,
+            trust_similarity_boost: 0,
+            trust_recovery_decay: 0.0,
+        }
+    }
+
     /// Load configuration from environment variables.
     /// Required vars: DATABASE_URL, REDIS_URL, CACHE_DIR
     pub fn from_env() -> Self {
@@ -342,6 +580,17 @@ impl Config {
 
         let body_cache_dir = std::env::var("BODY_CACHE_DIR")
             .unwrap_or_else(|_| "/public/literature/fichub/bodies".to_string());
+
+        // META_DIR defaults to a sibling of the body cache so both stores
+        // live on the same attached drive (NOT the database).
+        let meta_dir = std::env::var("META_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                std::path::PathBuf::from(&body_cache_dir)
+                    .parent()
+                    .map(|p| p.join("meta"))
+                    .unwrap_or_else(|| std::path::PathBuf::from("/public/literature/fichub/meta"))
+            });
 
         let app_port = std::env::var("PORT")
             .unwrap_or_else(|_| "3000".to_string())
@@ -531,7 +780,7 @@ impl Config {
         // ── Wayback Machine fallback (P8#5) ────────────────────────────
         let wayback_fallback_enabled = std::env::var("WAYBACK_FALLBACK_ENABLED")
             .map(|v| v == "true" || v == "1")
-            .unwrap_or(false);
+            .unwrap_or(true);
         let wayback_max_snapshot_age_days = std::env::var("WAYBACK_MAX_SNAPSHOT_AGE_DAYS")
             .unwrap_or_else(|_| "365".to_string())
             .parse()
@@ -540,6 +789,96 @@ impl Config {
             .unwrap_or_else(|_| "1".to_string())
             .parse()
             .unwrap_or(1);
+
+        // ── FicHub.net metadata fallback ───────────────────────────────
+        // FicHub mirrors many sites and can still report real words/chapters
+        // when a native scraper is blocked. Independent kill-switch.
+        let fichub_fallback_enabled = std::env::var("FICHUB_FALLBACK_ENABLED")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(true);
+        // ── Opportunistic tag top-up ───────────────────────────────────
+        // When a native scrape succeeds but yields 0 tags and the site is
+        // Wayback-eligible, fetch one snapshot and merge its tags. Opt-in
+        // (CDX rate limiter throttles it); never adds latency when the
+        // native scrape already produced tags.
+        let tag_topup_enabled = std::env::var("TAG_TOPUP_ENABLED")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+
+        // Redis stateful rate limiter
+        let rs_use_redis = std::env::var("RS_USE_REDIS")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+        let rs_rate_limiter_enabled = std::env::var("RS_RATE_LIMITER_ENABLED")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+        let rs_redis_pool_size = std::env::var("RS_REDIS_POOL_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(10);
+        let rs_redis_timeout_ms = std::env::var("RS_REDIS_TIMEOUT_MS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(5000);
+        let rs_redis_reconnect_ms = std::env::var("RS_REDIS_RECONNECT_MS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(100);
+        let rs_redis_max_retries = std::env::var("RS_REDIS_MAX_RETRIES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3);
+        let rs_redis_retry_base_ms = std::env::var("RS_REDIS_RETRY_BASE_MS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(50);
+        let rs_redis_retry_cap_ms = std::env::var("RS_REDIS_RETRY_CAP_MS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(5000);
+        let rs_redis_key_prefix = std::env::var("RS_REDIS_KEY_PREFIX").unwrap_or_else(|_| "fichub:".into());
+        let rs_redis_hash_tag = std::env::var("RS_REDIS_HASH_TAG").unwrap_or_else(|_| "{rl}".into());
+        let rs_redis_compression = std::env::var("RS_REDIS_COMPRESSION")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+        let rs_redis_compression_threshold = std::env::var("RS_REDIS_COMPRESSION_THRESHOLD")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1024);
+        let rs_redis_compression_level = std::env::var("RS_REDIS_COMPRESSION_LEVEL")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(6);
+        let rs_redis_compression_algo = std::env::var("RS_REDIS_COMPRESSION_ALGO")
+            .unwrap_or_else(|_| "gzip".into());
+        let rs_redis_compression_min_size = std::env::var("RS_REDIS_COMPRESSION_MIN_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(100);
+        let rs_redis_compression_max_size = std::env::var("RS_REDIS_COMPRESSION_MAX_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1024 * 1024);
+        let rs_redis_compression_window = std::env::var("RS_REDIS_COMPRESSION_WINDOW")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(4096);
+        let rs_redis_compression_mem_level = std::env::var("RS_REDIS_COMPRESSION_MEM_LEVEL")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(8);
+        let rs_redis_compression_strategy = std::env::var("RS_REDIS_COMPRESSION_STRATEGY")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let rs_redis_compression_chunk_size = std::env::var("RS_REDIS_COMPRESSION_CHUNK_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(8192);
+        let rs_redis_compression_dst_size = std::env::var("RS_REDIS_COMPRESSION_DST_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(16384);
 
         let opds_shelf_token =
             std::env::var("OPDS_SHELF_TOKEN").unwrap_or_else(|_| "fichub".to_string());
@@ -582,6 +921,10 @@ impl Config {
             .unwrap_or_else(|_| "true".to_string())
             .parse::<bool>()
             .unwrap_or(true);
+        let rl_static_capacity = env_f64("RL_STATIC_CAPACITY", 10.0);
+        let rl_static_flow = env_f64("RL_STATIC_FLOW", 10.0 / 60.0);
+        let rl_static_client_capacity = env_f64("RL_STATIC_CLIENT_CAPACITY", 5.0);
+        let rl_static_client_flow = env_f64("RL_STATIC_CLIENT_FLOW", 5.0 / 60.0);
 
         // Proof-of-work challenge for shadowbanned clients
         let pow_difficulty = std::env::var("POW_DIFFICULTY")
@@ -871,6 +1214,7 @@ impl Config {
             calibre_container,
             tmp_dir: PathBuf::from(tmp_dir),
             body_cache_dir: PathBuf::from(body_cache_dir),
+            meta_dir,
             app_port,
             frontend_dir: PathBuf::from(frontend_dir),
             trusted_proxies,
@@ -915,6 +1259,29 @@ impl Config {
             wayback_fallback_enabled,
             wayback_max_snapshot_age_days,
             wayback_cdx_rate_limit_per_sec,
+            fichub_fallback_enabled,
+            tag_topup_enabled,
+            rs_use_redis,
+            rs_rate_limiter_enabled,
+            rs_redis_pool_size,
+            rs_redis_timeout_ms,
+            rs_redis_reconnect_ms,
+            rs_redis_max_retries,
+            rs_redis_retry_base_ms,
+            rs_redis_retry_cap_ms,
+            rs_redis_key_prefix,
+            rs_redis_hash_tag,
+            rs_redis_compression,
+            rs_redis_compression_threshold,
+            rs_redis_compression_level,
+            rs_redis_compression_algo,
+            rs_redis_compression_min_size,
+            rs_redis_compression_max_size,
+            rs_redis_compression_window,
+            rs_redis_compression_mem_level,
+            rs_redis_compression_strategy,
+            rs_redis_compression_chunk_size,
+            rs_redis_compression_dst_size,
             opds_shelf_token,
             opds_base_url,
             public_origin,
@@ -931,6 +1298,10 @@ impl Config {
             rl_shadowban_flow,
             rl_shadowban_ttl,
             rl_tiered_enabled,
+            rl_static_capacity,
+            rl_static_flow,
+            rl_static_client_capacity,
+            rl_static_client_flow,
             pow_difficulty,
             pow_ttl_secs,
             ollama_url,
@@ -1241,6 +1612,32 @@ mod tests {
         assert!((config.rl_shadowban_flow - 5.0 / 3600.0).abs() < f64::EPSILON);
         assert_eq!(config.rl_shadowban_ttl, 86400);
         assert!(config.rl_tiered_enabled);
+        assert!((config.rl_static_capacity - 10.0).abs() < f64::EPSILON);
+        assert!((config.rl_static_flow - 10.0 / 60.0).abs() < f64::EPSILON);
+        assert!((config.rl_static_client_capacity - 5.0).abs() < f64::EPSILON);
+        assert!((config.rl_static_client_flow - 5.0 / 60.0).abs() < f64::EPSILON);
+        // Redis stateful rate limiter defaults
+        assert!(!config.rs_use_redis);
+        assert!(!config.rs_rate_limiter_enabled);
+        assert_eq!(config.rs_redis_pool_size, 10);
+        assert_eq!(config.rs_redis_timeout_ms, 5000);
+        assert_eq!(config.rs_redis_reconnect_ms, 100);
+        assert_eq!(config.rs_redis_max_retries, 3);
+        assert_eq!(config.rs_redis_retry_base_ms, 50);
+        assert_eq!(config.rs_redis_retry_cap_ms, 5000);
+        assert_eq!(config.rs_redis_key_prefix, "fichub:");
+        assert_eq!(config.rs_redis_hash_tag, "{rl}");
+        assert!(!config.rs_redis_compression);
+        assert_eq!(config.rs_redis_compression_threshold, 1024);
+        assert_eq!(config.rs_redis_compression_level, 6);
+        assert_eq!(config.rs_redis_compression_algo, "gzip");
+        assert_eq!(config.rs_redis_compression_min_size, 100);
+        assert_eq!(config.rs_redis_compression_max_size, 1024 * 1024);
+        assert_eq!(config.rs_redis_compression_window, 4096);
+        assert_eq!(config.rs_redis_compression_mem_level, 8);
+        assert_eq!(config.rs_redis_compression_strategy, 0);
+        assert_eq!(config.rs_redis_compression_chunk_size, 8192);
+        assert_eq!(config.rs_redis_compression_dst_size, 16384);
         // PoW defaults
         assert_eq!(config.pow_difficulty, 16);
         assert_eq!(config.pow_ttl_secs, 600);

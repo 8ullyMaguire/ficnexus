@@ -3,10 +3,8 @@
 //! All functions are re-exported at `crate::db::queries::*` so existing
 //! call sites keep compiling unchanged.
 
-use crate::db::models::*;
-use crate::error::{AppError, AppResult};
-use chrono::{Datelike, DateTime, Utc};
-use sqlx::{PgPool, Row};
+use chrono::{DateTime, Utc};
+use sqlx::Row;
 
 // ── Shared types ─────────────────────────────────────────────────────────────
 

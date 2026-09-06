@@ -10,13 +10,13 @@
 //! not need a second HTTP client dependency; reqwest is already present.
 
 use crate::ScrapeError;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Endpoint for the fichub.net v0 export API.
 const FICHUB_NET_API: &str = "https://fichub.net/api/v0/epub";
 
 /// Metadata returned by the fichub.net API (only the fields we consume).
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FallbackMeta {
     pub title: String,
@@ -36,7 +36,7 @@ pub struct FallbackMeta {
     pub author_local_id: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RawExtendedMeta {
     pub rated: Option<String>,
@@ -54,7 +54,7 @@ pub struct RawExtendedMeta {
 }
 
 /// Top-level /api/v0/epub response (snake_case keys on the wire).
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 struct EpubResponse {
     err: i64,
@@ -63,7 +63,7 @@ struct EpubResponse {
     info: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 struct Meta {
     author: String,

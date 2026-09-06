@@ -1,9 +1,8 @@
 use crate::db::models::*;
 use super::SiteCredRow;
-use crate::error::{AppError, AppResult};
-use chrono::Datelike;
+use crate::error::AppResult;
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 
 
 /// Upsert a user's site credentials (encrypted password). Resets the

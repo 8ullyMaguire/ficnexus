@@ -115,7 +115,7 @@ pub async fn leaderboard_handler(
         }
     };
 
-    let mut entries: Vec<LeaderboardEntry> = rows
+    let entries: Vec<LeaderboardEntry> = rows
         .into_iter()
         .enumerate()
         .map(|(i, (user_id, username, score))| LeaderboardEntry {

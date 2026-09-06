@@ -69,6 +69,7 @@ pub mod upload;
 pub mod user_credentials;
 pub mod user_export;
 pub mod user_preferences;
+pub mod backfill;
 pub mod work_delete;
 pub mod work_proposals;
 

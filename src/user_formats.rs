@@ -6,7 +6,6 @@
 //! - Author/collection/series/list pages → always zip with all preferred formats
 
 
-use serde::{Deserialize, Serialize};
 use axum::{extract::State, response::Json};
 use crate::server::AppState;
 

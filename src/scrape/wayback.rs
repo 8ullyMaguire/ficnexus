@@ -184,6 +184,30 @@ fn parse_cdx_json(body: &str, original_url: &str) -> Result<Option<String>, Stri
 
 /// Fetch + clean a Wayback snapshot for `original_url`. Returns the cleaned
 /// HTML or `None` on any failure (fallback must fail closed, never open).
+/// Returns true when the fallback is enabled and the URL looks Wayback-eligible.
+/// Currently gates on FICHUB_FALLBACK_ENABLED so operators can kill-switch
+/// the entire fallback path without redeploying.
+pub fn wayback_eligible(url: &url::Url) -> bool {
+    // Only http/https are eligible.
+    if !matches!(url.scheme(), "http" | "https") {
+        return false;
+    }
+    // Archive.org and its mirrors are excluded (already archived).
+    if url.host_str() == Some("web.archive.org")
+        || url.host_str() == Some("archive.org")
+    {
+        return false;
+    }
+    // forum.questionablequesting.com is always eligible (primary source).
+    if url.host_str() == Some("forum.questionablequesting.com") {
+        return true;
+    }
+    // Other sites: only eligible if fallback is enabled.
+    std::env::var("FICHUB_FALLBACK_ENABLED")
+        .unwrap_or_default()
+        .eq_ignore_ascii_case("false")
+}
+
 pub async fn fetch_snapshot_html(
     http: &reqwest::Client,
     limiter: &CdxRateLimiter,

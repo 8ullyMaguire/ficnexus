@@ -1,9 +1,7 @@
 use crate::db::models::*;
 use super::create_work;
-use crate::error::{AppError, AppResult};
-use chrono::Datelike;
-use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
+use crate::error::AppResult;
+use sqlx::PgPool;
 
 // ── Proposal queries ──────────────────────────────────────────────
 

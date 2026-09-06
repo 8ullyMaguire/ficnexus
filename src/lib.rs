@@ -1,5 +1,6 @@
 pub mod activitypub;
 pub mod body_cache;
+pub mod meta_store;
 pub mod cache;
 pub mod config;
 pub mod crypto;
