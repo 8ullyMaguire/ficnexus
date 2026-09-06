@@ -113,6 +113,40 @@ pub async fn create_request(
     .fetch_one(&state.db)
     .await?;
 
+    // ── Best-effort: embed the request text for semantic auto-matching ──
+    // If no seed work is provided, embed title + body so candidates() can
+    // run KNN against rec_embeddings. Ollama down → leave NULL, never fail.
+    let state3 = state.clone();
+    let embed_text = format!("{} {}", title, body.body.trim());
+    let req_id_for_embed = id;
+    if body.seed_work_id.is_none() {
+        tokio::spawn(async move {
+            let vec = match tokio::time::timeout(
+                std::time::Duration::from_secs(15),
+                state3.ollama.embed(&embed_text),
+            )
+            .await
+            {
+                Ok(Ok(v)) => v,
+                _ => return,
+            };
+            let lit = format!(
+                "[{}]",
+                vec.iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            let _ = sqlx::query(
+                r#"UPDATE fic_requests SET body_embedding = $1::vector WHERE id = $2"#,
+            )
+            .bind(&lit)
+            .bind(req_id_for_embed)
+            .execute(&state3.db)
+            .await;
+        });
+    }
+
     // ── Archivist LLM answer (best-effort, never blocks creation) ──────
     // Translate the request into search params via the Ask pipeline
     // (`/ask` itself is untouched) and store the result as the first
@@ -804,7 +838,49 @@ pub async fn candidates(
     .await?
     .flatten();
 
+    // Check for body_embedding (seedless semantic matching).
+    let embedding_lit: Option<String> = sqlx::query_scalar(
+        "SELECT body_embedding::text FROM fic_requests WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(id)
+    .fetch_optional(&state.db)
+    .await?
+    .flatten();
+
     if seed.is_none() {
+        // Seedless request: try semantic KNN against rec_embeddings.
+        if let Some(lit) = embedding_lit {
+            let recs: Vec<(String, String, String, f64)> = sqlx::query_as(
+                r#"SELECT fi.id, w.canonical_title, w.canonical_author, (re.embedding <=> $1::vector) AS distance
+                   FROM rec_embeddings re
+                   JOIN works w ON w.id = re.work_id
+                   JOIN fic_info fi ON fi.work_id = re.work_id
+                   ORDER BY re.embedding <=> $1::vector
+                   LIMIT 3"#,
+            )
+            .bind(&lit)
+            .fetch_all(&state.db)
+            .await
+            .unwrap_or_default();
+
+            let candidates: Vec<Value> = recs
+                .into_iter()
+                .map(|(url_id, title, author, distance)| {
+                    // distance is cosine distance (lower = more similar).
+                    let score = 1.0 - distance.clamp(0.0, 1.0);
+                    json!({
+                        "url_id": url_id,
+                        "title": title,
+                        "author": author,
+                        "score": score,
+                        "source": "semantic",
+                    })
+                })
+                .collect();
+            return Ok(Json(
+                json!({ "err": 0, "request_id": id, "candidates": candidates }),
+            ));
+        }
         return Ok(Json(
             json!({ "err": 0, "request_id": id, "candidates": [] }),
         ));
@@ -848,6 +924,7 @@ pub async fn candidates(
                 "title": r.title,
                 "author": r.author,
                 "score": r.score,
+                "source": "engine",
             })
         })
         .collect();

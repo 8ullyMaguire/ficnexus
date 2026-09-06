@@ -1,6 +1,6 @@
 <script lang="ts">
   import { auth } from '$lib/stores/auth.svelte';
-  import { mapRating, groupTags, categoryLabel, formatWords, chaptersDisplay, formatUpdated } from './rating.js';
+  import { mapRating, groupTags, categoryLabel, formatWords, chaptersDisplay, formatUpdated, formatReadingTime } from './rating.js';
   import ArchiveButton from './ArchiveButton.svelte';
   import { setPref } from '$lib/prefs';
   import type { ExportResponse, FicMeta } from '$lib/api/types';
@@ -257,6 +257,8 @@
       <dl class="stats">
         <dt class="words">Words:</dt>
         <dd class="words">{formatWords(m.words)}</dd>
+        <dt class="reading-time">Read:</dt>
+        <dd class="reading-time">{formatReadingTime(m.estimated_reading_minutes, m.words)}</dd>
         <dt class="chapters">Chapters:</dt>
         <dd class="chapters">{chaptersDisplay(m.chapters, m.status)}</dd>
         <dt class="status">Status:</dt>

@@ -141,3 +141,27 @@ export function relativeTime(updated: string | null | undefined): string {
   const years = Math.floor(months / 12);
   return `${years}y ago`;
 }
+
+
+/**
+ * Format estimated reading time from the backend's dialogue-aware estimate.
+ * Falls back to a word-count heuristic when minutes are absent or zero.
+ * Rounds up to the nearest 5-minute increment for a clean display.
+ */
+export function formatReadingTime(estMinutes: number | undefined, words: number): string {
+  let mins: number;
+  if (estMinutes && estMinutes > 0) {
+    mins = estMinutes;
+  } else {
+    // Fallback: 240 wpm (conservative dense-prose rate).
+    mins = Math.ceil(words / 240);
+  }
+  // Round up to nearest 5 min for cleaner display.
+  mins = Math.ceil(mins / 5) * 5;
+  if (mins < 60) {
+    return `${mins} min`;
+  }
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem === 0 ? `${hours} hr` : `${hours} hr ${rem} min`;
+}

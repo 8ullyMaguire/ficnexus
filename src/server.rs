@@ -713,6 +713,11 @@ fn chunk_discovery() -> impl Into<Router<Arc<AppState>>> {
             "/api/search/suggest",
             get(crate::search::suggest::search_suggest_handler),
         )
+        // Personalized "For You" chips from bookmark tag affinities
+        .route(
+            "/api/search/chips",
+            get(crate::search::routes::search_chips_handler),
+        )
         // Per-user search history chips
         .route(
             "/api/search/history/chips",
@@ -928,6 +933,11 @@ fn chunk_social_kudos() -> impl Into<Router<Arc<AppState>>> {
         .route(
             "/api/users/{id}",
             get(crate::routes::social::user_profile_handler),
+        )
+        // Taste cluster for the user (rec_user_clusters)
+        .route(
+            "/api/users/{id}/taste-cluster",
+            get(crate::recommender::routes::taste_cluster_handler),
         )
         // One-click full user data export (ZIP of all personal data)
         .route(

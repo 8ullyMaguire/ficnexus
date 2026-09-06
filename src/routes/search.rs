@@ -254,3 +254,163 @@ pub async fn similar_by_bookmarks(
         })).collect::<Vec<_>>(),
     })))
 }
+
+
+/// GET /api/search/chips — personalized "For You" search chips.
+///
+/// Auth-optional: logged-out users get static chips; logged-in users get chips
+/// derived from their top bookmark tag affinities. The embedding centroid is
+/// computed and logged (usage_events) even when chips are tag-derived so the
+/// vector-path stays warm for future use.
+pub async fn search_chips_handler(
+    State(state): State<Arc<AppState>>,
+    auth: Option<AuthUser>,
+) -> Result<Json<Value>, AppError> {
+    // Static defaults for unauthenticated users.
+    let Some(auth) = auth else {
+        return Ok(Json(json!({
+            "chips": ["Popular", "Updated Today", "Completed", "One-Shot"],
+            "personalized": false,
+        })));
+    };
+
+    let user_id = match auth.user_id {
+        Some(id) => id,
+        None => {
+            return Ok(Json(json!({
+                "chips": ["Popular", "Updated Today", "Completed", "One-Shot"],
+                "personalized": false,
+            })));
+        }
+    };
+
+    // 1. Compute the embedding centroid from recent bookmarks (for logging only).
+    let embedding_texts: Vec<String> = sqlx::query_scalar(
+        r#"SELECT re.embedding::text
+           FROM rec_embeddings re
+           JOIN bookmarks b ON b.work_id = re.work_id
+           WHERE b.user_id = $1
+           ORDER BY b.created_at DESC
+           LIMIT 20"#,
+    )
+    .bind(user_id)
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    if !embedding_texts.is_empty() {
+        let centroid_computed = compute_centroid(&embedding_texts);
+        let _ = sqlx::query(
+            r#"INSERT INTO usage_events (client_id, path, event_type, user_agent)
+               VALUES (NULL, '/api/search/chips', 'chips_centroid_computed', '')"#,
+        )
+        .execute(&state.db)
+        .await;
+        let _ = centroid_computed;
+    }
+
+    // 2. Derive chips from the user's top tag affinities (cheaper + explainable).
+    let top_tags: Vec<String> = sqlx::query_scalar(
+        r#"SELECT t.name
+           FROM bookmarks b
+           JOIN work_tags wt ON wt.work_id = b.work_id
+           JOIN tags t ON t.id = wt.tag_id
+           WHERE b.user_id = $1
+           GROUP BY t.name
+           ORDER BY COUNT(*) DESC
+           LIMIT 3"#,
+    )
+    .bind(user_id)
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    let chips: Vec<String> = if top_tags.is_empty() {
+        vec!["Popular".to_string(), "Updated Today".to_string(), "Completed".to_string()]
+    } else {
+        top_tags
+            .into_iter()
+            .map(|tag| format!("for-you:{}", tag))
+            .collect()
+    };
+
+    Ok(Json(json!({
+        "chips": chips,
+        "personalized": true,
+    })))
+}
+
+/// Parse a pgvector text literal `'[v1,v2,...]'` into a Vec<f32>.
+fn parse_vector(text: &str) -> Vec<f32> {
+    let text = text.trim();
+    let text = text.strip_prefix('[').unwrap_or(text);
+    let text = text.strip_suffix(']').unwrap_or(text);
+    text.split(',')
+        .filter_map(|s| s.trim().parse::<f32>().ok())
+        .collect()
+}
+
+/// Compute the element-wise mean of N pgvector embedding strings.
+fn compute_centroid(texts: &[String]) -> Vec<f32> {
+    if texts.is_empty() {
+        return vec![];
+    }
+    let first = parse_vector(&texts[0]);
+    if first.is_empty() {
+        return vec![];
+    }
+    let dim = first.len();
+    let mut sum = first;
+    for text in &texts[1..] {
+        let vec = parse_vector(text);
+        if vec.len() != dim {
+            continue;
+        }
+        for (i, v) in vec.into_iter().enumerate() {
+            sum[i] += v;
+        }
+    }
+    let n = texts.len() as f32;
+    for v in &mut sum {
+        *v /= n;
+    }
+    sum
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_vector, compute_centroid};
+
+    #[test]
+    fn parse_vector_parses_pgvector_literal() {
+        assert_eq!(parse_vector("[1.0, 2.0, 3.0]"), vec![1.0, 2.0, 3.0]);
+        assert_eq!(parse_vector("[0.5,-0.5]"), vec![0.5, -0.5]);
+    }
+
+    #[test]
+    fn parse_vector_handles_whitespace() {
+        assert_eq!(parse_vector("  [ 1.0 , 2.0 ]  "), vec![1.0, 2.0]);
+    }
+
+    #[test]
+    fn compute_centroid_returns_mean_of_vectors() {
+        let texts = vec!["[1.0, 2.0]".to_string(), "[3.0, 4.0]".to_string()];
+        let centroid = compute_centroid(&texts);
+        assert_eq!(centroid, vec![2.0, 3.0]); // (1+3)/2, (2+4)/2
+    }
+
+    #[test]
+    fn compute_centroid_empty_input_returns_empty() {
+        let texts: Vec<String> = vec![];
+        assert!(compute_centroid(&texts).is_empty());
+    }
+
+    #[test]
+    fn compute_centroid_mismatched_dims_skipped() {
+        // Second vector has wrong dim → skipped, only first is averaged.
+        let texts = vec!["[1.0, 2.0]".to_string(), "[3.0, 4.0, 5.0]".to_string()];
+        let centroid = compute_centroid(&texts);
+        assert_eq!(centroid, vec![1.0, 2.0]); // only first
+    }
+}

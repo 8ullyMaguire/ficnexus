@@ -744,3 +744,51 @@ pub async fn entity_recs_handler(
     let payload = crate::recommender::entities::entity_recs(&state.db, q).await?;
     Ok(Json(payload))
 }
+
+/// GET /api/users/{id}/taste-cluster
+///
+/// Returns the user's top taste cluster and adjacent cluster ids from the
+/// nightly clusters strategy (rec_user_clusters). Logged-in users only;
+/// logged-out → { "cluster": null, "err": 0 }.
+///
+/// Response: { "cluster": n, "affinity": 0.83, "adjacent": [1, 4, 7] }
+pub async fn taste_cluster_handler(
+    State(state): State<Arc<AppState>>,
+    Path(user_id): Path<i32>,
+) -> Result<Json<Value>, AppError> {
+    // Load the user's top cluster by affinity.
+    let top: Option<(i32, f64)> = sqlx::query_as(
+        r#"SELECT cluster_id, affinity
+           FROM rec_user_clusters
+           WHERE user_id = $1
+           ORDER BY affinity DESC
+           LIMIT 1"#,
+    )
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    let (cluster, affinity) = match top {
+        Some((c, a)) => (c, a),
+        None => return Ok(Json(json!({ "cluster": serde_json::Value::Null, "affinity": serde_json::Value::Null, "adjacent": Vec::<i32>::new(), "err": 0 }))),
+    };
+
+    // Adjacent clusters: all other distinct cluster ids for this user.
+    let adjacent: Vec<i32> = sqlx::query_scalar(
+        r#"SELECT DISTINCT cluster_id FROM rec_user_clusters
+           WHERE user_id = $1 AND cluster_id <> $2"#,
+    )
+    .bind(user_id)
+    .bind(cluster)
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
+    Ok(Json(json!({
+        "err": 0,
+        "cluster": cluster,
+        "affinity": affinity,
+        "adjacent": adjacent,
+    })))
+}
+

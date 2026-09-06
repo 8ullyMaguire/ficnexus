@@ -15,6 +15,42 @@ use crate::scrape::FicMetadata;
 use crate::server::AppState;
 use crate::services::pow;
 
+
+// ── Reading time estimation ────────────────────────────────────────────────
+/// Minimum and maximum words-per-minute bounds for dialogue-aware estimation.
+/// Clamping prevents absurd estimates for very short or very long works.
+pub const READING_WPM_MIN: f64 = 120.0;
+pub const READING_WPM_DIALOGUE: f64 = 300.0; // pure dialogue reads at ~300 wpm
+pub const READING_WPM_NARRATIVE: f64 = 240.0; // dense prose at ~240 wpm
+
+/// Dialogue ratio: count of double-quote characters per 1 000 characters of text.
+/// Pure dialogue ≈ 1.0 (lots of "he said / she whispered"), pure narrative ≈ 0.
+/// This is a cheap proxy — a real NLP model would be more accurate but the
+/// hardware budget does not support an ONNX model at import scale.
+fn estimate_dialogue_ratio(text: &str) -> f64 {
+    let len_chars = text.len() as f64;
+    if len_chars < 100.0 {
+        return 0.0;
+    }
+    let quote_count = text.matches('"').count() as f64;
+    (quote_count / (len_chars / 1000.0)).min(1.0)
+}
+
+/// Estimated reading time in minutes, using a dialogue-aware WPM formula:
+///
+/// `wpm = READING_WPM_NARRATIVE + (READING_WPM_DIALOGUE - READING_WPM_NARRATIVE) * dialogue_ratio`
+/// `minutes = words / wpm`
+///
+/// Result is clamped to a sane range. Use 0 for `body_text` if the chapter
+/// body is not available — this yields the conservative dense-prose estimate.
+pub fn estimate_reading_minutes(words: i64, body_text: &str) -> i64 {
+    let ratio = estimate_dialogue_ratio(body_text);
+    let wpm = READING_WPM_NARRATIVE + (READING_WPM_DIALOGUE - READING_WPM_NARRATIVE) * ratio;
+    let minutes = (words as f64 / wpm).round() as i64;
+    minutes.clamp(1, 999_999)
+}
+
+
 /// Query parameters for export requests
 #[derive(Debug, Deserialize)]
 pub struct ExportQuery {
@@ -1770,6 +1806,11 @@ pub fn build_info_string(meta: &FicMetadata) -> (String, Vec<String>) {
 
 /// Build the meta JSON object for API response
 pub fn build_meta_json(meta: &FicMetadata, work_id: Option<i32>) -> Value {
+    // Use the description as a rough dialogue-ratio proxy when the chapter body
+    // is not available.  This over-estimates for prose-heavy works and
+    // under-estimates for dialogue-heavy ones, but it is the best we can do
+    // without the chapter content in this metadata-only response.
+    let est_minutes = estimate_reading_minutes(meta.words, &meta.desc);
     json!({
         "id": meta.url_id,
         "work_id": work_id,
@@ -1777,6 +1818,7 @@ pub fn build_meta_json(meta: &FicMetadata, work_id: Option<i32>) -> Value {
         "author": meta.author,
         "chapters": meta.chapters,
         "words": meta.words,
+        "estimated_reading_minutes": est_minutes,
         "description": meta.desc,
         "status": meta.status,
         "source": meta.source,
@@ -2043,5 +2085,34 @@ mod tests {
         assert!(!super::supported_convert_format("epub"));
         assert!(!super::supported_convert_format(""));
         assert!(!super::supported_convert_format("mobi;rm -rf /"));
+    }
+
+
+    #[test]
+    fn reading_time_uses_dialogue_ratio() {
+        // Pure narrative (0 quotes): 240 wpm → 10000 words = ~42 min.
+        let mins = super::estimate_reading_minutes(10_000, "A story with no dialogue whatsoever and just plain prose text.");
+        assert!((mins as f64 - 42.0).abs() < 1.0);
+
+        // High dialogue (many quotes): ~300 wpm → same 10k words = ~33 min.
+        let dialogue = vec!["He said.".to_string(); 500].join(" ");
+        let mins_dialogue = super::estimate_reading_minutes(10_000, &dialogue);
+        assert!(mins_dialogue < mins, "dialogue-heavy text should estimate fewer minutes");
+    }
+
+    #[test]
+    fn reading_time_clamped() {
+        // Very short work: at least 1 minute.
+        assert!(super::estimate_reading_minutes(100, "") >= 1);
+        // Very long work: upper bound is generous.
+        let mins = super::estimate_reading_minutes(1_000_000, "");
+        assert!(mins <= 999_999);
+    }
+
+    #[test]
+    fn reading_time_default_zero_dialogue_ratio() {
+        // Empty body → default 0 dialogue ratio = 240 wpm.
+        // 4800 words / 240 wpm = 20 min.
+        assert_eq!(super::estimate_reading_minutes(4800, ""), 20);
     }
 }

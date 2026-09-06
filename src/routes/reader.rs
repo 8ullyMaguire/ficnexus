@@ -185,10 +185,14 @@ pub async fn reader_sequel_handler(
                 .fetch_optional(&state.db)
                 .await?;
                 if let Some(url_id_next) = url_id_next {
-                    return Ok(Json(json!({
+                    // Also fetch Markov next-up from rec_transitions (sequential strategy).
+                    let next_up = fetch_sequential_next_up(&state.db, work.id).await;
+                    let resp = json!({
                         "err": 0,
                         "sequel": { "url_id": url_id_next, "title": title, "author": author },
-                    })));
+                        "next_up": next_up,
+                    });
+                    return Ok(Json(resp));
                 }
             }
         }
@@ -212,14 +216,56 @@ pub async fn reader_sequel_handler(
         .find(|(_, title, _)| looks_like_sequel(&fic.title, title))
         .map(|(url_id, title, author)| (url_id, title, author));
 
+    // Fetch Markov next-up even in the fallback path.
+    let next_up = if let Some(work) = &work {
+        fetch_sequential_next_up(&state.db, work.id).await
+    } else {
+        vec![]
+    };
+
     match sequel {
         Some((url_id, title, author)) => Ok(Json(json!({
             "err": 0,
             "sequel": { "url_id": url_id, "title": title, "author": author },
+            "next_up": next_up,
         }))),
-        None => Ok(Json(json!({ "err": -1, "msg": "no sequel" }))),
+        None => Ok(Json(json!({
+            "err": -1,
+            "msg": "no sequel",
+            "next_up": next_up,
+        }))),
     }
 }
+/// Fetch top-3 next reads from the Markov transition graph (sequential strategy).
+/// Degrades to empty vec on any DB error (never 5xx the reader page).
+async fn fetch_sequential_next_up(db: &sqlx::PgPool, work_id: i32) -> Vec<serde_json::Value> {
+    let rows: Vec<(String, String, String, f64)> = sqlx::query_as(
+        r#"SELECT fi.id, w.canonical_title, w.canonical_author, rt.weight
+           FROM rec_transitions rt
+           JOIN works w ON w.id = rt.to_work
+           JOIN fic_info fi ON fi.work_id = rt.to_work
+           WHERE rt.from_work = $1
+           ORDER BY rt.weight DESC
+           LIMIT 3"#,
+    )
+    .bind(work_id)
+    .fetch_all(db)
+    .await
+    .unwrap_or_default();
+
+    rows
+        .into_iter()
+        .map(|(url_id, title, author, score)| {
+            json!({
+                "url_id": url_id,
+                "title": title,
+                "author": author,
+                "score": score,
+            })
+        })
+        .collect()
+}
+
 /// Heuristic sequel detection on two titles (same author assumed). Mirrors
 /// the frontend's `looksLikeSequel` (reader-lib.ts).
 fn looks_like_sequel(prev_title: &str, candidate_title: &str) -> bool {

@@ -111,6 +111,23 @@ pub async fn run_training_pipeline(
         };
         results.push(outcome);
     }
+
+    // 2. Reconcile blind_date usage events → bandit arms (Thompson sampling).
+    use crate::recommender::registry::build_context;
+    let ctx = build_context(
+        db.clone(),
+        std::sync::Arc::new(config.clone()),
+        http_client.clone(),
+        ollama.clone(),
+    );
+    if let Ok((engaged, missed)) =
+        crate::recommender::bandit::reconcile_blind_date_events(&ctx).await
+    {
+        tracing::info!("blind_date bandit: {} clicked, {} cold", engaged, missed);
+    } else {
+        tracing::warn!("blind_date bandit reconciliation failed");
+    }
+
     results
 }
 

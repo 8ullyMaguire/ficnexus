@@ -160,6 +160,70 @@ pub async fn reconcile_impressions(ctx: &StrategyContext) -> Result<(i64, i64), 
     Ok((engaged_count, missed))
 }
 
+/// Reconcile blind_date events from usage_events.
+/// Impressions: `blind_date_impression:{url_id}`
+/// Clicks:     `blind_date_click:{url_id}`
+/// Runs after reconcile_impressions in the nightly train loop.
+pub async fn reconcile_blind_date_events(ctx: &StrategyContext) -> Result<(i64, i64), RecError> {
+    // Clicks (alpha += 1): impressions that have a matching click event.
+    let clicked: Vec<(String,)> = sqlx::query_as(
+        r#"SELECT DISTINCT substring(ue1.event_type, 22) AS url_id
+           FROM usage_events ue1
+           WHERE ue1.event_type = 'blind_date_impression:' || substring(ue1.event_type, 28)
+             AND EXISTS (
+                 SELECT 1 FROM usage_events ue2
+                 WHERE ue2.event_type = 'blind_date_click:' || substring(ue1.event_type, 28)
+                   AND ue2.path = '/api/blind-date/reveal'
+             )"#,
+    )
+    .fetch_all(&ctx.db)
+    .await?;
+
+    let mut engaged = 0i64;
+    for (url_id,) in &clicked {
+        let _ = sqlx::query(
+            r#"INSERT INTO rec_bandit_arms (work_id, strategy, alpha, beta, updated_at)
+               VALUES ($1, 'blind_date', 1.0, 1.0, NOW())
+               ON CONFLICT (work_id, strategy) DO UPDATE SET
+                 alpha = rec_bandit_arms.alpha + 1,
+                 updated_at = NOW()"#,
+        )
+        .bind(url_id)
+        .execute(&ctx.db)
+        .await;
+        engaged += 1;
+    }
+
+    // Cold impressions (≥ 3 days old, never clicked) → beta += 1.
+    let cold: Vec<(String,)> = sqlx::query_as(
+        r#"SELECT DISTINCT substring(event_type, 28) AS url_id
+           FROM usage_events
+           WHERE event_type LIKE 'blind_date_impression:%'
+             AND path = '/api/blind-date'
+             AND created_at < NOW() - interval '3 days'
+             AND event_type NOT LIKE 'blind_date_click:%'"#,
+    )
+    .fetch_all(&ctx.db)
+    .await?;
+
+    let mut missed = 0i64;
+    for (url_id,) in &cold {
+        let _ = sqlx::query(
+            r#"INSERT INTO rec_bandit_arms (work_id, strategy, alpha, beta, updated_at)
+               VALUES ($1, 'blind_date', 1.0, 1.0, NOW())
+               ON CONFLICT (work_id, strategy) DO UPDATE SET
+                 beta = rec_bandit_arms.beta + 1,
+                 updated_at = NOW()"#,
+        )
+        .bind(url_id)
+        .execute(&ctx.db)
+        .await;
+        missed += 1;
+    }
+
+    Ok((engaged, missed))
+}
+
 /// Nightly arm decay: shrink posteriors toward uniform (exp decay on the
 /// "evidence" part, keeping the mean roughly stable).
 pub async fn decay_arms(ctx: &StrategyContext) -> Result<usize, RecError> {
@@ -275,6 +339,24 @@ pub fn rand_uniform() -> f64 {
     (x as f64) / (u64::MAX as f64)
 }
 
+/// Thompson-sample arms and return the id of the winner.
+pub fn thompson_select<'a>(
+    arms: &[(&'a str, f64, f64)],
+    rng: &mut (impl FnMut() -> f64 + '_),
+) -> Option<&'a str> {
+    use rand_distr::Beta;
+    arms.iter()
+        .map(|(id, alpha, beta)| {
+            let sample = Beta::new(*alpha, *beta)
+                .ok()
+                .map(|d| d.sample(rng))
+                .unwrap_or(0.5);
+            (*id, sample)
+        })
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+        .map(|(id, _)| id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -317,4 +399,52 @@ mod tests {
         let s = beta_sample(0.0, 0.0, || 0.5);
         assert!((s - 0.5).abs() < 1e-9);
     }
+
+    #[test]
+    fn thompson_select_explores_uncertain_arms() {
+        // Arms: strong winner (w1), strong loser (w2), uniform (w3).
+        let arms = [
+            ("w1", 9.0, 1.0),
+            ("w2", 1.0, 9.0),
+            ("w3", 1.0, 1.0),
+        ];
+        // Run 200 fixed-rng draws: w1 should win most often, but w2/w3 must
+        // win at least once (exploration — Thompson sampling should not be
+        // greedy).
+        let mut rng = || {
+            // Simple LCG so results are deterministic and reproducible.
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static SEQ: AtomicU64 = AtomicU64::new(0);
+            let x = SEQ.fetch_add(1, Ordering::Relaxed) as f64 / u64::MAX as f64;
+            x.max(1e-12).min(1.0 - 1e-12)
+        };
+
+        let mut wins = std::collections::HashMap::new();
+        for _ in 0..200 {
+            let winner = super::thompson_select(&arms, &mut rng).unwrap();
+            *wins.entry(winner).or_insert(0) += 1;
+        }
+        assert!(*wins.get("w1").unwrap() > *wins.get("w2").unwrap(),
+            "w1 ({}) should beat w2 ({}) more often", wins.get("w1").unwrap(), wins.get("w2").unwrap());
+        assert!(*wins.get("w2").unwrap() > 0, "w2 should win at least once (exploration)");
+        assert!(*wins.get("w3").unwrap() > 0, "w3 should win at least once (exploration)");
+    }
+
+    #[test]
+    fn thompson_select_missing_arms_defaults_to_uniform() {
+        // When an arm is missing from the map it is added with (1,1) = uniform.
+        // Simulate: one strong arm + one weak arm, but weak arm absent from map.
+        let arms = [("strong", 9.0, 1.0)];
+        let mut rng = || 0.99; // Favours the strong arm heavily.
+        let winner = super::thompson_select(&arms, &mut rng);
+        assert_eq!(winner, Some("strong"));
+    }
+
+    #[test]
+    fn thompson_select_empty_returns_none() {
+        let arms: [(&str, f64, f64); 0] = [];
+        let mut rng = || 0.5;
+        assert_eq!(super::thompson_select(&arms, &mut rng), None);
+    }
+
 }

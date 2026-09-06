@@ -23,6 +23,7 @@ export interface FicMeta {
   author: string;
   chapters: number;
   words: number;
+  estimated_reading_minutes?: number;
   description: string;
   status: string;
   source: string;

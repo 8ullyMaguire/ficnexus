@@ -14,6 +14,7 @@
 
 use axum::Json;
 use axum::extract::{Query, State};
+use rand::prelude::*;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -27,6 +28,8 @@ pub const TROPE_COUNT: usize = 3;
 /// Query parameters for the blind-date endpoint.
 #[derive(Debug, Default, Deserialize)]
 pub struct BlindDateParams {
+    /// Optional opaque client identifier for analytics.
+    pub client_id: Option<String>,
     /// Comma-separated list of `url_id`s to skip (so the UI can avoid
     /// showing the same fic twice in a row).
     pub exclude: Option<String>,
@@ -64,40 +67,80 @@ pub async fn blind_date_handler(
         })
         .unwrap_or_default();
 
-    // 1. Pick a random eligible fic. (Note: `id = ANY(...)` is evaluated
-    //    only if the array is non-empty — Postgres short-circuits the
-    //    `$1 IS NULL OR …` guard before the cast is applied, and sqlx
-    //    binds an empty Vec<String> as an empty array literal, so passing
-    //    `None` when there is nothing to exclude avoids an empty-array
-    //    ANY() comparison entirely.)
-    let row: Option<(String, String, i64, i32, String)> = sqlx::query_as(
+    // 1. Pull up to 200 eligible fics (capped for Thompson sampling perf).
+    let eligible: Vec<(String, String, i64, i32, String)> = sqlx::query_as(
         r#"
-        SELECT id, description, words, chapters, status
-        FROM fic_info
-        WHERE btrim(description) <> ''
-          AND NOT EXISTS (SELECT 1 FROM fic_blacklist b WHERE b.url_id = fic_info.id)
-          AND ($1::text[] IS NULL OR NOT (id = ANY ($1::text[])))
+        SELECT fi.id, fi.description, fi.words, fi.chapters, fi.status
+        FROM fic_info fi
+        WHERE btrim(fi.description) <> ''
+          AND NOT EXISTS (SELECT 1 FROM fic_blacklist b WHERE b.url_id = fi.id)
+          AND ($1::text[] IS NULL OR NOT (fi.id = ANY ($1::text[])))
         ORDER BY random()
-        LIMIT 1
+        LIMIT 200
         "#,
     )
-    .bind(if exclude.is_empty() {
-        None
-    } else {
-        Some(&exclude)
-    })
-    .fetch_optional(&state.db)
+    .bind(if exclude.is_empty() { None } else { Some(&exclude) })
+    .fetch_all(&state.db)
     .await?;
 
-    let Some((url_id, description, words, chapters, status)) = row else {
-        // Nothing eligible (all fics excluded / empty archive) — 200 with
-        // a null fic so the UI can show a friendly "try again" state.
+    if eligible.is_empty() {
         return Ok(Json(json!({ "err": 0, "fic": null })));
-    };
+    }
 
-    // 2. Core tropes: character (2) + freeform (4) tags by score, capped
-    //    at TROPE_COUNT. `score` is a SMALLINT (community votes + scrape
-    //    backfill), so cast to int4 for the typed fetch.
+    // 2. Load bandit arms for the eligible set (strategy = 'blind_date').
+    //    Missing arms default to (1, 1) = uniform prior.
+    let url_ids: Vec<&str> = eligible.iter().map(|(id, ..)| id.as_str()).collect();
+    let arms: Vec<(String, f64, f64)> = {
+        let rows: Vec<(String, f64, f64)> = sqlx::query_as(
+            r#"SELECT work_id, alpha, beta FROM rec_bandit_arms
+               WHERE strategy = 'blind_date' AND work_id = ANY($1)"#,
+        )
+        .bind(&url_ids)
+        .fetch_all(&state.db)
+        .await
+        .unwrap_or_default();
+        rows
+    };
+    let arm_map: std::collections::HashMap<&str, (f64, f64)> = arms
+        .iter()
+        .map(|(id, a, b)| (id.as_str(), (*a, *b)))
+        .collect();
+
+    // 3. Thompson sample: draw from Beta(alpha, beta) for each arm and pick max.
+    use rand_distr::{Beta, Distribution};
+    let mut rng = rand::thread_rng();
+    let best = eligible
+        .iter()
+        .map(|(id, ..)| id.as_str())
+        .map(|id| {
+            let (alpha, beta) = arm_map.get(id).copied().unwrap_or((1.0, 1.0));
+            let sample = Beta::new(alpha, beta)
+                .map(|d| d.sample(&mut rng))
+                .unwrap_or(0.5);
+            (id, sample)
+        })
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+        .map(|(id, _)| *id)
+        .unwrap();
+
+    // 4. Look up the chosen fic's full metadata.
+    let (url_id, description, words, chapters, status) = eligible
+        .into_iter()
+        .find(|(id, ..)| id == best)
+        .unwrap();
+
+    // 5. Log the impression to usage_events (best-effort; never fails the pick).
+    let client_id = params.client_id.as_deref().filter(|s| !s.is_empty());
+    let _ = sqlx::query(
+        r#"INSERT INTO usage_events (client_id, path, event_type, user_agent)
+           VALUES ($1, '/api/blind-date', $2, '')"#,
+    )
+    .bind(client_id)
+    .bind(format!("blind_date_impression:{}", url_id))
+    .execute(&state.db)
+    .await;
+
+    // 6. Core tropes: character (2) + freeform (4) tags by score.
     let tag_rows: Vec<(String, i32)> = sqlx::query_as(
         r#"
         SELECT t.name, ft.score::int4
@@ -115,9 +158,7 @@ pub async fn blind_date_handler(
     .await?;
     let tropes = top_tropes(tag_rows, TROPE_COUNT);
 
-    // 3. Nonce for the signed reveal. Random 128-bit nonce; the reveal
-    //    endpoint re-derives the signature from the DB row, so the nonce
-    //    only proves freshness, not secrecy.
+    // 7. Nonce for the signed reveal.
     let nonce = random_hex();
 
     Ok(Json(json!({
@@ -186,6 +227,15 @@ pub async fn blind_date_reveal_handler(
     .bind(&id)
     .fetch_optional(&state.db)
     .await?;
+
+    // Log the click to usage_events for bandit training reconciliation.
+    let _ = sqlx::query(
+        r#"INSERT INTO usage_events (client_id, path, event_type, user_agent)
+           VALUES (NULL, '/api/blind-date/reveal', $1, '')"#,
+    )
+    .bind(format!("blind_date_click:{}", id))
+    .execute(&state.db)
+    .await;
 
     Ok(Json(json!({
         "err": 0,
