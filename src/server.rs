@@ -370,6 +370,11 @@ fn chunk_core_api() -> impl Into<Router<Arc<AppState>>> {
             "/api/formats",
             get(crate::user_formats::list_formats),
         )
+        // Find-fic: parse "title by author on site" into fielded search
+        .route(
+            "/api/find-fic",
+            post(routes::find_fic::find_fic),
+        )
         // Cache download routes
         .route(
             "/cache/{etype}/{url_id}/{fname}",

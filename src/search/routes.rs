@@ -870,22 +870,22 @@ pub struct SearchResponseEnvelope {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchResultData {
-    url_id: String,
-    title: String,
-    author: String,
-    source: String,
-    words: i64,
-    chapters: i32,
-    status: String,
-    description: String,
-    updated: Option<DateTime<Utc>>,
-    rank: Option<f32>,
+    pub url_id: String,
+    pub title: String,
+    pub author: String,
+    pub source: String,
+    pub words: i64,
+    pub chapters: i32,
+    pub status: String,
+    pub description: String,
+    pub updated: Option<DateTime<Utc>>,
+    pub rank: Option<f32>,
     /// ts_headline snippet with <b> highlight tags (None without a text q)
-    snippet: Option<String>,
-    tags: Vec<Value>,
-    total_freeform: usize,
-    comment_count: i64,
-    kudos_count: i64,
+    pub snippet: Option<String>,
+    pub tags: Vec<Value>,
+    pub total_freeform: usize,
+    pub comment_count: i64,
+    pub kudos_count: i64,
 }
 
 /// Raw tag row from the database for response building.
