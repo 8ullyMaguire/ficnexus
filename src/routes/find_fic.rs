@@ -1,14 +1,16 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::{
-    extract::FromRequestParts,
+    extract::{ConnectInfo, State},
+    http::HeaderMap,
     Json,
-    extract::State,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::error::AppError;
+use crate::limiter::{Tier, TieredRateLimitResult, client_ip_from_headers};
 use crate::search::builder::SearchParams;
 use crate::search::routes::{run_search, SearchFacets, SearchResponseEnvelope};
 use crate::server::AppState;
@@ -36,12 +38,52 @@ pub struct FindFicQuery {
 fn default_limit() -> usize { 5 }
 fn default_per_page() -> usize { 20 }
 
+/// Resolve the caller's real IP from X-Forwarded-For with the peer address
+/// as fallback.
+fn caller_ip(headers: &HeaderMap, remote: SocketAddr) -> std::net::IpAddr {
+    client_ip_from_headers(
+        headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()),
+        remote.ip(),
+    )
+}
+
+/// Enforce the Search-tier rate limiter (very high: 1000/min per IP).
+/// Fails open on limiter errors so a Redis hiccup never blocks searches.
+async fn enforce_search_rate_limit(
+    state: &Arc<AppState>,
+    headers: &HeaderMap,
+    remote: SocketAddr,
+) -> Result<(), AppError> {
+    let client_id = headers
+        .get("x-client-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    match state
+        .rate_limiter
+        .check(
+            caller_ip(headers, remote),
+            client_id.as_deref(),
+            Tier::Search,
+        )
+        .await
+    {
+        TieredRateLimitResult::Wait(secs) => Err(AppError::RateLimited(secs)),
+        TieredRateLimitResult::Allowed => Ok(()),
+    }
+}
+
 /// Handles POST /api/find-fic.
 /// Accepts a free-text query and returns canonical works that match.
 pub async fn find_fic(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(remote): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(form): Json<FindFicQuery>,
 ) -> Result<Json<Value>, AppError> {
+    // Apply the Search-tier rate limiter (very high: 1000/min per IP).
+    enforce_search_rate_limit(&state, &headers, remote).await?;
+
     // Parse the query string into structured fields
     let parsed = parse_find_query(&form.query);
 
@@ -178,8 +220,7 @@ pub async fn find_fic(
     })))
 }
 
-/// Site alias → canonical key mapping.
-/// Covers short codes (sb, ao3, ffn, …) and full names.
+/// Site alias -> canonical key mapping.
 const SITE_ALIASES: &[(&str, &str)] = &[
     ("sb", "spacebattles"),
     ("spacebattles", "spacebattles"),
@@ -202,13 +243,10 @@ const SITE_ALIASES: &[(&str, &str)] = &[
 /// Patterns: " on <site>", " from <site>", " (<site>)", " - <site>"
 /// Returns the stripped string and the canonical site key if found.
 fn strip_site_alias(input: &str) -> (&str, Option<String>) {
-    // Try each suffix pattern with each alias
-    // Patterns: " on <site>", " from <site>", " (<site>)", " - <site>"
     let seps = [" on ", " from ", " (", " - "];
     for sep in &seps {
         if let Some(pos) = input.rfind(sep) {
             let site_part = &input[pos + sep.len()..];
-            // Strip trailing paren if present
             let site_part = site_part.trim_end_matches(')');
             for (alias, canonical_key) in SITE_ALIASES {
                 if site_part.eq_ignore_ascii_case(alias) {
@@ -223,14 +261,13 @@ fn strip_site_alias(input: &str) -> (&str, Option<String>) {
 
 /// Pure parser for a find-fic query string into ParsedFindQuery.
 /// Rules:
-/// - If input contains "://" → return all None (URL already exists)
+/// - If input contains "://" -> return all None (URL already exists)
 /// - Otherwise strip site aliases from the end first
 /// - Then split on the LAST " by " only (not first)
 /// - Strip surrounding quotes/asterisks (markdown italics) from both parts
 /// - Empty title or author parts are omitted from the query
 pub fn parse_find_query(raw: &str) -> ParsedFindQuery {
-    // If the input contains a URL, don't parse further — let the client
-    // decide whether to hit /api/search/ask instead.
+    // If the input contains a URL, don't parse further.
     if raw.contains("://") {
         return ParsedFindQuery {
             title: None,
@@ -286,7 +323,6 @@ mod tests {
     fn test_parse_war_by_other_means() {
         // "War by Other Means by Author" should split at the LAST " by "
         // Left: "War by Other Means", Right: "Author"
-        // Title = left, Author = right
         let parsed = parse_find_query("War by Other Means by Author");
         assert_eq!(parsed.title.as_deref(), Some("War by Other Means"));
         assert_eq!(parsed.author.as_deref(), Some("Author"));
@@ -332,11 +368,30 @@ mod tests {
 
     #[test]
     fn test_parse_single_by_author() {
-        // "Something by Author" splits at the " by "
-        // Left: "Something", Right: "Author"
-        // Title = left, Author = right
         let parsed = parse_find_query("Something by Author");
         assert_eq!(parsed.title.as_deref(), Some("Something"));
         assert_eq!(parsed.author.as_deref(), Some("Author"));
+    }
+
+    #[test]
+    fn test_parse_on_spacebattles() {
+        let parsed = parse_find_query("Governor's Gambit by Freefaller on SpaceBattles");
+        assert_eq!(parsed.title.as_deref(), Some("Governor's Gambit"));
+        assert_eq!(parsed.author.as_deref(), Some("Freefaller"));
+        assert_eq!(parsed.site.as_deref(), Some("spacebattles"));
+    }
+
+    #[test]
+    fn test_parse_sb_alias() {
+        let parsed = parse_find_query("Title by Author on sb");
+        assert_eq!(parsed.title.as_deref(), Some("Title"));
+        assert_eq!(parsed.author.as_deref(), Some("Author"));
+        assert_eq!(parsed.site.as_deref(), Some("spacebattles"));
+    }
+
+    #[test]
+    fn test_parse_from_royalroad() {
+        let parsed = parse_find_query("Title by Author - RoyalRoad");
+        assert_eq!(parsed.site.as_deref(), Some("royalroad"));
     }
 }
