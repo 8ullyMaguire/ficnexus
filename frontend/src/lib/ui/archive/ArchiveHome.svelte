@@ -13,6 +13,7 @@
   import { auth } from '$lib/stores/auth.svelte';
   import WorkBlurb from './WorkBlurb.svelte';
   import { relativeTime } from './rating.js';
+  import { isFicUrl } from '$lib/util';
 
   // ── Compact download input ─────────────────────────────────────────
   let dlUrl = $state('');
@@ -22,7 +23,14 @@
     if (!dlUrl.trim()) return;
     dlLoading = true;
     try {
-      sessionStorage.setItem('fichub_dl_url', dlUrl.trim());
+      const v = dlUrl.trim();
+      if (isFicUrl(v)) {
+        // URL mode: existing flow
+        sessionStorage.setItem('fichub_dl_url', v);
+      } else {
+        // Query mode: "title by author" — DownloadTab will hit /api/find-fic
+        sessionStorage.setItem('fichub_dl_query', v);
+      }
       goto('/download');
     } finally {
       dlLoading = false;
@@ -149,7 +157,7 @@
           id="archive-dl-url"
           class="dl-input"
           type="url"
-          placeholder="Paste a fanfiction URL (AO3, FFN, Wattpad, …)…"
+          placeholder="Paste a fanfiction URL, or type Title by Author…"
           bind:value={dlUrl}
           onkeydown={onDlKeydown}
           disabled={dlLoading}

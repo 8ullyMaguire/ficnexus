@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatWords, detectSite, stripHtml, relativeTime, cacheUrl } from './util';
+import { formatWords, detectSite, stripHtml, relativeTime, cacheUrl, isFicUrl } from './util';
 
 describe('formatWords', () => {
   it('adds thousands separators', () => {
@@ -53,5 +53,26 @@ describe('relativeTime', () => {
 describe('cacheUrl', () => {
   it('builds correct cache path', () => {
     expect(cacheUrl('epub', 'abc', 'def')).toBe('/cache/epub/abc?h=def');
+  });
+});
+
+describe('isFicUrl', () => {
+  it('returns true for https URLs', () => {
+    expect(isFicUrl('https://archiveofourown.org/works/1')).toBe(true);
+    expect(isFicUrl('https://www.fanfiction.net/s/1/1/Title')).toBe(true);
+  });
+  it('returns true for http URLs', () => {
+    expect(isFicUrl('http://example.com/fic')).toBe(true);
+  });
+  it('returns false for plain text (title by author)', () => {
+    expect(isFicUrl("Governor's Gambit by Freefaller")).toBe(false);
+    expect(isFicUrl('Just a title')).toBe(false);
+  });
+  it('returns false for empty string', () => {
+    expect(isFicUrl('')).toBe(false);
+  });
+  it('returns false for strings with no protocol', () => {
+    expect(isFicUrl('www.archiveofourown.org/works/1')).toBe(false);
+    expect(isFicUrl('archiveofourown.org/works/1')).toBe(false);
   });
 });

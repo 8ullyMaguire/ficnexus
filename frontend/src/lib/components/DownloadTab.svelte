@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { fetchExport, convertFormat, ApiError } from '$lib/api/client';
   import type { ExportResponse } from '$lib/api/types';
-  import { formatWords, detectSite, stripHtml } from '$lib/util';
+  import { formatWords, detectSite, isFicUrl, stripHtml } from '$lib/util';
   import { auth } from '$lib/stores/auth.svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { getPref, setPref } from '$lib/prefs';
@@ -23,17 +23,34 @@
   let error = $state('');
   let result = $state<ExportResponse | null>(null);
 
+  // ── Find-fic state (dual-mode: "title by author" → /api/find-fic) ──
+  let findQuery = $state('');
+  let findResults = $state<any[]>([]);
+  let findSuggestions = $state<any[]>([]);
+  let findParsed = $state<{ title?: string; author?: string; site?: string } | null>(null);
+  let findFallback = $state<string | null>(null);
+  let findLoading = $state(false);
+  let findError = $state('');
+
   // Interface style: 'archive' (AO3-style) or 'modern'.
   const uiMode = $derived(getPref('uiMode'));
 
   onMount(() => {
-    // Home dashboard hands off a URL via sessionStorage before navigating
-    // to /download. Start the export automatically once mounted.
+    // Home dashboard hands off a URL or query via sessionStorage before
+    // navigating to /download. URL path: start export. Query path: hit
+    // /api/find-fic and show disambiguation.
     const pre = sessionStorage.getItem('fichub_dl_url');
     if (pre) {
       url = pre;
       sessionStorage.removeItem('fichub_dl_url');
       handleDownload();
+      return;
+    }
+    const preQuery = sessionStorage.getItem('fichub_dl_query');
+    if (preQuery) {
+      findQuery = preQuery;
+      sessionStorage.removeItem('fichub_dl_query');
+      handleFindFic();
     }
   });
 
@@ -159,6 +176,93 @@
       commentsError = 'Failed to post comment.';
     } finally {
       commentSubmitting = false;
+    }
+  }
+
+  async function handleFindFic() {
+    if (!findQuery.trim()) return;
+    findLoading = true;
+    findError = '';
+    findResults = [];
+    findSuggestions = [];
+    findParsed = null;
+    findFallback = null;
+    try {
+      const res = await fetch('/api/find-fic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ query: findQuery.trim(), limit: 5, per_page: 10 }),
+      });
+      if (!res.ok) {
+        findError = `Server returned ${res.status}. Is the backend running?`;
+        return;
+      }
+      const data = await res.json();
+      findParsed = data.parsed ?? null;
+      findResults = data.results ?? [];
+      findSuggestions = data.suggestions ?? [];
+      findFallback = data.fallback ?? null;
+
+      // 1 result: auto-navigate to the work page
+      if (findResults.length === 1) {
+        const r = findResults[0];
+        if (r.work_id) {
+          // Build a work URL — the SPA work page handles work_id routing
+          goto(`/works/${r.url_id ?? r.work_id}`);
+        }
+      }
+    } catch (e) {
+      findError = e instanceof Error ? e.message : 'Network error.';
+    } finally {
+      findLoading = false;
+    }
+  }
+
+  function requestThisFic() {
+    // Prefill the fic request form via sessionStorage
+    const prefill = {
+      title: findParsed?.title ?? findQuery,
+      author: findParsed?.author ?? '',
+      site: findParsed?.site ?? '',
+    };
+    sessionStorage.setItem('fichub_request_prefill', JSON.stringify(prefill));
+    goto('/requests/new');
+  }
+
+  async function askTheArchive() {
+    // Fallback: re-query via the Ask endpoint for NL/ambiguous input
+    if (!findQuery.trim()) return;
+    findLoading = true;
+    findError = '';
+    try {
+      const res = await fetch('/api/search/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ q: findQuery.trim() }),
+      });
+      if (!res.ok) {
+        findError = `Server returned ${res.status}.`;
+        return;
+      }
+      const data = await res.json();
+      // Map Ask results to find-fic shape
+      findResults = (data.results ?? []).slice(0, 5).map((r: any) => ({
+        work_id: r.work_id,
+        url_id: r.url_id,
+        title: r.title,
+        author: r.author,
+        words: r.words ?? 0,
+        sources: [r.source ?? ''].filter(Boolean),
+        score: r.score ?? 0,
+      }));
+      findSuggestions = [];
+      findFallback = null;
+    } catch (e) {
+      findError = e instanceof Error ? e.message : 'Network error.';
+    } finally {
+      findLoading = false;
     }
   }
 
@@ -313,6 +417,52 @@
     }
   }
 </script>
+{#if findQuery && !result}
+  <section class="find-fic">
+    <h2>Find a fic</h2>
+    <p>Looking for: <strong>{findQuery}</strong></p>
+    {#if findLoading}
+      <p>Searching the archive…</p>
+    {:else if findError}
+      <p class="error">{findError}</p>
+    {:else if findResults.length === 0 && findSuggestions.length > 0}
+      <h3>Did you mean…</h3>
+      <ul class="suggestions">
+        {#each findSuggestions as s}
+          <li>{s.title} by {s.author}</li>
+        {/each}
+      </ul>
+      {#if findFallback === 'request'}
+        <button onclick={requestThisFic}>Request this fic</button>
+      {/if}
+    {:else if findResults.length === 0}
+      <p>No matches in the archive.</p>
+      {#if findFallback === 'request'}
+        <button onclick={requestThisFic}>Request this fic</button>
+      {:else if findFallback === 'ask' || findParsed === null}
+        <button onclick={askTheArchive}>Ask the Archive</button>
+      {/if}
+    {:else if findResults.length > 1}
+      <h3>{findResults.length} matches</h3>
+      <ul class="results">
+        {#each findResults as r}
+          <li>
+            <a href="/works/{r.url_id ?? r.work_id}">{r.title}</a>
+            <span>by {r.author}</span>
+            <span class="words">{formatWords(r.words)} words</span>
+            <span class="sources">
+              {#each r.sources ?? [] as src}
+                <span class="badge">{src}</span>
+              {/each}
+            </span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+{/if}
+
+
 
 {#if uiMode === 'archive'}
 <!-- ── Archive mode ─────────────────────────────────────────── -->

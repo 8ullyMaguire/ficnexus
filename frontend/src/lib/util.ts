@@ -61,3 +61,9 @@ export function stripHtml(html: string): string {
 export function cacheUrl(etype: string, urlId: string, hash: string): string {
   return `/cache/${etype}/${urlId}?h=${hash}`;
 }
+
+/** Returns true if the input looks like a fanfiction URL (starts with http(s)://). */
+export function isFicUrl(v: string): boolean {
+  if (!v) return false;
+  return /^https?:\/\//i.test(v.trim());
+}
