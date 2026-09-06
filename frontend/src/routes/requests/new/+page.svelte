@@ -22,6 +22,12 @@
   let formOpenedAt = $state(0);
   let website = $state(''); // honeypot trap field — humans never fill it
 
+  // Live suggest: matches in the archive (populated on title/body blur).
+  let matches = $state<Array<{ work_id: number; title: string; author: string; words: number; sources: string[] }>>([]);
+  let matchesDismissed = $state(false);
+  let suggestLoading = $state(false);
+  let suggestRan = $state(false);
+
   onMount(() => {
     formOpenedAt = Date.now() - 5000;
     // $page is undefined in unit tests (no router) — guard the params.
@@ -37,7 +43,54 @@
       if (!title) title = q.slice(0, 200);
       if (!body) body = q;
     }
+    // Prefill from the download input's "Request this fic" button (Task 3).
+    const prefill = sessionStorage.getItem('fichub_request_prefill');
+    if (prefill) {
+      try {
+        const p = JSON.parse(prefill) as { title?: string; author?: string; site?: string };
+        const titleStr = p.author ? `${p.title ?? ''} by ${p.author}` : (p.title ?? '');
+        if (titleStr && !title) title = titleStr.slice(0, 200);
+        const detail = p.site ? `${titleStr} (${p.site})` : titleStr;
+        if (detail && !body) body = detail;
+      } catch {
+        // ignore malformed prefill
+      }
+      sessionStorage.removeItem('fichub_request_prefill');
+      // Auto-run suggest on prefill so the box shows up immediately.
+      setTimeout(() => runSuggest(), 100);
+    }
   });
+
+  /** Best-effort live suggest: parse title+body and hit /api/find-fic. */
+  async function runSuggest() {
+    matchesDismissed = false;
+    const text = `${title} ${body}`.trim();
+    if (text.length < 4) {
+      matches = [];
+      suggestRan = false;
+      return;
+    }
+    suggestLoading = true;
+    suggestRan = true;
+    try {
+      const res = await fetch('/api/find-fic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ query: text, limit: 3, per_page: 10 }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        matches = (data.results ?? []).slice(0, 3);
+      } else {
+        matches = [];
+      }
+    } catch {
+      matches = [];
+    } finally {
+      suggestLoading = false;
+    }
+  }
 
   async function submit() {
     if (!title.trim()) { error = 'Title is required'; return; }
@@ -80,15 +133,51 @@
     <form class="archive-form" onsubmit={(e) => { e.preventDefault(); submit(); }}>
       <dl class="archive-dl">
         <dt>{t('requests.formTitle')}</dt>
-        <dd><input type="text" bind:value={title} maxlength="200" placeholder={t('requests.formTitlePlaceholder')} required /></dd>
+        <dd>
+          <input
+            type="text"
+            bind:value={title}
+            maxlength="200"
+            placeholder={t('requests.formTitlePlaceholder')}
+            onblur={runSuggest}
+            required
+          />
+        </dd>
         <dt>{t('requests.formDetails')}</dt>
-        <dd><textarea bind:value={body} maxlength="4000" rows="4" placeholder={t('requests.formDetailsPlaceholder')}></textarea></dd>
+        <dd>
+          <textarea
+            bind:value={body}
+            maxlength="4000"
+            rows="4"
+            placeholder={t('requests.formDetailsPlaceholder')}
+            onblur={runSuggest}
+          ></textarea>
+        </dd>
       </dl>
 
       {#if seedWorkId}
         <div class="seed-chip">Seeded from a fic (work #{seedWorkId}){seedTitle ? ` — ${seedTitle}` : ''}
           <button type="button" onclick={() => { seedWorkId = null; seedTitle = ''; }}>remove</button>
         </div>
+      {/if}
+
+      <!-- "Already in the archive?" dismissible box -->
+      {#if matches.length > 0 && !matchesDismissed}
+        <aside class="archive-matches" data-testid="matches-box">
+          <header>
+            <strong>📚 {matches.length} fic{matches.length === 1 ? '' : 's'} already in the archive</strong>
+            <button type="button" onclick={() => matchesDismissed = true} aria-label="Dismiss">✕</button>
+          </header>
+          <ul>
+            {#each matches as m}
+              <li>
+                <a href="/works/{m.url_id ?? m.work_id}">{m.title}</a>
+                <span class="by">by {m.author}</span>
+                <span class="words">{m.words.toLocaleString('en-US')} words</span>
+              </li>
+            {/each}
+          </ul>
+        </aside>
       {/if}
 
       <!-- Honeypot (hidden from humans) -->
@@ -112,12 +201,25 @@
     <form onsubmit={(e) => { e.preventDefault(); submit(); }}>
       <label>
         {t('requests.formTitle')}
-        <input type="text" bind:value={title} maxlength="200" placeholder={t('requests.formTitlePlaceholder')} required />
+        <input
+          type="text"
+          bind:value={title}
+          maxlength="200"
+          placeholder={t('requests.formTitlePlaceholder')}
+          onblur={runSuggest}
+          required
+        />
       </label>
 
       <label>
         {t('requests.formDetails')}
-        <textarea bind:value={body} maxlength="4000" rows="4" placeholder={t('requests.formDetailsPlaceholder')}></textarea>
+        <textarea
+          bind:value={body}
+          maxlength="4000"
+          rows="4"
+          placeholder={t('requests.formDetailsPlaceholder')}
+          onblur={runSuggest}
+        ></textarea>
       </label>
 
       {#if seedWorkId}
@@ -126,7 +228,24 @@
         </div>
       {/if}
 
-      <!-- Honeypot (hidden from humans) -->
+      {#if matches.length > 0 && !matchesDismissed}
+        <aside class="matches-box" data-testid="matches-box">
+          <header>
+            <strong>📚 {matches.length} fic{matches.length === 1 ? '' : 's'} already in the archive</strong>
+            <button type="button" onclick={() => matchesDismissed = true} aria-label="Dismiss">✕</button>
+          </header>
+          <ul>
+            {#each matches as m}
+              <li>
+                <a href="/works/{m.url_id ?? m.work_id}">{m.title}</a>
+                <span class="by">by {m.author}</span>
+                <span class="words">{m.words.toLocaleString('en-US')} words</span>
+              </li>
+            {/each}
+          </ul>
+        </aside>
+      {/if}
+
       <input type="text" name="website" bind:value={website} style="display:none" tabindex="-1" autocomplete="off" />
 
       {#if error}<div class="error-card"><strong>⚠️ {error}</strong></div>{/if}
@@ -209,6 +328,36 @@
   }
   .archive-error { color: var(--archive-heading, #990000); font-size: 0.9em; }
   .archive-ok { color: var(--archive-ok, #2e9e5b); }
+
+  .archive-matches {
+    background: var(--archive-bg-raised, #f8f4e8);
+    border: 1px solid var(--archive-border, #dddddd);
+    border-left: 3px solid var(--archive-link, #990000);
+    padding: 0.75em 1em;
+    font-size: 0.9em;
+  }
+  .archive-matches header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5em;
+  }
+  .archive-matches button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--archive-muted, #666);
+    font-family: inherit;
+  }
+  .archive-matches ul {
+    margin: 0;
+    padding-left: 1.25em;
+  }
+  .archive-matches li {
+    margin-bottom: 0.25em;
+  }
+  .archive-matches .by { color: var(--archive-muted, #666); margin-left: 0.4em; }
+  .archive-matches .words { color: var(--archive-muted, #666); margin-left: 0.4em; font-size: 0.85em; }
 </style>
 {/if}
 
@@ -226,4 +375,36 @@
     padding: 0.4rem 0.75rem; border-radius: 999px; font-size: 0.85rem; align-self: flex-start; }
   .seed-chip button { background: none; border: none; cursor: pointer; color: var(--color-link, #2b4bd7); }
   .btn-primary { align-self: flex-start; }
+
+  .matches-box {
+    background: #fffbe8;
+    border: 1px solid #e0d8a8;
+    border-left: 3px solid #b58a00;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+  }
+  .matches-box header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .matches-box button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #666;
+    font: inherit;
+  }
+  .matches-box ul {
+    margin: 0;
+    padding-left: 1.25rem;
+  }
+  .matches-box li {
+    margin-bottom: 0.25rem;
+  }
+  .matches-box .by { color: #666; margin-left: 0.4rem; }
+  .matches-box .words { color: #666; margin-left: 0.4rem; font-size: 0.85rem; }
 </style>
+

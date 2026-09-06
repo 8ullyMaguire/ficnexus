@@ -32,6 +32,10 @@
   let findLoading = $state(false);
   let findError = $state('');
 
+  // ── Did-you-mean (Task 5: export failure → suggestions) ──
+  let dlDidYouMean = $state<any[]>([]);
+  let dlDidYouMeanLoading = $state(false);
+
   // Interface style: 'archive' (AO3-style) or 'modern'.
   const uiMode = $derived(getPref('uiMode'));
 
@@ -179,7 +183,20 @@
     }
   }
 
-  async function handleFindFic() {
+    async function fetchDlDidYouMean(url: string) {
+    if (!url) return;
+    dlDidYouMeanLoading = true;
+    try {
+      const res = await fetch(`/api/find-fic/suggest?title=${encodeURIComponent(url)}`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        dlDidYouMean = data.suggestions ?? [];
+      }
+    } catch { /* ignore */ }
+    finally { dlDidYouMeanLoading = false; }
+  }
+
+async function handleFindFic() {
     if (!findQuery.trim()) return;
     findLoading = true;
     findError = '';
@@ -287,6 +304,8 @@
       } else {
         error = e instanceof Error ? e.message : 'Network error.';
       }
+      // Best-effort: suggest similar titles for the failed URL.
+      fetchDlDidYouMean(url);
     } finally {
       loading = false;
     }
@@ -491,6 +510,20 @@
       {error}
       <span class="dl-arc-sites">{t('dl.supportedSites')}</span>
     </p>
+    {#if dlDidYouMean.length > 0}
+      <aside class="did-you-mean">
+        <strong>Not in the archive — did you mean:</strong>
+        <ul>
+          {#each dlDidYouMean as s}
+            <li>
+              <a href="/works/{s.work_id}">{s.title}</a>
+              <span class="muted">by {s.author}</span>
+            </li>
+          {/each}
+        </ul>
+        <button class="dl-arc-btn-secondary" onclick={requestThisFic}>Request this fic</button>
+      </aside>
+    {/if}
   {/if}
 
   {#if result && result.meta}

@@ -375,6 +375,11 @@ fn chunk_core_api() -> impl Into<Router<Arc<AppState>>> {
             "/api/find-fic",
             post(routes::find_fic::find_fic),
         )
+        // Find-fic suggest: did-you-mean for 404 branches
+        .route(
+            "/api/find-fic/suggest",
+            get(routes::find_fic::suggest_fic),
+        )
         // Cache download routes
         .route(
             "/cache/{etype}/{url_id}/{fname}",

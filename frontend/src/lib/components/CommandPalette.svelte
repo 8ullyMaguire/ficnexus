@@ -96,6 +96,20 @@
     open = false;
     void goto(a.goto);
   }
+
+  /** Whether the query looks like a find-fic query (Task 6). */
+  function looksLikeFindFic(q: string): boolean {
+    if (!q || q.length < 4) return false;
+    if (q.includes('://')) return false;  // already a URL — skip
+    // Contains " by " OR is just ≥4 chars of plain text
+    return q.includes(' by ') || true;
+  }
+
+  function pickFindFic(q: string) {
+    open = false;
+    sessionStorage.setItem('fichub_dl_query', q.trim());
+    void goto('/download');
+  }
 </script>
 
 {#if open}
@@ -106,7 +120,7 @@
         <input
           bind:this={inputEl}
           type="search"
-          placeholder="Jump to a page or docs section…"
+          placeholder="Jump to a page, docs section, or type Title by Author…"
           bind:value={query}
           onkeydown={(e) => {
             if (e.key === 'Enter') {
@@ -120,6 +134,16 @@
       </div>
       <div class="palette-body">
         {#if docsError}<p class="muted">Docs unavailable ({docsError}) — page actions still work.</p>{/if}
+        {#if looksLikeFindFic(query)}
+          <div class="group">
+            <p class="group-label">Find a fic</p>
+            <button class="row find-fic-row" onclick={() => pickFindFic(query)}>
+              <span class="row-title">🔍 Find fic: "{query}"</span>
+              <span class="row-hint">title by author</span>
+            </button>
+          </div>
+        {/if}
+
         <div class="group">
           <p class="group-label">Pages</p>
           {#each PAGE_ACTIONS as a (a.label)}

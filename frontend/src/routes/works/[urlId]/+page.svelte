@@ -1,5 +1,6 @@
 <script lang="ts">
- import { onMount } from 'svelte';
+ import { goto } from '$app/navigation';
+  import { onMount } from 'svelte';
  import { fetchExport, convertFormat } from '$lib/api/client';
  import { fetchAlsoBookmarked } from '$lib/api/recommendations';
  import type { ExportResponse } from '$lib/api/types';
@@ -76,6 +77,10 @@ import TranslatePageButton from '$lib/components/TranslatePageButton.svelte';
  let loading = $state(true);
  let showMetaEdit = $state(false);
  let error = $state('');
+  // Did-you-mean: when the work isn't found, suggest similar titles
+  // (Task 5 — uses /api/find-fic/suggest).
+  let didYouMean = $state<Array<{ work_id: number; title: string; author: string; score: number }>>([]);
+  let didYouMeanLoading = $state(false);
 
  // Derived work_id from export response
  const workId = $derived(fic?.meta?.work_id ?? null);
@@ -313,10 +318,13 @@ import TranslatePageButton from '$lib/components/TranslatePageButton.svelte';
  async function loadFic() {
  loading = true;
  error = '';
+ didYouMean = [];
  try {
  const res = await fetchExport(urlId);
  if (res.err !== 0) {
  error = res.msg || 'Could not load fic metadata.';
+ // Best-effort: fetch did-you-mean suggestions.
+ await fetchDidYouMean(urlId);
  return;
  }
  fic = res;
@@ -324,9 +332,34 @@ import TranslatePageButton from '$lib/components/TranslatePageButton.svelte';
  await Promise.allSettled([loadBookmarkStatus(), loadRatings(), loadKudos(), loadFollowStatus()]);
  } catch {
  error = 'Network error loading fic.';
+ await fetchDidYouMean(urlId);
  } finally {
  loading = false;
  }
+ }
+
+ /** Pull similar-title suggestions for a missing work id (Task 5). */
+ async function fetchDidYouMean(slug: string) {
+ if (!slug) return;
+ didYouMeanLoading = true;
+ try {
+ const res = await fetch(`/api/find-fic/suggest?title=${encodeURIComponent(slug)}`, { credentials: 'include' });
+ if (res.ok) {
+ const data = await res.json();
+ didYouMean = data.suggestions ?? [];
+ }
+ } catch {
+ // ignore
+ } finally {
+ didYouMeanLoading = false;
+ }
+ }
+
+ /** Set sessionStorage so the request form prefills (Task 3/4). */
+ function requestThisFic() {
+ const prefill = { title: urlId, author: '', site: '' };
+ sessionStorage.setItem('fichub_request_prefill', JSON.stringify(prefill));
+ goto('/requests/new');
  }
 
  async function loadFollowStatus() {
@@ -632,6 +665,20 @@ import TranslatePageButton from '$lib/components/TranslatePageButton.svelte';
 <p class="muted">
  {t('fic.errorHint')}
 </p>
+{#if didYouMean.length > 0}
+<aside class="did-you-mean" data-testid="did-you-mean">
+<strong>Not in the archive — did you mean:</strong>
+<ul>
+{#each didYouMean as s}
+<li>
+<a href="/works/{s.work_id}">{s.title}</a>
+<span>by {s.author}</span>
+</li>
+{/each}
+</ul>
+<button class="link-btn" onclick={requestThisFic}>Request this fic</button>
+</aside>
+{/if}
 </div>
  {:else if fic?.meta}
  {@const m = fic.meta}
@@ -924,7 +971,29 @@ import TranslatePageButton from '$lib/components/TranslatePageButton.svelte';
  margin: 0 auto;
  padding: 1rem;
  }
- .error-card {
+ .did-you-mean {
+ margin-top: 1em;
+ padding: 0.75em 1em;
+ background: #fffbe8;
+ border: 1px solid #e0d8a8;
+ border-left: 3px solid #b58a00;
+ border-radius: 8px;
+ font-size: 0.9em;
+}
+.did-you-mean ul { margin: 0.5em 0; padding-left: 1.25em; }
+.did-you-mean li { margin-bottom: 0.25em; }
+.did-you-mean span { color: #666; margin-left: 0.4em; }
+.did-you-mean .link-btn {
+ background: none;
+ border: none;
+ color: #2b4bd7;
+ cursor: pointer;
+ font: inherit;
+ text-decoration: underline;
+ padding: 0;
+}
+
+.error-card {
  border-color: var(--color-error);
  }
  .fic-header h1 {

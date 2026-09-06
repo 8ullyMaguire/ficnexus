@@ -99,72 +99,16 @@ pub async fn find_fic(
         })));
     }
 
-    // Build the v2 query string: title:"{title}" author:"{author}"
-    // Include source:{site} when a site was specified.
-    let mut q = String::new();
-    if let Some(ref title) = parsed.title {
-        q.push_str(&format!("title:\"{}\" ", title));
-    }
-    if let Some(ref author) = parsed.author {
-        q.push_str(&format!("author:\"{}\" ", author));
-    }
-    if let Some(ref site) = parsed.site {
-        q.push_str(&format!("source:{} ", site));
-    }
-    // Trim trailing space
-    q = q.trim_end().to_string();
-
-    // Build SearchParams and delegate to the existing search pipeline
-    let search_params = SearchParams {
-        q: Some(q.clone()),
-        page: Some(1),
-        per_page: Some(form.per_page),
-        ..Default::default()
-    };
-
-    // Run the search through the shared pipeline
-    let envelope: SearchResponseEnvelope = run_search(&state, search_params).await?;
-
-    // Map results to canonical works: dedupe by work_id
-    let mut seen_work_ids: std::collections::HashSet<i32> = std::collections::HashSet::new();
-    let mut canonical_results: Vec<Value> = Vec::new();
-
-    for result in &envelope.results {
-        // Look up the work_id for this url_id
-        let work_id: Option<i32> = sqlx::query_scalar(
-            "SELECT work_id FROM fic_info WHERE id = $1",
-        ).bind(&result.url_id)
-        .fetch_optional(&state.db)
-        .await?;
-
-        if let Some(wid) = work_id {
-            if seen_work_ids.contains(&wid) {
-                continue;  // already have this canonical work
-            }
-            seen_work_ids.insert(wid);
-
-            // Get all sources for this work
-            let sources = get_work_sources(&state.db, wid)
-                .await
-                .unwrap_or_default()
-                .iter()
-                .map(|fi| fi.source.clone())
-                .collect::<Vec<_>>();
-
-            canonical_results.push(json!({
-                "work_id": wid,
-                "url_id": result.url_id,
-                "title": result.title,
-                "author": result.author,
-                "words": result.words,
-                "sources": sources,
-                "score": result.rank.unwrap_or(0.0) as f64,
-            }));
-        }
-    }
-
-    // Limit to the requested number
-    canonical_results.truncate(form.limit);
+    // Delegate to the shared helper (same logic used by the requests
+    // auto-suggest feature).
+    let canonical_results: Vec<Value> = find_matches(
+        &state,
+        &parsed,
+        form.limit,
+        form.per_page,
+    )
+    .await
+    .unwrap_or_default();
 
     // If no results, try fuzzy suggestions
     let suggestions: Vec<Value> = if canonical_results.is_empty() && parsed.title.is_some() {
@@ -308,6 +252,153 @@ fn strip_markdown(s: &str) -> &str {
     s.trim_matches(|c| c == '"' || c == '*' || c == '\'')
 }
 
+/// GET /api/find-fic/suggest?title=...&author=...
+/// Returns similar titles via pg_trgm for use in 404 branches.
+/// Public, uses the same Search-tier rate limiter as the main endpoint.
+pub async fn suggest_fic(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(remote): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::Query(params): axum::extract::Query<SuggestParams>,
+) -> Result<Json<Value>, AppError> {
+    enforce_search_rate_limit(&state, &headers, remote).await?;
+
+    let title = params.title.clone().unwrap_or_default();
+    let author = params.author.clone().unwrap_or_default();
+
+    if title.is_empty() {
+        return Ok(Json(json!({"err": 0, "suggestions": []})));
+    }
+
+    let mut suggestions: Vec<Value> = similar_titles(&state, &title, 5).await.unwrap_or_default();
+
+    // If we have an author, boost results that match the author
+    if !author.is_empty() {
+        suggestions.sort_by(|a, b| {
+            let a_match = a["author"].as_str().unwrap_or("").eq_ignore_ascii_case(&author);
+            let b_match = b["author"].as_str().unwrap_or("").eq_ignore_ascii_case(&author);
+            b_match.cmp(&a_match)
+        });
+    }
+
+    Ok(Json(json!({
+        "err": 0,
+        "suggestions": suggestions,
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SuggestParams {
+    pub title: Option<String>,
+    pub author: Option<String>,
+}
+
+/// Shared search helper: parses a query, runs the search, and dedupes by
+/// work_id. Used by both POST /api/find-fic and the requests-create handler
+/// to avoid duplicating the SQL pipeline.
+pub async fn find_matches(
+    state: &Arc<AppState>,
+    parsed: &ParsedFindQuery,
+    limit: usize,
+    per_page: usize,
+) -> Result<Vec<serde_json::Value>, AppError> {
+    // Build the v2 query string
+    let mut q = String::new();
+    if let Some(ref title) = parsed.title {
+        q.push_str(&format!("title:\"{}\" ", title));
+    }
+    if let Some(ref author) = parsed.author {
+        q.push_str(&format!("author:\"{}\" ", author));
+    }
+    if let Some(ref site) = parsed.site {
+        q.push_str(&format!("source:{} ", site));
+    }
+    let q = q.trim_end().to_string();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let search_params = SearchParams {
+        q: Some(q),
+        page: Some(1),
+        per_page: Some(per_page),
+        ..Default::default()
+    };
+    let envelope: SearchResponseEnvelope = run_search(state, search_params).await?;
+
+    // Dedupe by work_id
+    let mut seen_work_ids: std::collections::HashSet<i32> = std::collections::HashSet::new();
+    let mut canonical_results: Vec<serde_json::Value> = Vec::new();
+
+    for result in &envelope.results {
+        let work_id: Option<i32> = sqlx::query_scalar(
+            "SELECT work_id FROM fic_info WHERE id = $1",
+        )
+        .bind(&result.url_id)
+        .fetch_optional(&state.db)
+        .await?;
+        if let Some(wid) = work_id {
+            if seen_work_ids.contains(&wid) { continue; }
+            seen_work_ids.insert(wid);
+            let sources = get_work_sources(&state.db, wid)
+                .await
+                .unwrap_or_default()
+                .iter()
+                .map(|fi| fi.source.clone())
+                .collect::<Vec<_>>();
+            canonical_results.push(json!({
+                "work_id": wid,
+                "url_id": result.url_id,
+                "title": result.title,
+                "author": result.author,
+                "words": result.words,
+                "sources": sources,
+                "score": result.rank.unwrap_or(0.0) as f64,
+            }));
+        }
+    }
+    canonical_results.truncate(limit);
+    Ok(canonical_results)
+}
+
+/// Find similar titles via pg_trgm word_similarity.
+/// Single SQL: word_similarity > 0.35, ordered by similarity DESC.
+/// Only rows with a canonical work_id are returned.
+pub async fn similar_titles(
+    state: &Arc<AppState>,
+    title: &str,
+    limit: usize,
+) -> Result<Vec<serde_json::Value>, AppError> {
+    let rows: Vec<(i32, String, String, f32, f32)> = sqlx::query_as(
+        r#"SELECT fi.work_id, fi.title, fi.author,
+                  similarity(fi.title, $1)::FLOAT4 AS sim,
+                  word_similarity(fi.title, $1)::FLOAT4 AS wsim
+           FROM fic_info fi
+           WHERE fi.work_id IS NOT NULL
+             AND word_similarity(fi.title, $1) > 0.35
+           ORDER BY similarity(fi.title, $1) DESC
+           LIMIT $2"#,
+    )
+    .bind(title)
+    .bind(limit as i64)
+    .fetch_all(&state.db)
+    .await?;
+
+    let mut seen: std::collections::HashSet<i32> = std::collections::HashSet::new();
+    let mut suggestions: Vec<serde_json::Value> = Vec::new();
+    for (wid, t, a, sim, _wsim) in rows {
+        if seen.contains(&wid) { continue; }
+        seen.insert(wid);
+        suggestions.push(json!({
+            "work_id": wid,
+            "title": t,
+            "author": a,
+            "score": sim as f64,
+        }));
+    }
+    Ok(suggestions)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,5 +484,23 @@ mod tests {
     fn test_parse_from_royalroad() {
         let parsed = parse_find_query("Title by Author - RoyalRoad");
         assert_eq!(parsed.site.as_deref(), Some("royalroad"));
+    }
+
+    #[test]
+    fn test_parse_ffn_alias() {
+        let parsed = parse_find_query("Title by Author (FFN)");
+        assert_eq!(parsed.site.as_deref(), Some("fanfiction.net"));
+    }
+
+    #[test]
+    fn test_parse_scribblehub_alias() {
+        let parsed = parse_find_query("Title by Author on ScribbleHub");
+        assert_eq!(parsed.site.as_deref(), Some("scribblehub"));
+    }
+
+    #[test]
+    fn test_parse_sufficientvelocity_alias() {
+        let parsed = parse_find_query("Title on SV");
+        assert_eq!(parsed.site.as_deref(), Some("sufficientvelocity"));
     }
 }

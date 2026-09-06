@@ -141,9 +141,22 @@ pub async fn create_request(
         .await;
     });
 
-    Ok(Json(
-        json!({ "err": 0, "id": id, "msg": "Request created" }),
-    ))
+    // Best-effort: parse the request text and find matching archive fics.
+    // Search failure → omit the matches key, never fail creation.
+    let mut response = json!({ "err": 0, "id": id, "msg": "Request created" });
+    let query_text = format!("{} {}", title, body.body.trim());
+    let parsed = crate::routes::find_fic::parse_find_query(&query_text);
+    if parsed.title.is_some() || parsed.author.is_some() {
+        if let Ok(matches) = crate::routes::find_fic::find_matches(
+            &state, &parsed, 5, 10,
+        ).await {
+            if !matches.is_empty() {
+                response["matches"] = json!(matches);
+            }
+        }
+    }
+
+    Ok(Json(response))
 }
 
 /// Minimal percent-encoding for search URLs (keep it readable; only encode
