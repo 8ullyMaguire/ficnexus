@@ -12,6 +12,8 @@ default-run = "fichub"
 [workspace]
 members = [
     "crates/consensus",
+    "crates/scrapers",
+    "crates/forum-core",
 ]
 resolver = "2"
 
@@ -38,10 +40,10 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 scraper = "0.27"
 
 # Fanfiction scraping library (general-purpose, AGPL-3.0)
-fanfic-scrapers = { path = "scrapers" }
+fanfic-scrapers = { path = "crates/scrapers" }
 
 # Forum engine core (generic, AGPL-3.0)
-forum-core = { path = "forum_core" }
+forum-core = { path = "crates/forum-core" }
 
 # EPUB generation
 epub-builder = "0.8"
