@@ -33,6 +33,8 @@ pub enum AppError {
     RateLimitedJson(serde_json::Value),
     /// Upload too large (HTTP 413) — blocks oversized file uploads.
     PayloadTooLarge(String),
+    /// Gone (HTTP 410) — retired endpoint with a migration pointer.
+    Gone(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -53,6 +55,7 @@ impl std::fmt::Display for AppError {
             }
             AppError::RateLimitedJson(_) => write!(f, "RateLimitedJson"),
             AppError::PayloadTooLarge(msg) => write!(f, "PayloadTooLarge: {}", msg),
+            AppError::Gone(msg) => write!(f, "Gone: {}", msg),
         }
     }
 }
@@ -105,6 +108,7 @@ impl IntoResponse for AppError {
                 StatusCode::PAYLOAD_TOO_LARGE,
                 json!({"err": -413, "msg": msg}),
             ),
+            AppError::Gone(msg) => (StatusCode::GONE, json!({"err": -410, "msg": msg})),
         };
 
         (status, Json(body)).into_response()

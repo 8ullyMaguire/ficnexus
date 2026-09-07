@@ -523,6 +523,78 @@ fn require_mod(auth: &AuthUser) -> Result<i32, AppError> {
     Ok(uid)
 }
 
+// ── Trust moderation (replaces points/metamod, 2026-09) ───────────────────
+///
+/// The platform trust ladder (TL0 New … TL6 Near-admin,
+/// `src/services/trust.rs`) is the single source of "who may moderate".
+/// Queue access needs TL4+ (Elder); resolving reports, fast-hide, lock/pin
+/// need TL5+ (Community Moderator); bans stay admin. Staff (role ≥ 10)
+/// always passes. A thin per-UTC-day action cap replaces the old
+/// earned/spendable points currency — no grants, no refill windows.
+
+/// Trust tier that may use the moderation queue (config FORUM_MOD_MIN_TRUST).
+fn queue_min_trust(state: &AppState) -> i16 {
+    state.config.forum_mod_min_trust.max(1)
+}
+
+/// Trust tier that may resolve/fast-hide/lock/pin (config FORUM_RESOLVE_MIN_TRUST).
+fn resolve_min_trust(state: &AppState) -> i16 {
+    state.config.forum_resolve_min_trust.max(1)
+}
+
+/// Require queue access: TL4+ (Elder) or staff. Returns the trust level.
+async fn require_trust_queue(state: &AppState, auth: &AuthUser) -> Result<i16, AppError> {
+    let uid = require_user(auth)?;
+    let level = crate::services::trust::assert_staff_or_min_trust(
+        &state.db,
+        Some(uid),
+        auth.role,
+        queue_min_trust(state),
+        "moderation queue access",
+    )
+    .await?;
+    Ok(level)
+}
+
+/// Require resolve power: TL5+ (Community Moderator) or staff.
+async fn require_trust_resolve(state: &AppState, auth: &AuthUser) -> Result<i16, AppError> {
+    let uid = require_user(auth)?;
+    let level = crate::services::trust::assert_staff_or_min_trust(
+        &state.db,
+        Some(uid),
+        auth.role,
+        resolve_min_trust(state),
+        "report resolution",
+    )
+    .await?;
+    Ok(level)
+}
+
+/// Daily action cap: how many moderation actions this user already logged
+/// today (UTC) and the configured cap. Caps `forum_mod_actions` rows —
+/// the audit trail doubles as the counter, so no new table.
+async fn daily_mod_usage(state: &AppState, user_id: i32) -> Result<(i64, i32), AppError> {
+    let used: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM forum_mod_actions
+         WHERE moderator_id = $1 AND created_at >= date_trunc('day', NOW())",
+    )
+    .bind(user_id)
+    .fetch_one(&state.db)
+    .await?;
+    Ok((used, state.config.forum_mod_actions_per_day.max(1)))
+}
+
+/// Enforce the daily cap; 429-style Forbidden with a friendly message.
+async fn check_daily_cap(state: &AppState, user_id: i32) -> Result<(), AppError> {
+    let (used, cap) = daily_mod_usage(state, user_id).await?;
+    if used >= i64::from(cap) {
+        return Err(AppError::Forbidden(format!(
+            "daily moderation limit reached ({used}/{cap}); back tomorrow"
+        )));
+    }
+    Ok(())
+}
+
 // ── F5: moderation points + floor actions ─────────────────────────────────
 
 /// Fixed reason → delta table (SPEC §8). Positive = rewards, negative = flags.
@@ -589,204 +661,47 @@ async fn already_modded(
     Ok(hit.unwrap_or(false))
 }
 
-/// Load (level, exp, created_at::text) for the user — the F7 eligibility
-/// inputs (leveling replaces the legacy role/reputation proxy).
-async fn load_user_mod_profile(
-    db: &sqlx::PgPool,
-    user_id: i32,
-) -> Result<(i16, i64, String), AppError> {
-    let row: Option<(i16, i64, String)> =
-        sqlx::query_as("SELECT level, exp, created_at::text FROM users WHERE id = $1")
-            .bind(user_id)
-            .fetch_optional(db)
-            .await?;
-    row.ok_or_else(|| AppError::BadRequest("user not found".to_string()))
-}
-
-/// Eligibility for the point system (SPEC §8): level ≥ curator level, account
-/// age ≥ min days, exp ≥ min exp. Returns (eligible, reason).
-async fn mod_eligibility(
-    state: &AppState,
-    user_id: i32,
-) -> Result<(bool, Option<String>), AppError> {
-    let (level, exp, created_at) = load_user_mod_profile(&state.db, user_id).await?;
-    let min_level = state.config.forum_mod_min_level;
-    let min_exp = state.config.forum_mod_min_exp;
-    let min_age_days = state.config.forum_mod_min_age_days;
-    if level < min_level {
-        return Ok((
-            false,
-            Some(format!("level {level} < {min_level} (curator) required")),
-        ));
-    }
-    let created = DateTime::parse_from_rfc3339(&normalize_offset(&created_at))
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or(Utc::now());
-    let age_days = (Utc::now() - created).num_days();
-    if age_days < i64::from(min_age_days) {
-        return Ok((
-            false,
-            Some(format!("account younger than {min_age_days} days")),
-        ));
-    }
-    if exp < i64::from(min_exp) {
-        return Ok((false, Some(format!("exp {exp} < {min_exp}"))));
-    }
-    Ok((true, None))
-}
-
-/// Current grant state for a moderator: refreshes the window on the fly when
-/// it expired (points_left = FORUM_POINTS_PER_WINDOW, expires_at = now + window).
-/// Returns (points_left, expires_at::text).
-///
-/// F6: a metamod suspension (`cooldown_until` in the future) zeroes the
-/// grant — the moderator keeps their row but gets no points and no refresh
-/// until the cooldown passes.
-async fn current_grant(state: &AppState, user_id: i32) -> Result<(i16, String), AppError> {
-    let row: Option<(i16, String, Option<String>)> = sqlx::query_as(
-        "SELECT points_left, expires_at::text, cooldown_until::text FROM forum_mod_grants WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(&state.db)
-    .await?;
-    if let Some((points, expires_at, cooldown_until)) = row {
-        if let Some(cu) = cooldown_until {
-            if let Ok(cool) = DateTime::parse_from_rfc3339(&normalize_offset(&cu)) {
-                if cool.with_timezone(&Utc) > Utc::now() {
-                    // Suspended: no points, no window refresh, until the
-                    // cooldown passes. The row's old expires_at is returned
-                    // so the status endpoint still shows *something*.
-                    return Ok((0, expires_at));
-                }
-            }
-        }
-        let expires = DateTime::parse_from_rfc3339(&normalize_offset(&expires_at))
-            .map(|dt| dt.with_timezone(&Utc))
-            .unwrap_or(Utc::now());
-        if expires > Utc::now() {
-            return Ok((points, expires_at));
-        }
-        // Window expired — reset in place (keep any cooldown marker intact).
-        let new_expires =
-            Utc::now() + chrono::Duration::hours(i64::from(state.config.forum_window_hours));
-        sqlx::query(
-            "UPDATE forum_mod_grants SET points_left = $2, granted_at = NOW(), expires_at = $3 WHERE user_id = $1",
-        )
-        .bind(user_id)
-        .bind(state.config.forum_points_per_window as i16)
-        .bind(new_expires)
-        .execute(&state.db)
-        .await?;
-        return Ok((
-            state.config.forum_points_per_window as i16,
-            new_expires.to_rfc3339(),
-        ));
-    }
-    // No grant yet — create the first window.
-    let new_expires =
-        Utc::now() + chrono::Duration::hours(i64::from(state.config.forum_window_hours));
-    sqlx::query(
-        "INSERT INTO forum_mod_grants (user_id, points_left, expires_at) VALUES ($1, $2, $3)
-         ON CONFLICT (user_id) DO UPDATE SET
-             points_left = GREATEST(forum_mod_grants.points_left, EXCLUDED.points_left),
-             expires_at = GREATEST(forum_mod_grants.expires_at, EXCLUDED.expires_at)",
-    )
-    .bind(user_id)
-    .bind(state.config.forum_points_per_window as i16)
-    .bind(new_expires)
-    .execute(&state.db)
-    .await?;
-    Ok((
-        state.config.forum_points_per_window as i16,
-        new_expires.to_rfc3339(),
-    ))
-}
-
-/// GET /api/forum/moderation/status — my points / window / eligibility.
+/// GET /api/forum/moderation/status — trust tier + queue/resolve powers +
+/// daily action usage. The old points-window keys (`points_left`,
+/// `expires_at`) are kept as deprecated aliases so existing clients don't
+/// break: points_left mirrors remaining daily actions, expires_at is end of
+/// the UTC day.
 pub async fn moderation_status(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let (eligible, reason) = mod_eligibility(&state, user_id).await?;
-    let (points_left, expires_at) = if eligible {
-        current_grant(&state, user_id).await?
-    } else {
-        (0_i16, String::new())
-    };
-    let mut body = json!({
-        "err": 0,
-        "points_left": points_left,
-        "expires_at": if expires_at.is_empty() { Value::Null } else { Value::String(expires_at) },
-        "eligible": eligible,
+    let trust_level = crate::services::trust::fetch_trust_level(&state.db, Some(user_id)).await;
+    let can_queue = trust_level >= queue_min_trust(&state) || auth.role >= 10;
+    let can_resolve = trust_level >= resolve_min_trust(&state) || auth.role >= 10;
+    let (used, cap) = daily_mod_usage(&state, user_id).await?;
+    let day_end = Utc::now().date_naive().and_hms_opt(23, 59, 59).map(|t| {
+        chrono::DateTime::<Utc>::from_naive_utc_and_offset(t, Utc).to_rfc3339()
     });
-    if let Some(r) = reason {
-        body["reason"] = json!(r);
-    }
-    // Rolling unfair-rate + cooldown surfacing (FR-010, T035)
-    let (unfair_rate, _cooldown_until) = match sqlx::query_as::<_, (i64, i64)>(
-        "SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE v.verdict = $2) AS unfair
-         FROM forum_metamod_votes v JOIN forum_mod_actions ma ON ma.id = v.mod_action_id
-         WHERE ma.moderator_id = $1 AND v.created_at >= NOW() - ($3 || ' days')::interval",
-    )
-    .bind(user_id)
-    .bind(META_UNFAIR)
-    .bind(state.config.forum_meta_audit_window)
-    .fetch_one(&state.db)
-    .await
-    {
-        Ok((total, unfair)) if total > 0 => (Some(unfair as f64 / total as f64), None::<String>),
-        _ => (None, None),
-    };
-    if let Some(rate) = unfair_rate {
-        body["unfair_rate"] = json!(rate);
-    }
-    // cooldown_until from grant row
-    if let Ok(row) = sqlx::query_as::<_, (Option<String>,)>(
-        "SELECT cooldown_until::text FROM forum_mod_grants WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(&state.db)
-    .await
-    {
-        if let Some(Some(cu)) = row.map(|r| r.0) {
-            body["cooldown_until"] = json!(cu);
-        }
-    }
-    Ok(Json(body))
+    Ok(Json(json!({
+        "err": 0,
+        "trust_level": trust_level,
+        "can_queue": can_queue,
+        "can_resolve": can_resolve,
+        "actions_today": used,
+        "actions_cap": cap,
+        // Deprecated aliases (points → daily budget).
+        "eligible": can_queue,
+        "points_left": (cap as i64 - used).max(0) as i32,
+        "expires_at": day_end,
+    })))
 }
 
 /// GET /api/forum/moderation/queue — posts needing moderation, lowest score
 /// first, then oldest. Excludes: my own posts, posts I already modded, hidden
 /// (is_hidden or hidden_until) posts, posts with mod_count ≥ 5. Requires
-/// eligibility + at least 1 point (the queue is pointless otherwise).
+/// trust queue access (TL4+ / staff).
 pub async fn moderation_queue(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let (eligible, _) = mod_eligibility(&state, user_id).await?;
-    let points_left = if eligible {
-        current_grant(&state, user_id).await?.0
-    } else {
-        0
-    };
-    let min_pool = state.config.forum_mod_pool_min;
-    if !eligible || points_left <= 0 {
-        return Err(AppError::Forbidden(
-            "No moderation points available".to_string(),
-        ));
-    }
-    // Pool check: point mechanics activate once enough eligible mods exist.
-    let pool: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE role >= $1")
-        .bind(state.config.forum_mod_min_level)
-        .fetch_one(&state.db)
-        .await?;
-    if pool < i64::from(min_pool) {
-        return Ok(Json(
-            json!({ "err": 0, "items": [], "count": 0, "pool_too_small": true }),
-        ));
-    }
+    require_trust_queue(&state, &auth).await?;
 
     let rows: Vec<(i64, i64, String, String, i32, i32, String)> = sqlx::query_as(
         r#"SELECT p.id, p.topic_id, u.username,
@@ -828,9 +743,10 @@ pub async fn moderation_queue(
     Ok(Json(json!({ "err": 0, "items": items, "count": count })))
 }
 
-/// POST /api/forum/posts/{postId}/moderate — spend 1 point, apply the
-/// reason's delta to the post score, bump mod_count. Auto-collapse (24h hide)
-/// when score drops to ≤ −2 or the reason is Abusive.
+/// POST /api/forum/posts/{postId}/moderate — apply the reason's delta to
+/// the post score, bump mod_count. Requires trust queue access (TL4+) and
+/// the daily action cap. Auto-collapse stays client-side; only admin
+/// fast-hide sets hidden_until server-side.
 pub async fn moderate_post(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
@@ -844,14 +760,8 @@ pub async fn moderate_post(
             "invalid moderation reason".to_string(),
         ));
     };
-    let (eligible, _) = mod_eligibility(&state, user_id).await?;
-    if !eligible {
-        return Err(AppError::Forbidden("Not eligible to moderate".to_string()));
-    }
-    let (points_left, _) = current_grant(&state, user_id).await?;
-    if points_left <= 0 {
-        return Err(AppError::Forbidden("No moderation points left".to_string()));
-    }
+    require_trust_queue(&state, &auth).await?;
+    check_daily_cap(&state, user_id).await?;
     let (author_id, _score, mod_count) = load_moddable_post(&state.db, post_id).await?;
     if author_id == user_id {
         return Err(AppError::Forbidden(
@@ -894,13 +804,8 @@ pub async fn moderate_post(
     // with its negative score; the frontend renders it collapsed. Only the
     // admin fast-hide floor action sets hidden_until (server-side exclusion).
     let hidden_until: Option<String> = None;
-    // Spend the point (window may have just been refreshed).
-    sqlx::query(
-        "UPDATE forum_mod_grants SET points_left = points_left - 1 WHERE user_id = $1 AND points_left > 0",
-    )
-    .bind(user_id)
-    .execute(&mut *tx)
-    .await?;
+    // No points spend: the daily cap (checked above) is the throttle, and
+    // the forum_mod_actions row itself is the audit trail + cap counter.
     tx.commit().await?;
 
     crate::modlog::record_json(
@@ -985,75 +890,8 @@ pub struct MetaVoteBody {
     pub verdict: String,
 }
 
-/// Eligibility for metamoderation (SPEC §3): role ≥ FORUM_META_MIN_LEVEL,
-/// account age ≥ FORUM_META_MIN_AGE_DAYS, reputation ≥ FORUM_META_MIN_EXP,
-/// AND at least FORUM_META_MIN_POSTS forum posts authored. Returns
-/// (eligible, reason).
-async fn meta_eligibility(
-    state: &AppState,
-    user_id: i32,
-) -> Result<(bool, Option<String>), AppError> {
-    let (level, exp, created_at) = load_user_mod_profile(&state.db, user_id).await?;
-    let min_level = state.config.forum_meta_min_level;
-    let min_exp = state.config.forum_meta_min_exp;
-    let min_age_days = state.config.forum_meta_min_age_days;
-    let min_posts = state.config.forum_meta_min_posts;
-    if level < min_level {
-        return Ok((false, Some(format!("level {level} < {min_level} required"))));
-    }
-    let created = DateTime::parse_from_rfc3339(&normalize_offset(&created_at))
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or(Utc::now());
-    let age_days = (Utc::now() - created).num_days();
-    if age_days < i64::from(min_age_days) {
-        return Ok((
-            false,
-            Some(format!("account younger than {min_age_days} days")),
-        ));
-    }
-    if exp < i64::from(min_exp) {
-        return Ok((false, Some(format!("exp {exp} < {min_exp}"))));
-    }
-    let post_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM forum_posts WHERE author_id = $1 AND deleted_at IS NULL",
-    )
-    .bind(user_id)
-    .fetch_one(&state.db)
-    .await?;
-    if post_count < i64::from(min_posts) {
-        return Ok((
-            false,
-            Some(format!("{post_count} forum posts < {min_posts} required")),
-        ));
-    }
-    Ok((true, None))
-}
-
-/// Count of users currently eligible to metamoderate (the metamod pool).
-/// Used for the cold-start gate: pool < FORUM_META_POOL_MIN → metamod
-/// dormant (the public modlog is the audit).
-async fn meta_pool_size(state: &AppState) -> Result<i64, AppError> {
-    let min_level = state.config.forum_meta_min_level;
-    let min_exp = state.config.forum_meta_min_exp;
-    let min_age_days = state.config.forum_meta_min_age_days;
-    let min_posts = state.config.forum_meta_min_posts;
-    let pool: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM users u
-         WHERE u.level >= $1
-           AND u.exp >= $2
-           AND u.created_at < NOW() - ($3 || ' days')::interval
-           AND (SELECT COUNT(*) FROM forum_posts p
-                WHERE p.author_id = u.id AND p.deleted_at IS NULL) >= $4",
-    )
-    .bind(min_level)
-    .bind(min_exp)
-    .bind(min_age_days)
-    .bind(min_posts)
-    .fetch_one(&state.db)
-    .await?;
-    Ok(pool)
-}
-
+/// Query params for the retired metamod queue (kept so the stub compiles;
+/// the endpoint always returns 410).
 #[derive(Debug, Deserialize)]
 pub struct MetamodQueueParams {
     #[serde(default)]
@@ -1066,193 +904,19 @@ pub struct MetamodQueueParams {
     pub limit: Option<i64>,
 }
 
-fn clamp_limit(v: Option<i64>) -> i64 {
-    v.unwrap_or(25).clamp(1, 100)
-}
-
-/// GET /api/forum/metamod/queue — filterable queue (FR-008).
-/// Query: filter=unreviewed(default)|reviewed|all, verdict=fair|unfair (when reviewed), cursor & limit.
-/// `unreviewed` hides grants where caller already voted; `reviewed` shows caller's past votes.
-/// Anonymized — no moderator identity leaves the server.
+/// GET /api/forum/metamod/queue — RETIRED (2026-09 trust cutover).
+/// Metamoderation voting is replaced by contested-resolution escalation via
+/// reports. Returns HTTP 410 with a machine-readable pointer.
 pub async fn metamod_queue(
     auth: AuthUser,
-    State(state): State<Arc<AppState>>,
-    Query(params): Query<MetamodQueueParams>,
+    State(_state): State<Arc<AppState>>,
+    Query(_params): Query<MetamodQueueParams>,
 ) -> Result<Json<Value>, AppError> {
-    let user_id = require_user(&auth)?;
-    if auth.level < curator_level() {
-        return Err(AppError::Forbidden("Moderator access required".to_string()));
-    }
-    let (eligible, reason) = meta_eligibility(&state, user_id).await?;
-    if !eligible {
-        return Err(AppError::Forbidden(
-            reason.unwrap_or_else(|| "Not eligible to metamoderate".to_string()),
-        ));
-    }
-    let pool = meta_pool_size(&state).await?;
-    if pool < i64::from(state.config.forum_meta_pool_min) {
-        return Ok(Json(json!({
-            "err": 0,
-            "items": [],
-            "count": 0,
-            "pool_too_small": true,
-            "next_cursor": Value::Null,
-        })));
-    }
-    let filter = params
-        .filter
-        .as_deref()
-        .unwrap_or("unreviewed")
-        .to_lowercase();
-    let limit = clamp_limit(params.limit);
-    let fetch = limit + 1;
-    let cursor = params.cursor.unwrap_or(i64::MAX);
-    let verdict_filter: Option<i16> =
-        params
-            .verdict
-            .as_deref()
-            .map(|v| match v.to_lowercase().as_str() {
-                "fair" => META_FAIR,
-                "unfair" => META_UNFAIR,
-                "unsure" => META_UNSURE,
-                _ => META_FAIR,
-            });
-
-    let rows: Vec<(i64, i64, i64, String, String, i16, i32, String, Option<i16>)> = match filter.as_str() {
-        "reviewed" => {
-            if let Some(vf) = verdict_filter {
-                sqlx::query_as(
-                    r#"SELECT ma.id, p.id, p.topic_id,
-                              LEFT(p.body, 200) || CASE WHEN LENGTH(p.body) > 200 THEN '…' ELSE '' END,
-                              ma.reason, ma.delta, ma.score_after, ma.created_at::text,
-                              v.verdict
-                       FROM forum_metamod_votes v
-                       JOIN forum_mod_actions ma ON ma.id = v.mod_action_id
-                       JOIN forum_posts p ON p.id = ma.post_id AND p.deleted_at IS NULL
-                       WHERE v.voter_id = $1 AND v.verdict = $4 AND ma.id < $3
-                       ORDER BY ma.id DESC LIMIT $2"#,
-                )
-                .bind(user_id)
-                .bind(fetch)
-                .bind(cursor)
-                .bind(vf)
-                .fetch_all(&state.db)
-                .await?
-            } else {
-                sqlx::query_as(
-                    r#"SELECT ma.id, p.id, p.topic_id,
-                              LEFT(p.body, 200) || CASE WHEN LENGTH(p.body) > 200 THEN '…' ELSE '' END,
-                              ma.reason, ma.delta, ma.score_after, ma.created_at::text,
-                              v.verdict
-                       FROM forum_metamod_votes v
-                       JOIN forum_mod_actions ma ON ma.id = v.mod_action_id
-                       JOIN forum_posts p ON p.id = ma.post_id AND p.deleted_at IS NULL
-                       WHERE v.voter_id = $1 AND ma.id < $3
-                       ORDER BY ma.id DESC LIMIT $2"#,
-                )
-                .bind(user_id)
-                .bind(fetch)
-                .bind(cursor)
-                .fetch_all(&state.db)
-                .await?
-            }
-        }
-        "all" => {
-            sqlx::query_as(
-                r#"SELECT ma.id, p.id, p.topic_id,
-                          LEFT(p.body, 200) || CASE WHEN LENGTH(p.body) > 200 THEN '…' ELSE '' END,
-                          ma.reason, ma.delta, ma.score_after, ma.created_at::text,
-                          v.verdict
-                   FROM forum_mod_actions ma
-                   JOIN forum_posts p ON p.id = ma.post_id AND p.deleted_at IS NULL
-                   LEFT JOIN forum_metamod_votes v ON v.mod_action_id = ma.id AND v.voter_id = $1
-                   WHERE ma.moderator_id <> $1 AND ma.id < $3
-                     AND (SELECT COUNT(*) FROM forum_metamod_votes vv WHERE vv.mod_action_id = ma.id) < $4
-                   ORDER BY ma.id DESC LIMIT $2"#,
-            )
-            .bind(user_id)
-            .bind(fetch)
-            .bind(cursor)
-            .bind(state.config.forum_meta_ratings)
-            .fetch_all(&state.db)
-            .await?
-        }
-        _ => {
-            // unreviewed default
-            sqlx::query_as(
-                r#"SELECT ma.id, p.id, p.topic_id,
-                          LEFT(p.body, 200) || CASE WHEN LENGTH(p.body) > 200 THEN '…' ELSE '' END,
-                          ma.reason, ma.delta, ma.score_after, ma.created_at::text,
-                          NULL::smallint
-                   FROM forum_mod_actions ma
-                   JOIN forum_posts p ON p.id = ma.post_id AND p.deleted_at IS NULL
-                   WHERE ma.moderator_id <> $1
-                     AND ma.id < $3
-                     AND (SELECT COUNT(*) FROM forum_metamod_votes v WHERE v.mod_action_id = ma.id) < $4
-                     AND NOT EXISTS (SELECT 1 FROM forum_metamod_votes v2 WHERE v2.mod_action_id = ma.id AND v2.voter_id = $1)
-                   ORDER BY ma.id DESC LIMIT $2"#,
-            )
-            .bind(user_id)
-            .bind(fetch)
-            .bind(cursor)
-            .bind(state.config.forum_meta_ratings)
-            .fetch_all(&state.db)
-            .await?
-        }
-    };
-
-    let has_more = rows.len() as i64 > limit;
-    let page = if has_more {
-        &rows[..limit as usize]
-    } else {
-        &rows[..]
-    };
-    let next_cursor = if has_more {
-        Some(page.last().map(|r| r.0).unwrap_or(0))
-    } else {
-        None
-    };
-    let verdict_str = |v: Option<i16>| match v {
-        Some(0) => Value::String("fair".to_string()),
-        Some(1) => Value::String("unfair".to_string()),
-        Some(2) => Value::String("unsure".to_string()),
-        _ => Value::Null,
-    };
-    let items: Vec<Value> = page
-        .iter()
-        .map(
-            |(
-                action_id,
-                post_id,
-                topic_id,
-                excerpt,
-                reason,
-                delta,
-                score_after,
-                created_at,
-                my_v,
-            )| {
-                json!({
-                    "grant_id": action_id,
-                    "action_id": action_id,
-                    "post_id": post_id,
-                    "topic_id": topic_id,
-                    "excerpt": excerpt,
-                    "reason": reason,
-                    "delta": delta,
-                    "score_after": score_after,
-                    "created_at": created_at,
-                    "my_verdict": verdict_str(*my_v),
-                })
-            },
-        )
-        .collect();
-    let count = items.len() as i64;
-    Ok(Json(
-        json!({ "err": 0, "items": items, "count": count, "next_cursor": next_cursor }),
+    require_user(&auth)?;
+    Err(AppError::Gone(
+        "metamoderation queue retired; contested resolutions escalate via reports".to_string(),
     ))
 }
-
 /// GET /api/forum/metamod/grants/{id} — anonymized context (FR-009). Curator only.
 pub async fn metamod_grant_detail(
     auth: AuthUser,
@@ -1292,214 +956,37 @@ pub async fn metamod_grant_detail(
     })))
 }
 
-/// POST /api/forum/metamod/grants/{id}/verdict — single verdict per (grant, reviewer) → 409.
+/// POST /api/forum/metamod/grants/{id}/verdict — RETIRED (2026-09 trust cutover).
 pub async fn metamod_grant_verdict(
     auth: AuthUser,
-    State(state): State<Arc<AppState>>,
-    Path(grant_id): Path<i64>,
-    Json(body): Json<MetaVoteBody>,
+    State(_state): State<Arc<AppState>>,
+    Path(_grant_id): Path<i64>,
+    Json(_body): Json<MetaVoteBody>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.level < curator_level() {
-        return Err(AppError::Forbidden("Moderator access required".to_string()));
-    }
-    // Reuse the existing vote logic by delegating to metamod_vote internals
-    let voter_id = require_user(&auth)?;
-    let verdict = match body.verdict.trim().to_lowercase().as_str() {
-        "fair" => META_FAIR,
-        "unfair" => META_UNFAIR,
-        "unsure" => META_UNSURE,
-        _ => {
-            return Err(AppError::BadRequest(
-                "verdict must be 'fair', 'unfair' or 'unsure'".to_string(),
-            ));
-        }
-    };
-    let (eligible, reason) = meta_eligibility(&state, voter_id).await?;
-    if !eligible {
-        return Err(AppError::Forbidden(
-            reason.unwrap_or_else(|| "Not eligible to metamoderate".to_string()),
-        ));
-    }
-    let moderator_id: Option<i32> =
-        sqlx::query_scalar("SELECT moderator_id FROM forum_mod_actions WHERE id = $1")
-            .bind(grant_id)
-            .fetch_optional(&state.db)
-            .await?;
-    let Some(moderator_id) = moderator_id else {
-        return Err(AppError::BadRequest("grant not found".to_string()));
-    };
-    if moderator_id == voter_id {
-        return Err(AppError::Forbidden(
-            "Cannot rate your own moderation action".to_string(),
-        ));
-    }
-    let insert = sqlx::query(
-        "INSERT INTO forum_metamod_votes (mod_action_id, voter_id, verdict) VALUES ($1,$2,$3)",
-    )
-    .bind(grant_id)
-    .bind(voter_id)
-    .bind(verdict)
-    .execute(&state.db)
-    .await;
-    if let Err(sqlx::Error::Database(db_err)) = &insert {
-        if db_err.is_unique_violation() {
-            return Err(AppError::Conflict(
-                "You already rated this moderation action".to_string(),
-            ));
-        }
-    }
-    insert.map_err(AppError::from)?;
-    check_meta_cooldown(&state, moderator_id).await?;
-    Ok(Json(
-        json!({ "err": 0, "grant_id": grant_id, "verdict": body.verdict.trim().to_lowercase() }),
+    require_user(&auth)?;
+    Err(AppError::Gone(
+        "metamoderation verdicts retired; contested resolutions escalate via reports".to_string(),
     ))
 }
-
-/// POST /api/forum/metamod/{actionId}/vote — record one metamod rating.
-/// Body: {verdict: "fair"|"unfair"|"unsure"}. A duplicate vote from the same
-/// voter on the same action is a 409 (PK). After inserting, the action's
-/// moderator is audited against the rolling unfair-rate window (see
-/// check_meta_cooldown); crossing the threshold suspends them + modlog.
+/// POST /api/forum/metamod/{actionId}/vote — RETIRED (2026-09 trust cutover).
 pub async fn metamod_vote(
     auth: AuthUser,
-    State(state): State<Arc<AppState>>,
-    Path(action_id): Path<i64>,
-    Json(body): Json<MetaVoteBody>,
+    State(_state): State<Arc<AppState>>,
+    Path(_action_id): Path<i64>,
+    Json(_body): Json<MetaVoteBody>,
 ) -> Result<Json<Value>, AppError> {
-    let voter_id = require_user(&auth)?;
-    let verdict = match body.verdict.trim() {
-        "fair" => META_FAIR,
-        "unfair" => META_UNFAIR,
-        "unsure" => META_UNSURE,
-        _ => {
-            return Err(AppError::BadRequest(
-                "verdict must be 'fair', 'unfair' or 'unsure'".to_string(),
-            ));
-        }
-    };
-    let (eligible, reason) = meta_eligibility(&state, voter_id).await?;
-    if !eligible {
-        return Err(AppError::Forbidden(
-            reason.unwrap_or_else(|| "Not eligible to metamoderate".to_string()),
-        ));
-    }
-    // The action must exist AND must belong to someone else's moderation.
-    let moderator_id: Option<i32> =
-        sqlx::query_scalar("SELECT moderator_id FROM forum_mod_actions WHERE id = $1")
-            .bind(action_id)
-            .fetch_optional(&state.db)
-            .await?;
-    let Some(moderator_id) = moderator_id else {
-        return Err(AppError::BadRequest(
-            "moderation action not found".to_string(),
-        ));
-    };
-    if moderator_id == voter_id {
-        return Err(AppError::Forbidden(
-            "Cannot rate your own moderation action".to_string(),
-        ));
-    }
-
-    // Insert the vote; a PK conflict means this voter already rated this
-    // action — surface as 409 (established convention, F5 duplicates).
-    let insert = sqlx::query(
-        "INSERT INTO forum_metamod_votes (mod_action_id, voter_id, verdict)
-         VALUES ($1, $2, $3)",
-    )
-    .bind(action_id)
-    .bind(voter_id)
-    .bind(verdict)
-    .execute(&state.db)
-    .await;
-    if let Err(sqlx::Error::Database(db_err)) = &insert {
-        if db_err.is_unique_violation() {
-            return Err(AppError::Conflict(
-                "You already rated this moderation action".to_string(),
-            ));
-        }
-    }
-    insert.map_err(AppError::from)?;
-
-    // Audit the moderator whose action just got rated (rolling window).
-    check_meta_cooldown(&state, moderator_id).await?;
-
-    Ok(Json(json!({ "err": 0 })))
+    require_user(&auth)?;
+    Err(AppError::Gone(
+        "metamoderation votes retired; contested resolutions escalate via reports".to_string(),
+    ))
 }
-
-/// Rolling metamod audit for one moderator (SPEC §3/§4): count the ratings
-/// on their actions within the last FORUM_META_AUDIT_WINDOW days; if at
-/// least FORUM_META_MIN_RATED actions were rated AND the unfair-rate is
-/// above FORUM_META_UNFAIR_RATE, suspend the moderator for
-/// FORUM_META_COOLDOWN_DAYS by setting forum_mod_grants.cooldown_until and
-/// log 'mod_privileges_suspended' with AGGREGATE numbers only — voter
-/// identities never leave this function.
-async fn check_meta_cooldown(state: &AppState, moderator_id: i32) -> Result<(), AppError> {
-    // Rate this moderator's actions that carry ratings from the last
-    // audit-window days: total + unfair count.
-    let (total, unfair): (i64, i64) = sqlx::query_as(
-        "SELECT COUNT(*) AS total,
-                COUNT(*) FILTER (WHERE v.verdict = $2) AS unfair
-         FROM forum_metamod_votes v
-         JOIN forum_mod_actions ma ON ma.id = v.mod_action_id
-         WHERE ma.moderator_id = $1
-           AND v.created_at >= NOW() - ($3 || ' days')::interval",
-    )
-    .bind(moderator_id)
-    .bind(META_UNFAIR)
-    .bind(state.config.forum_meta_audit_window)
-    .fetch_one(&state.db)
-    .await?;
-    let min_rated = i64::from(state.config.forum_meta_min_rated);
-    let threshold = state.config.forum_meta_unfair_rate;
-    if total < min_rated {
-        return Ok(());
-    }
-    let unfair_rate = unfair as f64 / total as f64;
-    if unfair_rate <= threshold {
-        return Ok(());
-    }
-
-    // Crossing the threshold → cooldown_until = now + COOLDOWN_DAYS.
-    let until =
-        Utc::now() + chrono::Duration::days(i64::from(state.config.forum_meta_cooldown_days));
-    sqlx::query(
-        "INSERT INTO forum_mod_grants (user_id, points_left, expires_at, cooldown_until)
-         VALUES ($1, 0, NOW() + interval '72 hours', $2)
-         ON CONFLICT (user_id) DO UPDATE SET cooldown_until = $2",
-    )
-    .bind(moderator_id)
-    .bind(until)
-    .execute(&state.db)
-    .await?;
-
-    // Aggregate-only modlog entry: no voter identities, no individual votes.
-    crate::modlog::record_json(
-        &state.db,
-        None,
-        None,
-        "mod_privileges_suspended",
-        "forum",
-        &moderator_id.to_string(),
-        vec![
-            ("moderator_id", json!(moderator_id)),
-            ("unfair_count", json!(unfair)),
-            ("total", json!(total)),
-            ("window_days", json!(state.config.forum_meta_audit_window)),
-            ("cooldown_until", json!(until.to_rfc3339())),
-        ],
-    )
-    .await;
-    Ok(())
-}
-
-/// POST /api/admin/forum/hide/{postId} — fast-hide a post for 72h (role ≥ 5).
-/// Auto-expiring; log 'forum_hide'.
 pub async fn admin_hide_post(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
     Path(post_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    let actor_id = require_mod(&auth)?;
+    require_trust_resolve(&state, &auth).await?;
+    let actor_id = require_user(&auth)?;
     let exists: Option<bool> = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM forum_posts WHERE id = $1 AND deleted_at IS NULL)",
     )
@@ -1543,7 +1030,8 @@ pub async fn admin_lock_topic(
     Path(topic_id): Path<i64>,
     body: Option<Json<LockTopicBody>>,
 ) -> Result<Json<Value>, AppError> {
-    let actor_id = require_mod(&auth)?;
+    require_trust_resolve(&state, &auth).await?;
+    let actor_id = require_user(&auth)?;
     let (_, _, _, _, status) = load_live_topic(&state.db, topic_id).await?;
     let new_status = match body.and_then(|b| b.locked) {
         Some(true) => "locked",
@@ -1594,7 +1082,8 @@ pub async fn admin_pin_topic(
     Path(topic_id): Path<i64>,
     body: Option<Json<PinTopicBody>>,
 ) -> Result<Json<Value>, AppError> {
-    let actor_id = require_mod(&auth)?;
+    require_trust_resolve(&state, &auth).await?;
+    let actor_id = require_user(&auth)?;
     let (_, _, _, _, status) = load_live_topic(&state.db, topic_id).await?;
     let new_status = match body.and_then(|b| b.pinned) {
         Some(true) => "pinned",
@@ -1647,13 +1136,15 @@ pub async fn admin_create_ban(
             "scope must be 'forum' or 'category'".to_string(),
         ));
     }
-    if scope == "forum" && auth.role < 10 {
+    if scope == "forum" && auth.level < admin_level() {
         return Err(AppError::Forbidden(
-            "Forum-scope bans require admin (role >= 10)".to_string(),
+            "Forum-scope bans require admin (level 100)".to_string(),
         ));
     }
-    if scope == "category" && auth.role < MOD_ROLE {
-        return Err(AppError::Forbidden("Moderator access required".to_string()));
+    // Category-scope bans need resolve power (TL5+) — same tier as
+    // fast-hide/lock/pin.
+    if scope == "category" {
+        require_trust_resolve(&state, &auth).await?;
     }
     let category_id = if scope == "category" {
         let cid = body.category_id.ok_or_else(|| {
@@ -1735,7 +1226,7 @@ pub async fn admin_delete_ban(
     State(state): State<Arc<AppState>>,
     Path(ban_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    let actor_id = require_mod(&auth)?;
+    let actor_id = require_admin(&auth)?;
     let deleted = sqlx::query("DELETE FROM forum_bans WHERE id = $1")
         .bind(ban_id)
         .execute(&state.db)
@@ -1763,7 +1254,7 @@ pub async fn admin_list_bans(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
-    require_mod(&auth)?;
+    require_admin(&auth)?;
     let rows: Vec<(
         i64,
         i32,
@@ -1828,7 +1319,7 @@ pub async fn moderation_user_grants(
     State(state): State<Arc<AppState>>,
     Path(user_id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    require_mod(&auth)?;
+    require_trust_resolve(&state, &auth).await?;
     let rows: Vec<(i64, i64, i64, String, i16, i32, String)> = sqlx::query_as(
         r#"SELECT ma.id, ma.post_id, p.topic_id, ma.reason, ma.delta, ma.score_after, ma.created_at::text
            FROM forum_mod_actions ma

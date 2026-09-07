@@ -2235,7 +2235,7 @@ async fn f4_search_finds_topic_and_post() {
 /// work in tests. Also wipes any leftover grants for a clean window.
 async fn promote_curator(db: &sqlx::PgPool, uid: i32) {
     sqlx::query(
-        "UPDATE users SET role = 5, level = 50, exp = 5000, reputation = 100, created_at = NOW() - INTERVAL '30 days' WHERE id = $1",
+        "UPDATE users SET role = 5, level = 50, exp = 5000, reputation = 100, trust_level = 5, created_at = NOW() - INTERVAL '30 days' WHERE id = $1",
     )
     .bind(uid)
     .execute(db)
@@ -2246,6 +2246,17 @@ async fn promote_curator(db: &sqlx::PgPool, uid: i32) {
         .execute(db)
         .await
         .ok();
+}
+
+/// Give a user Elder trust (TL4, queue access but no resolve power).
+async fn promote_elder(db: &sqlx::PgPool, uid: i32) {
+    sqlx::query(
+        "UPDATE users SET role = 1, level = 10, exp = 1000, reputation = 50, trust_level = 4, created_at = NOW() - INTERVAL '30 days' WHERE id = $1",
+    )
+    .bind(uid)
+    .execute(db)
+    .await
+    .ok();
 }
 
 // ── F6: metamoderation (SPEC §2 Layer 2 + §3 + §4) ─────────────────────────
@@ -2378,27 +2389,34 @@ async fn f5_mod_status() {
     assert_eq!(s, StatusCode::UNAUTHORIZED, "anon status: {b}");
     assert_eq!(b["err"], 401, "anon status: {b}");
 
-    // Plain reader: logged in, but not eligible.
+    // Plain reader: logged in, but no trust powers.
     let token = auth_header(reader_id, u_reader, 0);
     let (s, b) = get_json(&app, "/api/forum/moderation/status", Some(&token)).await;
     assert_eq!(s, StatusCode::OK, "reader status: {b}");
     assert_eq!(b["err"], 0, "reader status: {b}");
-    assert_eq!(b["points_left"], 0, "reader points: {b}");
-    assert_eq!(b["eligible"], false, "reader eligible: {b}");
-    assert!(b["reason"].is_string(), "reader reason present: {b}");
+    assert_eq!(b["trust_level"], 0, "reader trust: {b}");
+    assert_eq!(b["can_queue"], false, "reader queue: {b}");
+    assert_eq!(b["can_resolve"], false, "reader resolve: {b}");
+    assert_eq!(b["eligible"], false, "reader eligible alias: {b}");
 
-    // Curator (role set via psql-style UPDATE): eligible, 5 points in a
-    // fresh 72h window.
+    // TL5 user: queue + resolve powers, full daily budget.
     promote_curator(&db, cur_id).await;
     let token = auth_header(cur_id, u_cur, 5);
     let (s, b) = get_json(&app, "/api/forum/moderation/status", Some(&token)).await;
     assert_eq!(s, StatusCode::OK, "cur status: {b}");
     assert_eq!(b["err"], 0, "cur status: {b}");
-    assert_eq!(b["eligible"], true, "cur eligible: {b}");
-    assert_eq!(b["points_left"], 5, "cur points: {b}");
+    assert_eq!(b["trust_level"], 5, "cur trust: {b}");
+    assert_eq!(b["can_queue"], true, "cur queue: {b}");
+    assert_eq!(b["can_resolve"], true, "cur resolve: {b}");
+    assert_eq!(b["eligible"], true, "cur eligible alias: {b}");
+    assert_eq!(b["actions_today"], 0, "fresh budget: {b}");
     assert!(
-        b["expires_at"].as_str().map_or(false, |e| !e.is_empty()),
-        "expires_at set: {b}"
+        b["actions_cap"].as_i64().unwrap_or(0) > 0,
+        "cap configured: {b}"
+    );
+    assert_eq!(
+        b["points_left"], b["actions_cap"],
+        "points_left mirrors budget: {b}"
     );
 
     // Cleanup
@@ -2437,7 +2455,7 @@ async fn f5_moderate_positive() {
     let app = app().await;
     let token = auth_header(cur_id, u_cur, 5);
 
-    // Insightful → +2, mod_count 1, point spent.
+    // Insightful → +2, mod_count 1, daily budget consumed.
     let (s, b) = post_json(
         &app,
         &format!("/api/forum/posts/{post_id}/moderate"),
@@ -2459,10 +2477,10 @@ async fn f5_moderate_positive() {
     assert_eq!(score, 2, "post score: {score}");
     assert_eq!(mod_count, 1, "post mod_count: {mod_count}");
 
-    // Status now shows 4 points left.
+    // Status now shows 1 action used.
     let (s, b) = get_json(&app, "/api/forum/moderation/status", Some(&token)).await;
     assert_eq!(s, StatusCode::OK, "status after: {b}");
-    assert_eq!(b["points_left"], 4, "point spent: {b}");
+    assert_eq!(b["actions_today"], 1, "budget consumed: {b}");
 
     // Action appears in the public moderations history, with moderator_id
     // (identity) only — no username leak.
@@ -3182,158 +3200,40 @@ async fn f5_report_forum_target() {
 
 // ── F6 tests: metamod status, queue, votes, cooldown ────────────────────────
 
-#[tokio::test]
-#[ignore]
-async fn f6_meta_status() {
-    let _g = db_guard();
-    let db = pool().await;
-    let u_fresh = "fr6_status_fresh";
-    let u_meta = "fr6_status_metamod";
-    let fresh_id = seed_user(&db, u_fresh).await;
-    let meta_id = make_metamod(&db, u_meta).await;
-    wipe_metamod_for_users(&db, &[u_fresh, u_meta]).await;
-    // make_metamod just wiped the posts; restore them for meta_id.
-    sqlx::query(
-        "UPDATE users SET role = 1, reputation = 80, created_at = NOW() - INTERVAL '100 days' WHERE id = $1",
-    )
-    .bind(meta_id)
-    .execute(&db)
-    .await
-    .ok();
-    for i in 0..10 {
-        sqlx::query(
-            "INSERT INTO forum_posts (topic_id, author_id, body)
-             VALUES ((SELECT id FROM forum_topics ORDER BY id LIMIT 1), $1, $2)",
-        )
-        .bind(meta_id)
-        .bind(format!("f6 status seed {i}"))
-        .execute(&db)
-        .await
-        .ok();
-    }
-
-    let app = app().await;
-
-    // Fresh user: not F5-eligible, points 0, reason present.
-    let token = auth_header(fresh_id, u_fresh, 0);
-    let (s, b) = get_json(&app, "/api/forum/moderation/status", Some(&token)).await;
-    assert_eq!(s, StatusCode::OK, "fresh status: {b}");
-    assert_eq!(b["err"], 0, "fresh status: {b}");
-    assert_eq!(b["eligible"], false, "fresh eligible: {b}");
-    assert_eq!(b["points_left"], 0, "fresh points: {b}");
-    assert!(b["reason"].is_string(), "fresh reason: {b}");
-
-    // Metamod-qualified user (role 1, old, rep 80, 10 posts): F5 status is
-    // still not eligible (role 1 < 5 curator — correct), but the metamod
-    // queue is reachable (200 err:0) — metamod eligibility passed.
-    let token = auth_header(meta_id, u_meta, 1);
-    let (s, b) = get_json(&app, "/api/forum/moderation/status", Some(&token)).await;
-    assert_eq!(s, StatusCode::OK, "meta status: {b}");
-    assert_eq!(b["err"], 0, "meta status: {b}");
-    assert_eq!(b["eligible"], false, "role 1 is not an F5 curator: {b}");
-    assert_eq!(b["points_left"], 0, "meta points (no F5 grant): {b}");
-    // Metamod gate: queue answers err:0 (eligible) instead of 403.
-    let (s, b) = get_json(&app, "/api/forum/metamod/queue", Some(&token)).await;
-    assert_eq!(s, StatusCode::OK, "meta queue reachable: {b}");
-    assert_eq!(b["err"], 0, "meta queue err: {b}");
-
-    // Cleanup
-    sqlx::query("DELETE FROM forum_posts WHERE author_id = $1")
-        .bind(meta_id)
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
-        .bind(u_fresh)
-        .bind(u_meta)
-        .execute(&db)
-        .await
-        .ok();
-}
+// ── Trust cutover (2026-09): metamoderation retired ────────────────────────
+///
+/// The f6_* voting/queue/cooldown tests covered the Slashdot apparatus that
+/// the trust cutover removed. The endpoints stay mounted but answer 410;
+/// these tests pin that contract (auth still required, body points at
+/// reports) plus the contested-escalation path that replaces it.
 
 #[tokio::test]
 #[ignore]
-async fn f6_queue_random_sample() {
+async fn trust_metamod_queue_gone() {
     let _g = db_guard();
     let db = pool().await;
-    let u_author = "fr6_queue_author";
-    let u_mod = "fr6_queue_moderator";
-    let u_meta = "fr6_queue_metamod";
-    let author_id = seed_user(&db, u_author).await;
-    let mod_id = seed_user(&db, u_mod).await;
-    let meta_id = make_metamod(&db, u_meta).await;
-    wipe_metamod_for_users(&db, &[u_author, u_mod, u_meta]).await;
-    // Rebuild the metamod profile posts (wiped above).
-    sqlx::query(
-        "UPDATE users SET role = 1, reputation = 80, created_at = NOW() - INTERVAL '100 days' WHERE id = $1",
-    )
-    .bind(meta_id)
-    .execute(&db)
-    .await
-    .ok();
-    for i in 0..10 {
-        sqlx::query(
-            "INSERT INTO forum_posts (topic_id, author_id, body)
-             VALUES ((SELECT id FROM forum_topics ORDER BY id LIMIT 1), $1, $2)",
-        )
-        .bind(meta_id)
-        .bind(format!("f6 queue seed {i}"))
-        .execute(&db)
-        .await
-        .ok();
-    }
-    let (action_id, post_id) = seed_mod_action(&db, author_id, mod_id, "Insightful").await;
-
-    // This test seeds exactly ONE metamod; lower the cold-start pool gate so
-    // the single eligible user can see the queue.
-    unsafe {
-        std::env::set_var("FORUM_META_POOL_MIN", "1");
-    }
-
+    let u = "fr_trust_mm_queue";
+    let uid = seed_user(&db, u).await;
+    wipe_forum_for_users(&db, &[u]).await;
+    promote_curator(&db, uid).await;
     let app = app().await;
-    let token = auth_header(meta_id, u_meta, 1);
 
+    // Anonymous still 401s (auth runs before the 410).
+    let (s, b) = get_json(&app, "/api/forum/metamod/queue", None).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED, "anon queue: {b}");
+
+    // Even TL5 gets 410 with the reports pointer.
+    let token = auth_header(uid, u, 5);
     let (s, b) = get_json(&app, "/api/forum/metamod/queue", Some(&token)).await;
-    assert_eq!(s, StatusCode::OK, "queue: {b}");
-    assert_eq!(b["err"], 0, "queue err: {b}");
-    let items = b["items"].as_array().unwrap();
-    assert!(!items.is_empty(), "queue should have items: {b}");
-    let item = items.iter().find(|i| i["action_id"] == json!(action_id));
-    let hit = item.expect("seeded action in queue");
-    assert_eq!(hit["post_id"], json!(post_id), "post_id: {hit}");
-    assert!(hit["topic_id"].as_i64().is_some(), "topic_id: {hit}");
-    let excerpt = hit["excerpt"].as_str().unwrap_or("");
-    assert!(!excerpt.is_empty(), "excerpt present: {hit}");
-    assert_eq!(hit["reason"], "Insightful", "reason: {hit}");
-    assert_eq!(hit["delta"], 2, "delta: {hit}");
-    assert_eq!(hit["score_after"], 2, "score_after: {hit}");
-    // Anonymized: no moderator identity anywhere.
-    assert!(hit.get("moderator_id").is_none(), "no moderator_id: {hit}");
+    assert_eq!(s, StatusCode::GONE, "queue gone: {b}");
+    assert_eq!(b["err"], -410, "queue err: {b}");
     assert!(
-        hit.get("moderator_username").is_none(),
-        "no username: {hit}"
+        b["msg"].as_str().unwrap_or("").contains("reports"),
+        "reports pointer: {b}"
     );
 
-    // Cleanup
-    sqlx::query("DELETE FROM forum_mod_actions WHERE id = $1")
-        .bind(action_id)
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM forum_posts WHERE author_id = $1 OR id = $2")
-        .bind(meta_id)
-        .bind(post_id)
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM forum_categories WHERE slug = 'fr6-meta'")
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2 OR username = $3")
-        .bind(u_author)
-        .bind(u_mod)
-        .bind(u_meta)
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u)
         .execute(&db)
         .await
         .ok();
@@ -3341,490 +3241,113 @@ async fn f6_queue_random_sample() {
 
 #[tokio::test]
 #[ignore]
-async fn f6_vote_fair() {
+async fn trust_metamod_vote_gone() {
     let _g = db_guard();
     let db = pool().await;
-    let u_author = "fr6_fair_author";
-    let u_mod = "fr6_fair_moderator";
-    let u_meta = "fr6_fair_metamod";
-    let author_id = seed_user(&db, u_author).await;
-    let mod_id = seed_user(&db, u_mod).await;
-    let meta_id = make_metamod(&db, u_meta).await;
-    wipe_metamod_for_users(&db, &[u_author, u_mod, u_meta]).await;
-    sqlx::query(
-        "UPDATE users SET role = 1, reputation = 80, created_at = NOW() - INTERVAL '100 days' WHERE id = $1",
-    )
-    .bind(meta_id)
-    .execute(&db)
-    .await
-    .ok();
-    for i in 0..10 {
-        sqlx::query(
-            "INSERT INTO forum_posts (topic_id, author_id, body)
-             VALUES ((SELECT id FROM forum_topics ORDER BY id LIMIT 1), $1, $2)",
-        )
-        .bind(meta_id)
-        .bind(format!("f6 fair seed {i}"))
-        .execute(&db)
-        .await
-        .ok();
-    }
-    let (action_id, post_id) = seed_mod_action(&db, author_id, mod_id, "Informative").await;
-
+    let u = "fr_trust_mm_vote";
+    let uid = seed_user(&db, u).await;
+    wipe_forum_for_users(&db, &[u]).await;
+    promote_curator(&db, uid).await;
     let app = app().await;
-    let token = auth_header(meta_id, u_meta, 1);
+    let token = auth_header(uid, u, 5);
 
     let (s, b) = post_json(
         &app,
-        &format!("/api/forum/metamod/{action_id}/vote"),
+        "/api/forum/metamod/1/vote",
         Some(&token),
         json!({ "verdict": "fair" }),
     )
     .await;
-    assert_eq!(s, StatusCode::OK, "fair vote: {b}");
-    assert_eq!(b["err"], 0, "fair vote err: {b}");
-    let verdict: i16 = sqlx::query_scalar(
-        "SELECT verdict FROM forum_metamod_votes WHERE mod_action_id = $1 AND voter_id = $2",
-    )
-    .bind(action_id)
-    .bind(meta_id)
-    .fetch_one(&db)
-    .await
-    .expect("vote row");
-    assert_eq!(verdict, 0, "fair stored as 0");
+    assert_eq!(s, StatusCode::GONE, "vote gone: {b}");
+    assert_eq!(b["err"], -410, "vote err: {b}");
 
-    // Re-vote → 409.
     let (s, b) = post_json(
         &app,
-        &format!("/api/forum/metamod/{action_id}/vote"),
+        "/api/forum/metamod/grants/1/verdict",
         Some(&token),
         json!({ "verdict": "unfair" }),
     )
     .await;
-    assert_eq!(s, StatusCode::CONFLICT, "duplicate vote: {b}");
-    assert_eq!(b["err"], -409, "duplicate vote err: {b}");
+    assert_eq!(s, StatusCode::GONE, "verdict gone: {b}");
+    assert_eq!(b["err"], -410, "verdict err: {b}");
 
-    // The action left the queue for this voter (already voted).
-    let (_, b) = get_json(&app, "/api/forum/metamod/queue", Some(&token)).await;
-    let items = b["items"].as_array().unwrap();
-    assert!(
-        items.iter().all(|i| i["action_id"] != json!(action_id)),
-        "voted action gone from queue: {b}"
-    );
-
-    // Cleanup
-    sqlx::query("DELETE FROM forum_metamod_votes WHERE mod_action_id = $1")
-        .bind(action_id)
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM forum_mod_actions WHERE id = $1")
-        .bind(action_id)
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM forum_posts WHERE author_id = $1 OR id = $2")
-        .bind(meta_id)
-        .bind(post_id)
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM forum_categories WHERE slug = 'fr6-meta'")
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2 OR username = $3")
-        .bind(u_author)
-        .bind(u_mod)
-        .bind(u_meta)
-        .execute(&db)
-        .await
-        .ok();
-}
-
-#[tokio::test]
-#[ignore]
-async fn f6_vote_unsure() {
-    let _g = db_guard();
-    let db = pool().await;
-    let u_author = "fr6_unsure_author";
-    let u_mod = "fr6_unsure_moderator";
-    let u_meta = "fr6_unsure_metamod";
-    let author_id = seed_user(&db, u_author).await;
-    let mod_id = seed_user(&db, u_mod).await;
-    let meta_id = make_metamod(&db, u_meta).await;
-    wipe_metamod_for_users(&db, &[u_author, u_mod, u_meta]).await;
-    sqlx::query(
-        "UPDATE users SET role = 1, reputation = 80, created_at = NOW() - INTERVAL '100 days' WHERE id = $1",
-    )
-    .bind(meta_id)
-    .execute(&db)
-    .await
-    .ok();
-    for i in 0..10 {
-        sqlx::query(
-            "INSERT INTO forum_posts (topic_id, author_id, body)
-             VALUES ((SELECT id FROM forum_topics ORDER BY id LIMIT 1), $1, $2)",
-        )
-        .bind(meta_id)
-        .bind(format!("f6 unsure seed {i}"))
-        .execute(&db)
-        .await
-        .ok();
-    }
-    let (action_id, post_id) = seed_mod_action(&db, author_id, mod_id, "Funny").await;
-
-    let app = app().await;
-    let token = auth_header(meta_id, u_meta, 1);
-    let (s, b) = post_json(
-        &app,
-        &format!("/api/forum/metamod/{action_id}/vote"),
-        Some(&token),
-        json!({ "verdict": "unsure" }),
-    )
-    .await;
-    assert_eq!(s, StatusCode::OK, "unsure vote: {b}");
-    assert_eq!(b["err"], 0, "unsure vote err: {b}");
-    let verdict: i16 = sqlx::query_scalar(
-        "SELECT verdict FROM forum_metamod_votes WHERE mod_action_id = $1 AND voter_id = $2",
-    )
-    .bind(action_id)
-    .bind(meta_id)
-    .fetch_one(&db)
-    .await
-    .expect("vote row");
-    assert_eq!(verdict, 2, "unsure stored as 2");
-
-    // Cleanup
-    sqlx::query("DELETE FROM forum_metamod_votes WHERE mod_action_id = $1")
-        .bind(action_id)
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM forum_mod_actions WHERE id = $1")
-        .bind(action_id)
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM forum_posts WHERE author_id = $1 OR id = $2")
-        .bind(meta_id)
-        .bind(post_id)
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM forum_categories WHERE slug = 'fr6-meta'")
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2 OR username = $3")
-        .bind(u_author)
-        .bind(u_mod)
-        .bind(u_meta)
-        .execute(&db)
-        .await
-        .ok();
-}
-
-#[tokio::test]
-#[ignore]
-async fn f6_vote_invalid_verdict() {
-    let _g = db_guard();
-    let db = pool().await;
-    let u_author = "fr6_bad_author";
-    let u_mod = "fr6_bad_moderator";
-    let u_meta = "fr6_bad_metamod";
-    let author_id = seed_user(&db, u_author).await;
-    let mod_id = seed_user(&db, u_mod).await;
-    let meta_id = make_metamod(&db, u_meta).await;
-    wipe_metamod_for_users(&db, &[u_author, u_mod, u_meta]).await;
-    sqlx::query(
-        "UPDATE users SET role = 1, reputation = 80, created_at = NOW() - INTERVAL '100 days' WHERE id = $1",
-    )
-    .bind(meta_id)
-    .execute(&db)
-    .await
-    .ok();
-    for i in 0..10 {
-        sqlx::query(
-            "INSERT INTO forum_posts (topic_id, author_id, body)
-             VALUES ((SELECT id FROM forum_topics ORDER BY id LIMIT 1), $1, $2)",
-        )
-        .bind(meta_id)
-        .bind(format!("f6 bad seed {i}"))
-        .execute(&db)
-        .await
-        .ok();
-    }
-    let (action_id, post_id) = seed_mod_action(&db, author_id, mod_id, "Troll").await;
-
-    let app = app().await;
-    let token = auth_header(meta_id, u_meta, 1);
-    let (s, b) = post_json(
-        &app,
-        &format!("/api/forum/metamod/{action_id}/vote"),
-        Some(&token),
-        json!({ "verdict": "banana" }),
-    )
-    .await;
-    assert_eq!(s, StatusCode::BAD_REQUEST, "bad verdict: {b}");
-    assert_eq!(b["err"], -1, "bad verdict err: {b}");
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM forum_metamod_votes WHERE mod_action_id = $1")
-            .bind(action_id)
-            .fetch_one(&db)
-            .await
-            .expect("count");
-    assert_eq!(count, 0, "no vote stored: {count}");
-
-    // Cleanup
-    sqlx::query("DELETE FROM forum_mod_actions WHERE id = $1")
-        .bind(action_id)
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM forum_posts WHERE author_id = $1 OR id = $2")
-        .bind(meta_id)
-        .bind(post_id)
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM forum_categories WHERE slug = 'fr6-meta'")
-        .execute(&db)
-        .await
-        .ok();
-    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2 OR username = $3")
-        .bind(u_author)
-        .bind(u_mod)
-        .bind(u_meta)
-        .execute(&db)
-        .await
-        .ok();
-}
-
-#[tokio::test]
-#[ignore]
-async fn f6_cooldown_triggered() {
-    let _g = db_guard();
-    let db = pool().await;
-    let u_author = "fr6_cool_author";
-    let u_mod = "fr6_cool_moderator";
-    let u_meta = "fr6_cool_metamod";
-    let author_id = seed_user(&db, u_author).await;
-    let mod_id = seed_user(&db, u_mod).await;
-    promote_curator(&db, mod_id).await;
-    let meta_id = make_metamod(&db, u_meta).await;
-    wipe_metamod_for_users(&db, &[u_author, u_mod, u_meta]).await;
-    sqlx::query(
-        "UPDATE users SET role = 1, reputation = 80, created_at = NOW() - INTERVAL '100 days' WHERE id = $1",
-    )
-    .bind(meta_id)
-    .execute(&db)
-    .await
-    .ok();
-    for i in 0..10 {
-        sqlx::query(
-            "INSERT INTO forum_posts (topic_id, author_id, body)
-             VALUES ((SELECT id FROM forum_topics ORDER BY id LIMIT 1), $1, $2)",
-        )
-        .bind(meta_id)
-        .bind(format!("f6 cool seed {i}"))
-        .execute(&db)
-        .await
-        .ok();
-    }
-
-    // Seed 10 actions by mod_id, each rated UNFAIR by meta_id (10 ≥
-    // FORUM_META_MIN_RATED) within the audit window — the next vote on any
-    // of mod_id's actions crosses the 30% threshold and triggers the cooldown.
-    let mut action_ids = Vec::new();
-    for _i in 0..10 {
-        let (action_id, _) = seed_mod_action(&db, author_id, mod_id, "Abusive").await;
-        sqlx::query(
-            "INSERT INTO forum_metamod_votes (mod_action_id, voter_id, verdict)
-             VALUES ($1, $2, 1)",
-        )
-        .bind(action_id)
-        .bind(meta_id)
-        .execute(&db)
-        .await
-        .expect("seed unfair vote");
-        action_ids.push(action_id);
-    }
-
-    // Grant the moderator a live F5 grant first (cooldown marks it).
-    sqlx::query(
-        "INSERT INTO forum_mod_grants (user_id, points_left, expires_at)
-         VALUES ($1, 5, NOW() + INTERVAL '24 hours')",
-    )
-    .bind(mod_id)
-    .execute(&db)
-    .await
-    .ok();
-
-    let app = app().await;
-    let token = auth_header(meta_id, u_meta, 1);
-
-    // The 11th action gets an unfair vote → 10/11 unfair > 30% → cooldown.
-    let (action_id, post_id) = seed_mod_action(&db, author_id, mod_id, "Troll").await;
-    let (s, b) = post_json(
-        &app,
-        &format!("/api/forum/metamod/{action_id}/vote"),
-        Some(&token),
-        json!({ "verdict": "unfair" }),
-    )
-    .await;
-    assert_eq!(s, StatusCode::OK, "trigger vote: {b}");
-    assert_eq!(b["err"], 0, "trigger vote err: {b}");
-
-    // cooldown_until set on the grant row.
-    let cooldown: Option<chrono::DateTime<chrono::Utc>> =
-        sqlx::query_scalar("SELECT cooldown_until FROM forum_mod_grants WHERE user_id = $1")
-            .bind(mod_id)
-            .fetch_one(&db)
-            .await
-            .expect("grant row");
-    let cooldown = cooldown.expect("cooldown_until set");
-    assert!(
-        cooldown > chrono::Utc::now(),
-        "cooldown in future: {cooldown}"
-    );
-
-    // Modlog entry: 'mod_privileges_suspended', aggregate-only (no voter id).
-    let (action, target, details): (String, String, serde_json::Value) = sqlx::query_as(
-        "SELECT action, target_id, details FROM modlog
-         WHERE action = 'mod_privileges_suspended'
-         ORDER BY id DESC LIMIT 1",
-    )
-    .fetch_one(&db)
-    .await
-    .expect("modlog entry");
-    assert_eq!(action, "mod_privileges_suspended");
-    assert_eq!(target, mod_id.to_string());
-    assert_eq!(details["total"], 11, "aggregate total: {details}");
-    assert_eq!(details["unfair_count"], 11, "aggregate unfair: {details}");
-    assert!(
-        details.get("voter_id").is_none() && details.get("voter").is_none(),
-        "no voter leak in modlog: {details}"
-    );
-
-    // The moderator's status now shows 0 points (cooldown respected by
-    // current_grant).
-    let mod_token = auth_header(mod_id, u_mod, 5);
-    let (s, b) = get_json(&app, "/api/forum/moderation/status", Some(&mod_token)).await;
-    assert_eq!(s, StatusCode::OK, "mod status: {b}");
-    assert_eq!(b["points_left"], 0, "suspended points: {b}");
-    assert_eq!(b["eligible"], true, "still role-eligible: {b}");
-
-    // And the moderator can no longer moderate (0 points → forbidden).
-    let (s, b) = post_json(
-        &app,
-        &format!("/api/forum/posts/{post_id}/moderate"),
-        Some(&mod_token),
-        json!({ "reason": "Insightful" }),
-    )
-    .await;
-    assert_eq!(s, StatusCode::FORBIDDEN, "suspended cannot moderate: {b}");
-
-    // Cleanup
-    for aid in &action_ids {
-        let _ = sqlx::query("DELETE FROM forum_metamod_votes WHERE mod_action_id = $1")
-            .bind(aid)
-            .execute(&db)
-            .await;
-        let _ = sqlx::query("DELETE FROM forum_mod_actions WHERE id = $1")
-            .bind(aid)
-            .execute(&db)
-            .await;
-    }
-    let _ = sqlx::query("DELETE FROM forum_metamod_votes WHERE mod_action_id = $1")
-        .bind(action_id)
-        .execute(&db)
-        .await;
-    let _ = sqlx::query("DELETE FROM forum_mod_actions WHERE id = $1")
-        .bind(action_id)
-        .execute(&db)
-        .await;
-    let _ = sqlx::query("DELETE FROM forum_posts WHERE author_id = $1 OR id = $2")
-        .bind(meta_id)
-        .bind(post_id)
-        .execute(&db)
-        .await;
-    let _ = sqlx::query("DELETE FROM forum_categories WHERE slug = 'fr6-meta'")
-        .execute(&db)
-        .await;
-    let _ = sqlx::query("DELETE FROM forum_mod_grants WHERE user_id = $1")
-        .bind(mod_id)
-        .execute(&db)
-        .await;
-    let _ = sqlx::query(
-        "DELETE FROM modlog WHERE action = 'mod_privileges_suspended' AND target_id = $1",
-    )
-    .bind(mod_id.to_string())
-    .execute(&db)
-    .await;
-    let _ = sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2 OR username = $3")
-        .bind(u_author)
-        .bind(u_mod)
-        .bind(u_meta)
-        .execute(&db)
-        .await;
-}
-
-#[tokio::test]
-#[ignore]
-async fn f6_pool_too_small() {
-    let _g = db_guard();
-    let db = pool().await;
-    let u_meta = "fr6_pool_metamod";
-    let meta_id = make_metamod(&db, u_meta).await;
-    wipe_metamod_for_users(&db, &[u_meta]).await;
-    sqlx::query(
-        "UPDATE users SET role = 1, reputation = 80, created_at = NOW() - INTERVAL '100 days' WHERE id = $1",
-    )
-    .bind(meta_id)
-    .execute(&db)
-    .await
-    .ok();
-    for i in 0..10 {
-        sqlx::query(
-            "INSERT INTO forum_posts (topic_id, author_id, body)
-             VALUES ((SELECT id FROM forum_topics ORDER BY id LIMIT 1), $1, $2)",
-        )
-        .bind(meta_id)
-        .bind(format!("f6 pool seed {i}"))
-        .execute(&db)
-        .await
-        .ok();
-    }
-
-    let app = app().await;
-    let token = auth_header(meta_id, u_meta, 1);
-    let (s, b) = get_json(&app, "/api/forum/metamod/queue", Some(&token)).await;
-    assert_eq!(s, StatusCode::OK, "pool gate: {b}");
-    assert_eq!(b["err"], 0, "pool gate err: {b}");
-    // Shape contract: items is always an array; pool_too_small may be true
-    // or absent depending on how many eligible users the shared dev DB has —
-    // both are valid responses for this endpoint.
-    assert!(b["items"].is_array(), "items array: {b}");
-    assert_eq!(
-        b["count"].as_i64().unwrap_or(0),
-        b["items"].as_array().unwrap().len() as i64
-    );
-
-    // Cleanup
-    sqlx::query("DELETE FROM forum_posts WHERE author_id = $1")
-        .bind(meta_id)
-        .execute(&db)
-        .await
-        .ok();
     sqlx::query("DELETE FROM users WHERE username = $1")
-        .bind(u_meta)
+        .bind(u)
         .execute(&db)
         .await
         .ok();
 }
 
-// ── F7: site-wide leveling (migration 045) ────────────────────────────────
+#[tokio::test]
+#[ignore]
+async fn trust_grant_detail_stays_readable() {
+    // The audit-trail read (grant detail) survives the cutover: past
+    // moderation actions remain inspectable even though no new votes land.
+    let _g = db_guard();
+    let db = pool().await;
+    let u_author = "fr_trust_grant_author";
+    let u_cur = "fr_trust_grant_cur";
+    let author_id = seed_user(&db, u_author).await;
+    let cur_id = seed_user(&db, u_cur).await;
+    wipe_forum_for_users(&db, &[u_author, u_cur]).await;
+    wipe_metamod_for_users(&db, &[u_author, u_cur]).await;
+    let (action_id, _) = seed_mod_action(&db, author_id, cur_id, "Insightful").await;
+    promote_curator(&db, cur_id).await;
+    let app = app().await;
+    let token = auth_header(cur_id, u_cur, 5);
+
+    let (s, b) = get_json(
+        &app,
+        &format!("/api/forum/metamod/grants/{action_id}"),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "grant detail: {b}");
+    assert_eq!(b["err"], 0, "grant detail err: {b}");
+    assert_eq!(b["action_id"], action_id, "action id: {b}");
+
+    sqlx::query("DELETE FROM forum_categories WHERE slug = 'fr6-meta'")
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1 OR username = $2")
+        .bind(u_author)
+        .bind(u_cur)
+        .execute(&db)
+        .await
+        .ok();
+}
+
+#[tokio::test]
+#[ignore]
+async fn trust_elder_queue_access_no_resolve() {
+    // TL4 (Elder): queue access yes, resolve-gated actions no.
+    let _g = db_guard();
+    let db = pool().await;
+    let u = "fr_trust_elder";
+    let uid = seed_user(&db, u).await;
+    wipe_forum_for_users(&db, &[u]).await;
+    promote_elder(&db, uid).await;
+    let app = app().await;
+    let token = auth_header(uid, u, 1);
+
+    let (s, b) = get_json(&app, "/api/forum/moderation/status", Some(&token)).await;
+    assert_eq!(s, StatusCode::OK, "elder status: {b}");
+    assert_eq!(b["trust_level"], 4, "elder trust: {b}");
+    assert_eq!(b["can_queue"], true, "elder queue: {b}");
+    assert_eq!(b["can_resolve"], false, "elder resolve: {b}");
+
+    let (s, b) = get_json(&app, "/api/forum/moderation/queue", Some(&token)).await;
+    assert_eq!(s, StatusCode::OK, "elder queue read: {b}");
+    assert_eq!(b["err"], 0, "elder queue err: {b}");
+
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u)
+        .execute(&db)
+        .await
+        .ok();
+}
+
 
 #[tokio::test]
 #[ignore]

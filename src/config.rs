@@ -324,6 +324,16 @@ pub struct Config {
     pub forum_meta_unfair_rate: f64,
     /// Length of a metamod cooldown (days), applied to forum_mod_grants.cooldown_until.
     pub forum_meta_cooldown_days: i32,
+    // ── Forum trust moderation (replaces points/metamod, 2026-09) ──────
+    /// Trust tier that may access the moderation queue (default 4 = Elder).
+    /// (env: FORUM_MOD_MIN_TRUST)
+    pub forum_mod_min_trust: i16,
+    /// Trust tier that may resolve reports / fast-hide / lock / pin
+    /// (default 5 = Community Moderator). (env: FORUM_RESOLVE_MIN_TRUST)
+    pub forum_resolve_min_trust: i16,
+    /// Max moderation actions per user per UTC day (anti-abuse cap).
+    /// (env: FORUM_MOD_ACTIONS_PER_DAY, default 50)
+    pub forum_mod_actions_per_day: i32,
     // ── F7 site-wide leveling (SPEC-COMMUNITY-PLATFORM §10) ──────────────
     /// Level required to act as curator/mod (level >= this = mod).
     pub forum_curator_level: i16,
@@ -353,6 +363,9 @@ pub struct Config {
     pub activitypub_domain: Option<String>,
     /// When true, federation accepts loopback/private hosts (docker tests).
     pub activitypub_allow_loopback: bool,
+    /// preferredUsername for the instance actor (the bot's Fediverse handle).
+    /// Falls back to node_name when unset. (env: ACTIVITYPUB_BOT_USERNAME)
+    pub activitypub_bot_username: Option<String>,
     // ── Trust system (TL0-TL6) ───────────────────────────────────────
     /// Enable preference-similarity trust boost: users who bookmark/rate
     /// works whose tags align with the author's style gain small trust
@@ -531,6 +544,9 @@ impl Config {
             forum_meta_min_rated: 0,
             forum_meta_unfair_rate: 0.0,
             forum_meta_cooldown_days: 0,
+            forum_mod_min_trust: 0,
+            forum_resolve_min_trust: 0,
+            forum_mod_actions_per_day: 0,
             forum_curator_level: 0,
             forum_admin_level: 0,
             forum_exp_per_level: 0,
@@ -542,6 +558,7 @@ impl Config {
             activitypub_enabled: false,
             activitypub_domain: None,
             activitypub_allow_loopback: false,
+            activitypub_bot_username: None,
             trust_preference_similarity_enabled: false,
             trust_similarity_boost: 0,
             trust_recovery_decay: 0.0,
@@ -1152,6 +1169,20 @@ impl Config {
             .and_then(|s| s.parse().ok())
             .unwrap_or(30);
 
+        // ── Forum trust moderation (replaces points/metamod, 2026-09) ──
+        let forum_mod_min_trust = std::env::var("FORUM_MOD_MIN_TRUST")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(4);
+        let forum_resolve_min_trust = std::env::var("FORUM_RESOLVE_MIN_TRUST")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(5);
+        let forum_mod_actions_per_day = std::env::var("FORUM_MOD_ACTIONS_PER_DAY")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(50);
+
         // ── F7 site-wide leveling (SPEC-COMMUNITY-PLATFORM §10) ─────────
         let forum_curator_level = std::env::var("FORUM_CURATOR_LEVEL")
             .ok()
@@ -1202,6 +1233,9 @@ impl Config {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(false);
+        let activitypub_bot_username = std::env::var("ACTIVITYPUB_BOT_USERNAME")
+            .ok()
+            .filter(|s| !s.trim().is_empty());
 
         Config {
             database_url,
@@ -1360,6 +1394,9 @@ impl Config {
             forum_meta_min_rated,
             forum_meta_unfair_rate,
             forum_meta_cooldown_days,
+            forum_mod_min_trust,
+            forum_resolve_min_trust,
+            forum_mod_actions_per_day,
             forum_curator_level,
             forum_admin_level,
             forum_exp_per_level,
@@ -1371,6 +1408,7 @@ impl Config {
             activitypub_enabled,
             activitypub_domain,
             activitypub_allow_loopback,
+            activitypub_bot_username,
             // ── Trust system ─────────────────────────────────────────
             trust_preference_similarity_enabled: std::env::var("TRUST_PREFERENCE_SIMILARITY")
                 .ok()
@@ -1679,6 +1717,10 @@ mod tests {
         assert_eq!(config.forum_meta_min_rated, 10);
         assert!((config.forum_meta_unfair_rate - 0.30).abs() < f64::EPSILON);
         assert_eq!(config.forum_meta_cooldown_days, 30);
+        // Forum trust moderation defaults (replaces points/metamod, 2026-09)
+        assert_eq!(config.forum_mod_min_trust, 4);
+        assert_eq!(config.forum_resolve_min_trust, 5);
+        assert_eq!(config.forum_mod_actions_per_day, 50);
         // F7 site-wide leveling defaults (SPEC §10)
         assert_eq!(config.forum_curator_level, 50);
         assert_eq!(config.forum_admin_level, 100);
