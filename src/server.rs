@@ -1284,6 +1284,10 @@ fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
         // ── Lane B: polls ────────────────────────────────────────
         // (FicHub forum-nodebb spec §1.4; see contracts/forum-polls-events.md)
         .route(
+            "/api/forum/topics/{topicId}/polls",
+            axum::routing::post(crate::routes::forum_polls::create_poll),
+        )
+        .route(
             "/api/forum/polls/{pollId}",
             get(crate::routes::forum_polls::get_poll),
         )
@@ -1298,6 +1302,17 @@ fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
         .route(
             "/api/forum/polls/{pollId}/results",
             get(crate::routes::forum_polls::get_poll_results),
+        )
+        // ── Lane 1: site-wide drafts ──────────────────────────────
+        // (FicHub forum-nodebb spec §3.1 — uses forum_drafts table from 077)
+        .route(
+            "/api/drafts",
+            get(crate::routes::drafts::list_drafts),
+        )
+        .route(
+            "/api/drafts/{context}/{ref}",
+            axum::routing::put(crate::routes::drafts::upsert_draft)
+                .delete(crate::routes::drafts::delete_draft),
         )
         // ── ActivityPub federation (NodeBB parity, opt-in via ACTIVITYPUB_ENABLED) ─
         .route(

@@ -6,16 +6,17 @@
 //!   forum_poll_votes(poll_id, option_id, user_id, created_at)
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::sync::Arc;
 
+use crate::db::queries;
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
 use crate::routes::forum::require_user;
 use crate::server::AppState;
+use crate::services::trust::{self, PUBLISH_MIN_TRUST};
 
 // ── Public types ──────────────────────────────────────────────────────────
 
@@ -44,7 +45,130 @@ pub struct VoteBody {
     pub option_id: i64,
 }
 
+#[derive(Deserialize)]
+pub struct CreatePollBody {
+    pub question: String,
+    pub options: Vec<String>,
+    #[serde(default = "default_max_selections")]
+    pub max_selections: i32,
+    #[serde(default = "default_allow_change")]
+    pub allow_change: bool,
+    #[serde(default)]
+    pub close_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+fn default_max_selections() -> i32 {
+    1
+}
+
+fn default_allow_change() -> bool {
+    true
+}
+
 // ── Handlers ──────────────────────────────────────────────────────────────
+
+/// `POST /api/forum/topics/{topicId}/polls` — attach one poll to a topic.
+/// Gate: topic author or staff; one poll per topic; PUBLISH_MIN_TRUST.
+pub async fn create_poll(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+    Path(topic_id): Path<i64>,
+    Json(body): Json<CreatePollBody>,
+) -> Result<Json<Value>, AppError> {
+    let user_id = require_user(&auth)?;
+    trust::assert_staff_or_min_trust(&state.db, Some(user_id), auth.role, PUBLISH_MIN_TRUST, "Creating polls").await?;
+
+    let question = body.question.trim().to_string();
+    if question.is_empty() || question.chars().count() > 500 {
+        return Err(AppError::BadRequest(
+            "question required (max 500 chars)".to_string(),
+        ));
+    }
+    let options: Vec<String> = body
+        .options
+        .into_iter()
+        .map(|o| o.trim().to_string())
+        .filter(|o| !o.is_empty())
+        .collect();
+    if options.len() < 2 || options.len() > 10 {
+        return Err(AppError::BadRequest(
+            "poll needs 2..=10 non-empty options".to_string(),
+        ));
+    }
+    if body.max_selections < 1 || body.max_selections > options.len() as i32 {
+        return Err(AppError::BadRequest(
+            "max_selections must be within 1..=options.len()".to_string(),
+        ));
+    }
+
+    // Topic must exist; caller must be its author or staff.
+    let topic_author: Option<i32> = sqlx::query_scalar(
+        "SELECT author_id FROM forum_topics WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(topic_id)
+    .fetch_optional(&state.db)
+    .await?
+    .flatten();
+    let topic_author =
+        topic_author.ok_or_else(|| AppError::NotFound("topic not found".to_string()))?;
+    let is_staff = auth.level >= 50 || auth.role >= 10;
+    if !is_staff && topic_author != user_id {
+        return Err(AppError::Forbidden(
+            "only the topic author or staff can attach a poll".to_string(),
+        ));
+    }
+
+    let existing: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM forum_polls WHERE topic_id = $1")
+            .bind(topic_id)
+            .fetch_optional(&state.db)
+            .await?;
+    if existing.is_some() {
+        return Err(AppError::Conflict(
+            "this topic already has a poll".to_string(),
+        ));
+    }
+
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let poll_id: i64 = sqlx::query_scalar(
+        "INSERT INTO forum_polls (topic_id, question, max_selections, allow_change, close_at)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id",
+    )
+    .bind(topic_id)
+    .bind(&question)
+    .bind(body.max_selections)
+    .bind(body.allow_change)
+    .bind(body.close_at)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+    for (pos, text) in options.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO forum_poll_options (poll_id, text, position) VALUES ($1, $2, $3)",
+        )
+        .bind(poll_id)
+        .bind(text)
+        .bind(pos as i32)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    }
+    sqlx::query("UPDATE forum_topics SET poll_id = $1 WHERE id = $2")
+        .bind(poll_id)
+        .bind(topic_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    Ok(Json(json!({ "err": 0, "poll_id": poll_id })))
+}
 
 /// `GET /api/forum/polls/{pollId}`
 pub async fn get_poll(
@@ -98,7 +222,7 @@ pub async fn get_poll(
                 "vote_count": o.vote_count,
                 "votes": if poll_row.is_closed {
                     option_votes.iter()
-                        .find(|(oid, _)| **oid == o.id)
+                        .find(|(oid, _)| *oid == o.id)
                         .map(|(_, c)| *c as i32)
                         .unwrap_or(0)
                 } else {
@@ -131,7 +255,11 @@ pub async fn vote_on_poll(
 
     match poll_exists.unwrap_or(false) {
         true => {}
-        false => return Err(AppError::Conflict("poll is closed or doesn't exist")),
+        false => {
+            return Err(AppError::Conflict(
+                "poll is closed or doesn't exist".to_string(),
+            ))
+        }
     }
 
     // Validate option belongs to this poll
@@ -189,24 +317,62 @@ pub async fn close_poll(
     let user_id = require_user(&auth)?;
 
     // Only poll author or admin can close
-    let poll_author: Option<i64> = sqlx::query_scalar(
+    let poll_author: Option<i32> = sqlx::query_scalar(
         "SELECT author_id FROM forum_topics t JOIN forum_polls p ON p.topic_id = t.id WHERE p.id = $1",
     )
     .bind(poll_id)
     .fetch_optional(&state.db)
-    .await?;
+    .await?
+    .flatten();
 
     let is_admin = auth.level >= 50 || auth.role >= 10;
     let is_author = poll_author.map(|a| a == user_id).unwrap_or(false);
 
     if !is_admin && !is_author {
-        return Err(AppError::Forbidden("only poll author or staff can close").into());
+        return Err(AppError::Forbidden(
+            "only poll author or staff can close".to_string(),
+        ));
     }
 
     sqlx::query("UPDATE forum_polls SET close_at = NOW(), updated_at = NOW() WHERE id = $1")
         .bind(poll_id)
         .execute(&state.db)
         .await?;
+
+    // Notify all distinct voters via the site notification producer
+    // (never forum_notifications). Best-effort per recipient.
+    let topic: Option<(i64, Option<String>, String)> = sqlx::query_as(
+        "SELECT t.id, t.topic_slug, t.title FROM forum_topics t
+         JOIN forum_polls p ON p.topic_id = t.id WHERE p.id = $1",
+    )
+    .bind(poll_id)
+    .fetch_optional(&state.db)
+    .await?;
+    if let Some((topic_id, slug_opt, title)) = topic {
+        let voters: Vec<i32> = sqlx::query_scalar(
+            "SELECT DISTINCT user_id FROM forum_poll_votes WHERE poll_id = $1",
+        )
+        .bind(poll_id)
+        .fetch_all(&state.db)
+        .await?;
+        let link = match slug_opt {
+            Some(slug) => format!("/forum/board/{}.{}", slug, topic_id),
+            None => format!("/forum/topic/{}", topic_id),
+        };
+        for voter in voters {
+            let _ = queries::create_notification(
+                &state.db,
+                voter,
+                "poll_closed",
+                &format!("Poll closed: {}", title),
+                None,
+                Some(&link),
+                Some("forum_poll"),
+                Some(&poll_id.to_string()),
+            )
+            .await;
+        }
+    }
 
     Ok(Json(json!({ "err": 0, "closed": true })))
 }
@@ -252,8 +418,8 @@ pub async fn get_poll_results(
             "total_votes": total_votes,
             "options": options.into_iter().map(|o| {
                 let pct = if total_votes > 0 {
-                    (((*option_votes.iter()
-                        .find(|(oid, _)| **oid == o.id)
+                    (((option_votes.iter()
+                        .find(|(oid, _)| *oid == o.id)
                         .map(|(_, c)| *c as f64)
                         .unwrap_or(0f64)) / total_votes as f64) * 100.0) as i32
                 } else {
