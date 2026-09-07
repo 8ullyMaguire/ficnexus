@@ -1,12 +1,37 @@
 # Forum NodeBB parity — implementation plan (integration-first rewrite)
 
-**Status:** PLANNING → Phase 4 rewrite (2026-09-07). Phase 3 DONE (migrations
+**Status:** Phase 4 IN PROGRESS (2026-09-07 night). Phase 3 DONE (migrations
 072–079 recovered from live DDL, commit `f4cc60f`). Moderation pivot landed
 (`708cfed`: trust ladder runs moderation, metamod answers 410). This rewrite
 changes the Phase 4 architecture: **notifications, the flag/report queue,
 blocks, uploads, and drafts are site-wide primitives — the forum consumes
-them instead of duplicating them.** Uncommitted WIP (flood control +
-`FORUM_MIN_POST_LEN`) must land or stash before starting.
+them instead of duplicating them.**
+**Landed since rewrite:**
+- Lane 1 backend (`9ebfd37`: `drafts.rs` rewritten to the LIVE 077 DDL —
+  topic/category-keyed; the `d575752` version queried nonexistent
+  `context`/`ref`/`content` columns — + `GET/PUT/DELETE /api/drafts`
+  wired in `server.rs`).
+- Lane 3 backend+UI+tests (`596bf5d`: `messages.rs` rewritten, all 5 gaps
+  fixed, `/api/messages/*` wired, `/messages` page + API client + i18n ×6 +
+  vitest; `tests/messages_api.rs` 4 green).
+- Lane 5 backend (`7db25f7` groups/privileges + `1b266a2`: `can()`
+  enforcement open-by-default on create_topic/create_post).
+- Lane 6 backend (`9ede502` fixed to compile + `9ebfd37` create endpoint +
+  close-notify + inverted-vote-gate fix in `596bf5d`;
+  `tests/polls_api.rs` 2 green).
+- Flood-gate NULL bug fixed (`1b266a2`: `check_flood` used
+  `fetch_optional` on `SELECT MAX` — 500'd every first-time poster; also
+  fixed the same pattern in `messages.rs`). Heals `f3_create_topic`.
+- Lane 2 frontend (Report button in `TopicThread.svelte` → site
+  `/api/reports`) — unchanged.
+**Uncommitted (working tree):** Lane 7 scheduled-topics backend in
+`src/routes/forum.rs` (create/update accept + listing exclusion + detail
+gate) — compiles clean, needs publish binary + tests + commit.
+**Decisions since rewrite:** block checks unify on canonical site
+`blocked_users` (`forum_user_blocks` stays dead — §6.3 corrected below);
+`/forum/blocks` page stays (already consumes site `/api/blocks` — no
+relocation); profile Message button skipped (no public profile pages
+exist; `/messages?to=` supported for future use).
 **Supersedes:** `plan.v1-2026-09-07.md.bak` (kept for reference).
 **Spec dir:** `/home/alvaro/code/rust/ficnexus/docs/specs/forum-nodebb/`
 **Read order:** this file → §1 principles → §3 lanes → `data-model.md` → `contracts/`
@@ -24,7 +49,7 @@ them instead of duplicating them.** Uncommitted WIP (flood control +
 | `forum.rs` ALREADY writes one site notification (row :144) — precedent exists | `src/routes/forum.rs:144` |
 | Site report queue is polymorphic and **already whitelists `forum_post` + `forum_topic`**; triage + resolve + weight columns all live | `src/routes/reports.rs:75,134,149,390`; `user_reports` extended by `078_forum_topics_posts_extend.sql`; consumed by trust metrics `src/routes/trust.rs:113` |
 | Site upload route is work/epub-specific (multipart pattern exists, but no generic image service) | `src/routes/upload.rs:62,209,213`; `ls src/services/` has no image/media module |
-| No site DMs exist — messaging tables are forum-prefixed but unused by any Rust code | grep-verified; DDL fully specified in `076_forum_messaging.sql` |
+| No site DMs exist — messaging tables are forum-prefixed but unused by any Rust code | ~~grep-verified; DDL fully specified in `076_forum_messaging.sql`~~ STALE 2026-09-07 night: Lane 3 landed (`596bf5d`) — `messages.rs` serves `/api/messages/*` + `/messages` UI; DDL live-verified (rooms `creator_id NOT NULL`, messages `author_id`, members `left_at`; `forum_user_blocks` dead, blocks use `blocked_users`) |
 
 **Forum state (unchanged from v1 plan):**
 
@@ -68,70 +93,90 @@ effort moves into messaging (site DMs) and uploads (site service).
 |---|---|---|
 | 1–2 | research + contracts (v1) | done in v1 — `contracts/*.md` authoritative **except** `forum-flags-moderation.md` (superseded by Lane 2) and `forum-messaging.md` route paths (now `/api/messages/*`) |
 | 3 | migrations 072–079 recovered | ✅ DONE (`f4cc60f`) — **Phase 4 needs zero new DDL** |
-| **4** | **Lanes 1–7 below (integration-first)** | ← current |
+| **4** | **Lanes 1–7 below (integration-first)** | IN PROGRESS — backend done: 1, 3, 5, 6; 7-partial (uncommitted); frontend done: 2-partial (report btn), 3 (/messages); not started: 4 |
 | 5 | site-wide realtime: WS `/ws` + Redis pubsub + SSE fallback | after 4 |
 | 6 | PWA + theming (v1 scope) | after 5 |
 | 7 | NodeBB cutover via importer (v1 scope) | last |
 
 ## 3. Phase 4 lanes (each = one PR-sized task)
 
-### Lane 1 — Site-wide drafts + composer integration (start here; smallest)
+### Lane 1 — Site-wide drafts + composer integration (BACKEND DONE `9ebfd37`)
 
-`forum_drafts` exists (077:5). No DDL change — read 077:5-18 for the exact
-key columns before writing queries.
+`forum_drafts` live DDL (077, verified against prod — the `d575752`
+version queried nonexistent `context`/`ref`/`content` columns and is
+superseded): `(user_id, topic_id NULL=new-topic, category_id, title,
+body, payload, poll_data)`. No DDL change.
 
-1. `src/routes/drafts.rs` (NEW): `GET /api/drafts?context=` (own list),
-   `PUT /api/drafts/{context}/{ref}` (upsert),
-   `DELETE /api/drafts/{context}/{ref}`. Auth via `AuthUser`; user_id in
-   every WHERE.
-2. Composer (`frontend/src/lib/forum/composer.ts`): autosave every 30s + on
-   blur; restore prompt on mount. Contexts: `forum_topic`, `forum_post`.
-3. Tests: axum-test route handlers; composer autosave vitest.
+1. ✅ `src/routes/drafts.rs` rewritten topic/category-keyed; `context`/`ref`
+   URL segments decoded (`forum_post {topicId}` → reply draft,
+   `forum_topic new:{slug}` → new-topic draft); UPDATE-then-INSERT in a tx
+   (no unique index exists for upsert); idempotent DELETE (`{err:0,
+   deleted}`). Wired in `server.rs`, committed.
+2. Composer autosave every 30s + on blur; restore prompt on mount.
+   Contexts: `forum_topic`, `forum_post`. NOTE: `frontend/src/lib/forum/`
+   does not exist — composer lives in `frontend/src/routes/forum/new/` and
+   the reply box in `TopicThread.svelte`; wire autosave there, no new lib
+   dir needed. TODO.
+3. Tests: route-handler tests (unit tests for payload/key JSON only today)
+   + composer autosave vitest. TODO.
 
-### Lane 2 — Flags: wire forum into the site queue (replaces v1 Lane D)
+### Lane 2 — Flags: wire forum into the site queue (FRONTEND DONE, 3 items left)
 
 Nothing to build server-side (verified: reports.rs:75 whitelist, :149
 triage, :390 resolve; weights via trust.rs:47; consumed by trust.rs:113).
 
-1. Frontend Report button on topic + post actions → site report dialog with
-   `target_type` prefilled (find the existing dialog: grep `target_type`
-   in frontend/src — comments already report).
+1. ✅ Frontend Report button on post actions → site report dialog:
+   `TopicThread.svelte` (openReport/submitReport) + `reportForumPost()` in
+   `frontend/src/lib/api/forum.ts` POSTs `{target_type: 'forum_post'}` to
+   `/api/reports`. Topic-level (`forum_topic`) report path still TODO if
+   the topic header has no Report action — check.
 2. Owner notification on report: check what comments do today and match
-   exactly — do not invent a new notification kind.
+   exactly — do not invent a new notification kind. TODO.
 3. Mod surface: ensure `forum_post`/`forum_topic` rows resolve to deep
-   links (`link` from reference_id); add resolution if missing.
-4. Tests: e2e — TL1 reports a post → TL5 sees + resolves it in the queue.
-5. Mark `forum-flags-moderation.md` superseded by this lane.
+   links (`link` from reference_id); add resolution if missing. TODO.
+4. Tests: e2e — TL1 reports a post → TL5 sees + resolves it in the queue. TODO.
+5. Mark `forum-flags-moderation.md` superseded by this lane. TODO.
 
 
-### Lane 3 — Site-wide DMs (replaces v1 Lane C; biggest new surface)
+### Lane 3 — Site-wide DMs (BACKEND+UI+TESTS DONE `596bf5d`)
 
-DDL from 076 is final. Routes are site-level, sibling of notifications.rs:
+DDL from 076 is final (live-verified: rooms carry `creator_id NOT NULL`,
+messages use `author_id` — not `sender_id` — members carry `left_at`;
+`forum_user_blocks` is a dead legacy table).
 
-1. `src/routes/messages.rs` (NEW):
-   - `GET /api/messages/rooms` — mine, ordered by `last_activity_at DESC`
-   - `POST /api/messages/rooms` `{user_id}` → find-or-create DM room
-     (`forum_rooms.name IS NULL`, `is_group FALSE`, two
-     `forum_room_members` rows); rely on a unique check, handle the race
-   - `GET /api/messages/rooms/{id}/messages?cursor=` — member-only
-     (non-member → 404 per repo convention; check how forum.rs treats
-     missing vs forbidden and match)
-   - `POST /api/messages/rooms/{id}/messages` — enforce
-     `forum_user_blocks` both directions + the flood gate (reuse the WIP
-     flood control once it lands; do not duplicate a second limiter)
+1. ✅ `src/routes/messages.rs` rewritten + registered (`mod.rs`,
+   `server.rs` as `/api/messages/...`):
+   - `GET /api/messages/rooms?filter=all|dm|group` — mine, active
+     membership only (`left_at IS NULL`), `last_activity_at DESC`.
+   - `POST /api/messages/rooms` `{user_id}` → find-or-create DM
+     (idempotent `{err:0, room_id, existing}`, NOT 409); self-DM 400,
+     unknown user 404, either-direction block → 403 via canonical
+     **`blocked_users`** (see §6.3 correction).
+   - `GET /api/messages/rooms/{id}/messages?cursor=&limit=` — member-only
+     (non-member → 404), newest-first, `has_more`.
+   - `POST /api/messages/rooms/{id}/messages` — 403 on either-direction
+     block (reject, never silent-send); message row INSERTed first in a tx,
+     then per-recipient site `message` notifications AFTER commit
+     (best-effort, `forum.rs` precedent); flood gate
+     (`FORUM_POST_DELAY_SECS` measured on own DMs); `{err:0, message_id}`.
    - `PATCH /api/messages/rooms/{id}` — mute / `notify_level` / leave
-   - Group rooms (`is_group TRUE`): defer to Lane 3b after Lane 5 groups.
-2. Notifications: on new message, INSERT site `notifications` row (type
-   `message`, link `/messages/{roomId}`) for members whose `notify_level`
-   allows — social.rs:101 pattern. No email in this lane.
-3. Frontend `/messages` (NEW top-level route, NOT under `/forum`): room
-   list + thread + composer. Profile "Message" button →
-   `/messages?to={userId}` (grep `frontend/src/routes/people/` for the
-   profile page actions row).
-4. Blocks UI: `/forum/blocks/` already exists — relocate to
-   `/settings/blocks` or redirect; do not duplicate (§6.3).
-5. Tests: find-or-create race, block enforcement, `notify_level` filtering,
-   cursor pagination.
+     (`left_at`, history preserved).
+   - Group rooms (`is_group TRUE`) stay deferred to Lane 3b.
+2. ✅ Notifications per §1 (muted / `notify_level=none` suppressed;
+   `mentions` treated as `all` on DMs). No email in this lane.
+3. ✅ Frontend `/messages` (top-level route): room list + thread +
+   composer, `?to={userId}` find-or-create + `?room=` deep link; API
+   client `lib/api/messages.ts`; i18n `messages.*` ×6 locales; `routePages`
+   entry; vitest (`page.test.ts` 2 green). Profile "Message" button
+   SKIPPED — no public profile pages exist; `?to=` is ready for future use.
+4. ✅ Blocks UI: `/forum/blocks/` stays — it already consumes the site
+   `/api/blocks` (`blocked_users`); no relocation, no duplication (§6.3).
+5. ✅ Tests `tests/messages_api.rs` (4 green): idempotent find-or-create +
+   self-DM 400, block 403 on create AND send with zero message rows stored,
+   mute/notify suppression, cursor pagination + non-member 404.
+6. ⚠️ Flood-gate pattern note: `SELECT MAX … fetch_optional` 500s on NULL
+   (no rows) — use `fetch_one` with `Option<T>` scalar. Fixed in both
+   `messages.rs` and `forum.rs::check_flood` (`1b266a2`).
 
 ### Lane 4 — Site-wide uploads (generalizes v1 Lane F)
 
@@ -150,27 +195,81 @@ DDL from 076 is final. Routes are site-level, sibling of notifications.rs:
 5. Tests: multipart round-trip, size/type rejection, ownership on DELETE.
 
 
-### Lane 5 — Groups + privileges (v1 Lane A, unchanged)
+### Lane 5 — Groups + privileges (BACKEND DONE `7db25f7` + `1b266a2`, UI TODO)
 
-Forum-scoped; nothing site-wide here. Follow the full step list in v1 §3
-Lane A (`plan.v1-2026-09-07.md.bak`): handlers + `/api/forum/groups` CRUD +
-membership, per-category × group privilege checks on topic/post creation,
-admin gate via `FORUM_ADMIN_LEVEL` (forum.rs:69-71).
+Forum-scoped; nothing site-wide here. Landed: `forum_groups.rs` (11
+handlers incl. join/leave/invite/roles), `forum_privileges.rs` (`can()` +
+grant/revoke), 14 routes wired in `server.rs`, crate migration mirror,
+`tests/forum_groups_api.rs` (3 green).
 
-### Lane 6 — Polls (v1 Lane B, unchanged)
+Enforcement (`1b266a2`): `check_category_priv()` in `forum.rs`, wired into
+`create_topic` (`write`) and `create_post` (`reply`). **Open-by-default:**
+categories with no privilege rows + public keep today's gates
+(ban/flood/trust) — a category becomes restricted the moment an admin
+grants any row (or flips `is_mod_only`), and then `can()` decides (staff
+bypass inside, default deny). Verified zero rows/groups on prod, so
+current behavior is preserved everywhere. `tests/
+forum_privileges_enforce.rs` (2 green): open posts OK, outsider 403 /
+member OK / staff bypass on restricted.
 
-Forum-scoped. Follow v1 §3 Lane B: `forum_polls`/`forum_poll_options`/
-`forum_poll_votes` handlers + vote endpoints + reusable PollBar component.
-One change vs v1: **poll-close notifications go through the site
-notification producer** (Lane 1 pattern), never `forum_notifications`.
+Also in `1b266a2`: flood-gate NULL fix (see Lane 3.6) — heals
+`f3_create_topic_happy_path`.
 
-### Lane 7 — Scheduled topics + NodeBB importer (v1 Lane G, unchanged)
+Remaining:
+1. Frontend: groups management UI (no `api/forum/groups` consumer in
+   `frontend/src` today); per-category privilege surfacing. TODO.
+2. Group rooms (`is_group TRUE`) stay deferred to Lane 3b after this lane.
+3. `ensure_system_groups()` exists but is never called — no startup hook,
+   no auto-membership; wire only when the groups UI needs seeded groups.
 
-Follow v1 §3 Lane G: cron binary for `scheduled_at` (077:55 static-predicate
-partial index) + `crates/forum-import` CLI. Importer must map NodeBB
-notification history → site `notifications` rows (type `forum_import`) so
-imported users wake up with a unified inbox, and skip writing
-`forum_notifications` entirely.
+### Lane 6 — Polls (BACKEND DONE, UI TODO)
+
+Forum-scoped. Landed across `9ede502` → `9ebfd37` → `596bf5d`:
+`forum_polls.rs` get/vote/close/results + **`POST
+/api/forum/topics/{topicId}/polls` create** (question 1–500 chars, 2–10
+options, `max_selections` in range; author-or-staff gate, one poll per
+topic → 409, `PUBLISH_MIN_TRUST`); **poll-close notifies all distinct
+voters** via the site producer (type `poll_closed`, never
+`forum_notifications`). Wired in `server.rs`. `tests/polls_api.rs`
+(2 green): create → double-create 409, validation 400, outsider 403;
+vote → outsider-close 403 → author-close → voter gets `poll_closed` row.
+
+Bugs fixed along the way (pre-existing, `9ede502` never compiled):
+missing `Value` import, `&str`/`String` + `i32`/`i64` mixups, stray `*`
+derefs — plus an **inverted vote gate** (open polls 409'd, closed polls
+accepted votes), rewritten as a `close_at` fetch.
+
+Remaining:
+1. Reusable PollBar component + vote UI (only "poll" string match in
+   frontend today is `ForumBottomNav.svelte` — no poll UI). TODO.
+   (Create endpoint exists, so UI work is unblocked.)
+
+### Lane 7 — Scheduled topics (BACKEND UNCOMMITTED) + importer (TODO)
+
+`forum_topics.scheduled_at` + partial index exist (078); **nothing writes
+the column today and no listing filters it** — this lane wires it up.
+
+1. ✅ (working tree, compiles clean — needs publish binary + tests +
+   commit): `CreateTopicBody.scheduled_at` (future-only, else 400) written
+   on INSERT; `UpdateTopicBody.scheduled_at` + `clear_schedule`
+   (author/staff, reschedule future-only / publish-now); exclusion
+   `t.scheduled_at IS NULL` in list (5 sort branches), unread, recent,
+   popular (all 3 sorts incl. the `_` fallback), rss (both feeds), search
+   (topics + posts branches);
+   `topic_detail` (+ by-slug via delegation) fetches `author_id` +
+   `scheduled_at` and 404-shapes scheduled topics for non-author non-staff
+   (preview allowed).
+2. Publish binary `src/bin/publish_scheduled.rs` + `[[bin]]`
+   `publish-scheduled`: flip `scheduled_at <= NOW()` → NULL, notify
+   authors (site `notifications`), print counts, idempotent. TODO.
+3. `crates/forum-import` CLI (workspace member): NodeBB JSON export
+   (categories/topics/posts/users) → `forum_*` tables; notification
+   history → site `notifications` (type `forum_import`); NEVER write
+   `forum_notifications`. If the NodeBB export schema is unclear, define a
+   documented JSON input schema in the crate README and implement against
+   it. TODO.
+4. Tests: scheduled invisible in listings, visible to author, publish
+   binary flips + notifies. TODO.
 
 ## 4. Verification (per lane + final)
 
@@ -207,10 +306,12 @@ imported users wake up with a unified inbox, and skip writing
 2. `forum_uploads` keeps its name in Phase 4 (a rename is DDL churn with
    no behavior gain); data-model.md must note it is the generic uploads
    table. Revisit during Phase 6.
-3. `forum_user_blocks` is the site-wide block list; `/settings/blocks` (or
-   a redirect from the existing `/forum/blocks/`) is its UI. If works/
-   comments need blocks later, reuse this table — never create
-   `user_blocks` alongside it.
+3. `forum_user_blocks` is DEAD — do not use. Canonical site block list is
+   `blocked_users(user_id, blocked_user_id)` (site `/api/blocks` in
+   `subsystems.rs`, UI at `/forum/blocks/` which stays put). Lane 3 DM
+   block checks use `blocked_users` both directions. If works/comments
+   need blocks later, reuse `blocked_users` — never `forum_user_blocks`
+   or a new `user_blocks` alongside it.
 4. v1 lane-letter map for reading `plan.v1-2026-09-07.md.bak` and the
    contracts: A→5, B→6, C→3, D→2, E→dropped (§1 row 1), F→4, G→7.
    Contracts `forum-messaging.md` (route paths) and
@@ -232,4 +333,16 @@ imported users wake up with a unified inbox, and skip writing
   + `/messages` (Lane 3); drafts/uploads generalized over the 077 tables
   (Lanes 1, 4). Phase 4 requires zero new DDL. v1 plan archived at
   `plan.v1-2026-09-07.md.bak`; lane-letter map in §6.4.
+- 2026-09-07 (night): **Phase 4 execution.** `9ebfd37` (Lane 1 drafts
+  rewrite to live DDL + Lane 6 poll create/close-notify), `596bf5d`
+  (Lane 3 DMs backend+UI + vote-gate fix + 6 green tests),
+  `19c5c40` (frontend test fix), `1b266a2` (Lane 5 `can()` enforcement
+  + flood-gate NULL fix healing `f3_create_topic`). Lane 7
+  scheduled-topics backend in working tree (uncommitted, compiles clean:
+  create/update accept, `scheduled_at IS NULL` in all listing paths,
+  detail preview gate). Still TODO: Lane 1 composer autosave + tests,
+  Lane 2 items 1(partial)/2–5, Lane 4 uploads, Lane 5 groups UI, Lane 6
+  PollBar UI, Lane 7 publish binary + importer + tests, final
+  verification (§4). Test seeds cleaned from prod after each lane
+  (`prv_*`, `poll_*`, `msg_*` removed).
 
