@@ -28,6 +28,7 @@ pub mod feed;
 pub mod follows;
 pub mod forum;
 pub mod forum_groups;
+pub mod forum_polls;
 pub mod forum_privileges;
 pub mod heal;
 pub mod health;

@@ -1281,6 +1281,24 @@ fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
                 crate::routes::forum_privileges::revoke_category_priv,
             ),
         )
+        // ── Lane B: polls ────────────────────────────────────────
+        // (FicHub forum-nodebb spec §1.4; see contracts/forum-polls-events.md)
+        .route(
+            "/api/forum/polls/{pollId}",
+            get(crate::routes::forum_polls::get_poll),
+        )
+        .route(
+            "/api/forum/polls/{pollId}/vote",
+            axum::routing::post(crate::routes::forum_polls::vote_on_poll),
+        )
+        .route(
+            "/api/forum/polls/{pollId}/close",
+            axum::routing::post(crate::routes::forum_polls::close_poll),
+        )
+        .route(
+            "/api/forum/polls/{pollId}/results",
+            get(crate::routes::forum_polls::get_poll_results),
+        )
         // ── ActivityPub federation (NodeBB parity, opt-in via ACTIVITYPUB_ENABLED) ─
         .route(
             "/.well-known/webfinger",
