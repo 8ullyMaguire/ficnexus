@@ -1,216 +1,358 @@
-# Implementation Plan: Forum NodeBB Port — Full Rust+Svelte+Postgres Replacement
+# Forum NodeBB parity — implementation plan
 
-**Branch**: `forum-nodebb` | **Date**: 2026-08-31 | **Spec**: `docs/specs/forum-nodebb/spec.md`
-**Input**: Feature spec at `/specs/forum-nodebb/spec.md` + NodeBB 4.15.1 at `~/code/js/NodeBB` (read-only)
+**Status:** Phase 3 DONE (2026-09-07). Migrations 072–079 were applied to prod but the `.sql` files were missing from the repo; recovered from live DDL and re-recorded in `_sqlx_migrations`. Phases 4–7 remain (this file, §2). **Critical finding:** no Rust code currently references `forum_groups`, `forum_polls`, `forum_rooms`, `forum_messages`, `forum_notifications`, `forum_uploads`, `forum_user_blocks`, `forum_drafts`, or `forum_privileges` (grep-verified) — the tables are real and the DB is consistent, but handlers/routes/frontend do not exist yet.
+**Spec dir:** `/home/alvaro/code/rust/ficnexus/docs/specs/forum-nodebb/` (spec.md, data-model.md, contracts/, research.md, quickstart.md)
+**Read order for a new dev:** this file → `spec.md` → `data-model.md` → `contracts/*.md` → `quickstart.md`
+**Author:** Cline, 2026-09-06. Every anchor verified against the codebase the same day.
 
-## Summary
+> **Why this replaces the old plan:** the previous version described `forum_core/`
+> as a to-be-created directory with migrations starting at `072_`. The codebase
+> has moved on: the crate lives at `crates/forum-core/` (workspace member #3),
+> migrations have reached `089_`, and 47 forum handlers, `082_forum_parity.sql`,
+> and much of the frontend already ship. What remains is the half that does NOT
+> exist anywhere in `src/` or `crates/forum-core/src/` (verified by grep):
+> groups, privileges, flags, polls, messaging/DMs, notifications, uploads,
+> realtime, and the importer.
 
-Port NodeBB 4.15.1 to Rust/Axum + SvelteKit 5 + Postgres + Redis, 1:1 parity. Standalone crate (own Axum router, own migrations, pluggable `ReputationHook`) that also mounts into ficnexus at `/forum` + `/api/forum` to replace `forum_core` + `frontend/src/routes/forum/*`. Single ficnexus `users` table, ficnexus trust 0-6 for moderation + ficnexus reputation for leaderboard (no exp/levels) via `update_reputation_and_promote`, AO3 skin over NodeBB information architecture, WebSocket realtime (`/ws/forum` via `axum::extract::ws` + Redis pubsub, SSE fallback), local uploads, full NodeBB parity checklist before done. No NodeJS in production.
+## 0. Ground truth (verified 2026-09-06 — trust these over any doc)
 
-## Technical Context
+| Fact | Anchor |
+|---|---|
+| Forum domain crate is `crates/forum-core` (workspace member; dep alias `forum-core = { path = "crates/forum-core" }`, root `Cargo.toml:46`) | `crates/forum-core/src/{lib,model,store,store/pg,moderation,search}.rs` |
+| Crate runs its **own** migrations via `sqlx::migrate!("./migrations")` relative to its manifest dir | `crates/forum-core/src/store/pg.rs:45-49` |
+| Crate's own migration: `crates/forum-core/migrations/202608140001_forum_core.sql` | creates the base `forum_*` tables standalone |
+| Embedded app migrations are at **089** (`089_forum_topic_tags_trigger_fix.sql`); next free numbers are **090+** | `ls migrations/` |
+| Base forum tables live in `migrations/001_initial.sql` (categories/topics/posts/votes/follows/read_state/bans/metamod/mod_grants/reactions/edit_proposals/topic_views) | `grep "CREATE TABLE public.forum_" migrations/001_initial.sql` |
+| Parity additions so far: `082_forum_parity.sql` adds `forum_topic_tags`, `forum_user_prefs`; tags handlers exist (`set_topic_tags`, `get_topic_tags`, 5-tag cap) | `migrations/082_forum_parity.sql`, `src/routes/forum.rs:1931-1952` |
+| `src/routes/forum.rs` = 3686 lines, **47 handlers**, including moderation, metamod, edit queue, RSS, prefs, level | `grep -c "pub async fn" src/routes/forum.rs` |
+| FTS search already uses `to_tsquery` + `ts_headline` + `ts_rank` over `search_vector` via `crate::search::parser` | `src/routes/forum.rs:3228+` |
+| Trust system is TL0-6, `trust.rs` has `flag_weight()`, `PUBLISH_MIN_TRUST=2`, `RESOLVE_MIN_TRUST=5`, `assert_min_trust()` | `src/services/trust.rs:25-127` |
+| Admin gate: `FORUM_ADMIN_LEVEL` env, default 100 | `src/routes/forum.rs:69-71` |
+| Auth extractor is `AuthUser` | `src/routes/auth.rs:209` |
+| Reputation fn exists: `update_reputation_and_promote` | `src/db/queries/reputation.rs:8` |
+| Axum 0.8 with `multipart` feature; **no `ws` feature yet**; no pubsub code anywhere in `src/` | `Cargo.toml:22` |
+| sqlx 0.9 with macros + migrate features; **no `.sqlx/` offline dir** — use `just check`/`just test` and `DATABASE_URL` env | root `Cargo.toml:30` |
+| Frontend already ships: `forum/page.test.ts`, `[categorySlug]`, `board/[topicSlug].[topicId]`, search, recent/unread/popular, moderate/metamod/invites/blocks, `new/`, `apply/`; `lib/api/forum.ts` (757 lines) + `forum.test.ts`; components `forum/{PassageContextCard,ReactionPicker,TopicThread}` + `ForumBottomNav.svelte`; `lib/pwa/{register,strategies}` + `static/manifest.webmanifest` + `static/sw.js` | `frontend/src/...` |
+| **Does not exist anywhere yet** (grep-verified): groups, privileges, flags/reports UI+API, polls, rooms/messages/DMs, notifications, uploads, WS/pubsub, NodeBB importer, scheduled topics | — |
 
-**Language/Version**: Rust 1.82+ (edition 2024), TypeScript 5.6, Svelte 5 runes, Vite 5
-**Primary Dependencies**: Axum 0.8 + tokio full, sqlx 0.9 (postgres+chrono+uuid), redis 1.4 (aio tokio), marked + dompurify (markdown), `forum_core` retained as base
-**Storage**: PostgreSQL (canonical), Redis (pubsub + presence + rate windows + typing), local disk `/public/uploads/forum/{yyyy}/{mm}/{uuid}`
-**Testing**: `cargo test` + `axum-test` for Rust, `vitest run` + `vitest e2e` for SvelteKit, `cargo sqlx prepare --check`
-**Target Platform**: Linux (NFS deploy to ThinkCentre `fichub.service`), SvelteKit `adapter-static` SPA
-**Project Type**: Web application — backend Axum + SvelteKit SPA + Postgres + Redis + PWA
-**Performance Goals**: Topic list <200ms p95, topic+posts <300ms p95, WS fanout <500ms typing, <2s new_post push
-**Constraints**: No `unwrap()` in prod (use `?`/`expect("reason")`), `inet` binds via string + `$N::inet`, `ALTER OWNER TO fichub`, `page.test.ts` naming, single `users` table, migrations additive (next `072_…`)
-**Scale/Scope**: 20+ API routes, 10+ frontend routes, 15+ DB tables, WS + SSE + PWA, importer CLI
+## 1. Conventions (from AGENTS.md + repo patterns — enforced in review)
 
-## Constitution Check
+- No `unwrap()` in production code — `?` or `.expect("reason")` (AGENTS.md:20).
+- Conventional commits (feat/fix/chore/docs).
+- All API JSON is `{ "err": 0, … }` envelope; auth failures are **400** with
+  `{"err":…}` per repo convention (see `src/error.rs` `AppError` + existing
+  forum handlers).
+- Every migration file **must** end with
+  `ALTER TABLE <table> OWNER TO fichub;` and use `CREATE TABLE IF NOT EXISTS`
+  (see `082_forum_parity.sql` for the exact house style).
+- Route handlers follow the existing pattern: `AuthUser` extractor → trust
+  gate via `assert_min_trust`/`FORUM_ADMIN_LEVEL` → sqlx query → envelope.
+- Frontend: SvelteKit + Svelte 5 runes, `page.test.ts` per route, `t()` i18n
+  dictionaries, vitest (`npm run test` / `npm run test:watch`).
+- Test commands: `just test` (`cargo test --lib`), `just test-db`,
+  `just test-frontend`, `just check`, `just clippy` (see `justfile`).
+- Keep every new pure function unit-tested; integration tests go in `tests/`
+  (49 files there already — copy the `*_api.rs` pattern).
+## 2. Remaining work — phase by phase
 
-No constitution at `.specify/memory/constitution.md` (template only). Enforced gates still apply:
-- Library-first: standalone forum crate remains embeddable (generic `ActorId` where sensible, opaque `payload` JSONB preserved).
-- CLI surface: importer exposes `cargo run --bin forum-import-nodebb <dump.json>` text in/out.
-- Test-first: every route requires contract + integration test; frontend requires `page.test.ts`.
-- Observability: structured `tracing` per route, `modlog` for moderation, `trust_events` for level changes.
+Every phase is a separate PR-sized unit. Order: 3 (schema) → 4 (API) →
+5 (realtime) → 6 (frontend). Within Phase 4 the lanes are independent.
 
-## Project Structure
+### Phase 3 — Migrations 090–098 (the missing half of the schema)
 
-### Documentation (this feature)
+The DDL for every table below **already exists in prose** in
+`data-model.md` §1–§3 (columns, indexes, search-vector triggers). Transcribe
+it into house-style SQL: copy `migrations/082_forum_parity.sql` style —
+`CREATE TABLE IF NOT EXISTS`, explicit FKs, `ALTER TABLE … OWNER TO fichub;`
+at the end of each file.
 
-```
-docs/specs/forum-nodebb/
-├── spec.md              # feature spec (shipped)
-├── plan.md              # this file
-├── research.md          # Phase 0 output (open questions resolved)
-├── data-model.md        # Phase 1 — entities + DDL deltas
-├── quickstart.md        # Phase 1 — how to run standalone + embedded
-├── contracts/           # Phase 1 — OpenAPI-style route contracts
-│   ├── forum-categories.md
-│   ├── forum-topics-posts.md
-│   ├── forum-groups-privileges.md
-│   ├── forum-flags-moderation.md
-│   ├── forum-messaging.md
-│   ├── forum-polls-events.md
-│   ├── forum-search-tags.md
-│   ├── forum-notifications.md
-│   ├── forum-uploads.md
-│   └── forum-ws-sse.md
-└── tasks.md             # Phase 2 (speckit-tasks)
-```
-
-### Source Code (repository root)
-
-```
-# Backend (new + extended)
-forum_core/                              # RETAINED, extended (groups, polls, messaging, uploads, privileges, flags)
-├── src/
-│   ├── model.rs                        # add Group, GroupMember, Privilege, Poll, PollOption, PollVote, Room, Message, Block, Draft, Upload, Tag
-│   ├── store/mod.rs                    # Store trait extended (all new entity ops)
-│   ├── store/pg.rs                     # Postgres impl for every new entity
-│   ├── moderation.rs                   # trust-aware flag_weight + auto_status thresholds
-│   └── search.rs                       # builder extended (tag/author/date filters)
-├── migrations/                         # crate-own migrations (also replayed into FicHub's 072_… sequence)
-│   ├── 001_forum_groups.sql
-│   ├── 002_forum_privileges.sql
-│   ├── 003_forum_tags.sql
-│   ├── 004_forum_polls.sql
-│   ├── 005_forum_messaging.sql
-│   ├── 006_forum_uploads_drafts.sql
-│   └── 007_forum_notifications.sql
-└── Cargo.toml
-
-crates/forum-import/                     # NEW — NodeBB JSON dump importer (optional but required for parity checklist)
-├── src/main.rs                        # CLI: reads NodeBB JSON, upserts into forum_* tables
-└── Cargo.toml
-
-src/
-├── routes/
-│   ├── forum.rs                       # EXTENDED — replaces/augments all NodeBB route parity (see contracts/)
-│   ├── forum_groups.rs                # NEW — groups CRUD + membership
-│   ├── forum_privileges.rs            # NEW — per-category per-group privileges
-│   ├── forum_flags.rs                 # NEW — flags/reports (TL2+ gate)
-│   ├── forum_messaging.rs             # NEW — DMs + rooms
-│   ├── forum_polls.rs                 # NEW — polls
-│   ├── forum_search.rs                # NEW — FTS topics+posts+users+groups
-│   ├── forum_uploads.rs               # NEW — multipart + image resize
-│   ├── forum_notifications.rs         # NEW — notifications + mark-read
-│   └── forum_ws.rs                    # NEW — /ws/forum handler + Redis pubsub fanout
-├── services/
-│   ├── forum_pubsub.rs                # NEW — Redis publish/subscribe helper (topic/category/room/notification channels)
-│   ├── forum_presence.rs              # NEW — online presence + typing state
-│   └── trust.rs                       # EXTENDED — flag_weight + forum gates (already TL0-6)
-├── server.rs                          # EXTENDED — new routes registered + WS route + static compat redirects
-├── config.rs                          # EXTENDED — forum points/window/levels + WS/Redis/upload knobs
-└── bin/
-    ├── forum_import_nodebb.rs         # NEW — binary entry for NodeBB dump importer
-    └── forum_scheduled_promote.rs     # NEW — cron for scheduled topics
-
-migrations/
-├── 072_forum_groups.sql               # mirror of forum_core migration 001 (groups)
-├── 073_forum_privileges.sql
-├── 074_forum_tags.sql
-├── 075_forum_polls.sql
-├── 076_forum_messaging.sql
-├── 077_forum_uploads_drafts.sql
-├── 078_forum_notifications.sql
-└── 079_forum_scheduled_topics.sql
-
-frontend/
-├── src/routes/forum/
-│   ├── +page.svelte                  # REPLACED — AO3-skinned category grid (NodeBB layout preserved)
-│   ├── [categorySlug]/
-│   ├── board/[topicSlug].[topicId]/ # REPLACED — topic+posts (WS live, pagination, poll, tags)
-│   ├── groups/                       # NEW — groups list/detail/member/privilege
-│   ├── tags/[tag]/                   # NEW — tag pages
-│   ├── search/                       # REPLACED — FTS with filters + snippets
-│   ├── notifications/                # NEW — inbox + bell badge state
-│   ├── messaging/                    # NEW — DM rooms + group rooms
-│   ├── polls/                        # NEW — poll create/vote UI
-│   ├── uploads/                      # NEW — drag-drop + paste + preview
-│   └── (+ mod queue pages retained: moderate/metamod/invites/blocks)
-├── src/lib/
-│   ├── forum/
-│   │   ├── ws.ts                    # NEW — WebSocket client (/ws/forum) + reconnect + catch-up
-│   │   ├── sse.ts                   # NEW — SSE fallback client
-│   │   ├── composer.ts              # NEW — markdown preview + @mention autocomplete + emoji + /fic card
-│   │   └── pwa.ts                   # NEW — manifest + service worker + offline cache + VAPID
-│   └── components/forum/            # NEW — ForumCard, ComposerBar, BottomNav, PollBar, NotificationBell patch, etc.
-└── static/
-    ├── manifest.webmanifest           # EXTENDED — PWA scope + forum shortcuts
-    └── sw.js                         # NEW — service worker (offline cache + queue)
-
-tests/ (integration)
-└── tests/forum_*.rs                  # per-contract integration tests via axum-test
-```
-
-**Structure Decision**: Web application layout. Backend extends `forum_core` as embeddable library + `src/routes/forum*.rs` + services; frontend extends `frontend/src/routes/forum/*`. New crate `crates/forum-import` for importer CLI. Single `users` table shared; migrations replayed into main `migrations/` with sequential IDs.
-
-## Complexity Tracking
-
-| Violation | Why Needed | Simpler Alternative Rejected Because |
+| File | Creates | Source of truth |
 |---|---|---|
-| New `crates/forum-import` | NodeBB parity checklist requires dump importer; keeps main binary lean | Stuffing importer into `fichub` binary bloats dep graph + mixes one-shot CLI with server |
-| `forum_core/migrations/` + `migrations/07x_…` duplication | Standalone crate must boot without FicHub DB; embedded mount must run from single FicHub migration sequence | Single location breaks standalone boot; requires either full FicHub DB or manual copy |
+| `migrations/090_forum_groups.sql` | `forum_groups`, `forum_group_members` | data-model.md §1 |
+| `migrations/091_forum_privileges.sql` | `forum_privileges` (category × group matrix) | data-model.md §1 |
+| `migrations/092_forum_polls.sql` | `forum_polls`, `forum_poll_options`, `forum_poll_votes` | data-model.md §1 |
+| `migrations/093_forum_messaging.sql` | `forum_messages_rooms`, `forum_room_members`, `forum_messages`, `user_blocks` | data-model.md §1 |
+| `migrations/094_forum_drafts_uploads.sql` | `forum_drafts`, `forum_uploads` | data-model.md §1 |
+| `migrations/095_forum_notifications.sql` | `forum_notifications`, `forum_notification_digests` | data-model.md §1 |
+| `migrations/096_forum_scheduled_topics.sql` | `forum_topics.scheduled_at` nullable column | data-model.md §1 |
+| `migrations/097_user_reports_extend.sql` | adds `weight`, `auto_status`, `resolved_by`, `resolved_at` to `user_reports` (base table `001_initial.sql:3418`) | data-model.md §2 |
+| `migrations/098_forum_search_triggers.sql` | `search_vector` tsvector columns + triggers on topics/posts/users/groups | data-model.md §3 |
 
-## Data Model (summary — full DDL in `data-model.md`)
+Rules:
+- `user_reports` is ALTERed, never dropped — it has live rows.
+- Mirror each new table into `crates/forum-core/migrations/` as one new file
+  (e.g. `20260906000001_forum_groups.sql`) so the crate boots standalone
+  (`sqlx::migrate!("./migrations")` at `store/pg.rs:49`); the crate copy must
+  not reference ficnexus-only tables.
+- Verify: `sqlx migrate run` on a scratch DB, then `just check` (sqlx macros
+  compile against the live schema).
 
-Existing `forum_core` tables retained (`forum_categories`, `forum_topics`, `forum_posts`, `forum_post_votes`, `forum_follows`, `forum_read_state`, `forum_bans`) plus additive tables; `user_reports` extended with `weight/auto_status/resolved_by/at`; `users.trust_level` 0-6 authoritative and `users.reputation` + `reputation_events` for leaderboard (no new user table, no exp/level columns). New tables: `forum_groups`, `forum_group_members`, `forum_privileges` (category×group), `forum_tags` + `forum_topic_tags` + `forum_category_tags`, `forum_polls` + `forum_poll_options` + `forum_poll_votes`, `forum_messages_rooms` + `forum_room_members` + `forum_messages` + `user_blocks`, `forum_drafts`, `forum_uploads`, `forum_notifications` (with `forum_notification_digests` watermark), `forum_scheduled_topics` (or `forum_topics.scheduled_at` nullable), plus `ReputationHook` trait — not a table — that writes `reputation_events` (`forum_topic_create`, `forum_post_create`, `forum_mod_helpful`) via `db::queries::update_reputation_and_promote` when embedded (noop in standalone dev). FTS: `search_vector` on topics/posts/users/groups maintained at write time (no cron). Redis keys: `forum:topic:{id}`, `forum:category:{id}`, `forum:room:{id}`, `forum:typing:{topic|room}`, `forum:presence:{room|category}`, digest watermark `forum:digest:last_sent`, rep daily cap `forum:rep:{user_id}:{yyyy-mm-dd}` counter.
+### Phase 4 — Backend API (the bulk of the remaining work)
 
-## API Surface (summary — contracts in `contracts/`)
+Register every new route in `src/server.rs` beside the existing forum block
+(`chunk_forum_activitypub()`, `server.rs:1060+` — follow its nested-router
+style). Handlers live in new `src/routes/forum_*.rs` files; the auth, trust,
+and error-envelope patterns are identical to `src/routes/forum.rs`.
 
-All routes under `/api/forum` JSON (`{err:0,…}` / `AppError` 401/403 as 400 per repo convention), auth via `AuthUser`, SvelteKit pages under `/forum`. Categories (list/get/create/patch), topics (`?category=&cursor=&limit=` list, detail by id + by-slug, create/patch/delete, pin/lock/move/fork/merge), posts (create/patch/delete, votes/bookmarks, edit history), tags (list, merge, `/forum/tags/{tag}`), groups (`/api/forum/groups` CRUD + join/leave/invite), privileges (`/api/forum/privileges/{categoryId}` get/set), flags (`POST /api/forum/flags` TL2+ gate + weight + auto_status, queue `GET /api/forum/flags/queue` TL5+, resolve), bans/timeouts, search (`GET /api/forum/search?q=&category=&tag=&author=&since=` FTS), follows/watches, read-state, notifications (`/api/forum/notifications` + mark-read), messaging (`/api/forum/messaging/{rooms,messages,blocks}`), polls (`/api/forum/polls/{votes}`), scheduled (cron promote), events, rewards, uploads (multipart + resize), reputation config (`GET /api/forum/reputation/config` read-only env), WS `GET /ws/forum` + SSE `GET /api/forum/stream`, compat 301s (`/category/{id}/{slug}` etc.). Moderation points + metamod retained at `/api/forum/moderation/*` + `/api/forum/metamod/*` exactly as `docs/FORUM-API-CONTRACT.md`.
+**Lane A — groups + privileges** (`forum_groups.rs`, `forum_privileges.rs`;
+contracts/forum-groups-privileges.md)
 
-## Reputation Hook
+- `GET/POST /api/forum/groups`, `GET/PATCH/DELETE /api/forum/groups/{id}`,
+  `POST/DELETE /api/forum/groups/{id}/members` (+ list members),
+  `GET/PUT /api/forum/categories/{id}/privileges` (per-group matrix).
+- CRUD via sqlx against the Phase-3 tables; membership and category changes
+  recompute the effective privilege matrix for affected categories.
+- Helper: `pub async fn can(db, user_id, category_id, action) -> bool` —
+  user's groups ∩ category matrix; resolve per request, no global cache.
+- Trust gates: group **create** ≥ `PUBLISH_MIN_TRUST` (trust.rs:39);
+  privilege **edit** admin-only (`FORUM_ADMIN_LEVEL`, forum.rs:69).
+- Tests: unit for the matrix-resolution pure fn; integration
+  `tests/forum_groups_api.rs` copying an existing `tests/*_api.rs` file.
 
-Forum writes emit `ForumEvent::TopicCreated { user_id, topic_id } | PostCreated { user_id, post_id } | ModHelpful { moderator_id, action_id }`. A `ReputationHook` trait (`async fn awardForumRep(pool, event)`) maps to `update_reputation_and_promote` with deltas `FORUM_REPUTATION_TOPIC_CREATE` (2), `FORUM_REPUTATION_POST_CREATE` (1), `FORUM_REPUTATION_MOD_HELPFUL` (3) and enforces `FORUM_REPUTATION_FORUM_DAILY_CAP` (20) via `reputation_events` count for that day (or Redis `forum:rep:{user}:day` counter). Positive-only; no rep for deletes/flags. Embedded mount wires live hook (writes `users.reputation` → visible on `GET /api/leaderboard/*`); standalone dev wires noop/in-memory collector (crate still boots, tests assert awarded deltas without touching `users`). No exp/levels anywhere.
+**Lane B — polls** (`forum_polls.rs`; contracts/forum-polls-events.md)
 
-## Realtime Design
+- `PUT /api/forum/topics/{id}/poll` (author or admin), `GET …/poll`,
+  `POST …/poll/vote` (single vote per user; revote = update), `DELETE …/vote`.
+- Counts via `COUNT(*) GROUP BY option_id`; result visibility per contract.
+- Trust: vote ≥ `PUBLISH_MIN_TRUST`; create author/admin-gated.
+- Integration test `tests/forum_polls_api.rs`: create → vote → revote →
+  counts; double-vote rejected.
 
-`GET /ws/forum` upgrades via `axum::extract::ws::WebSocketUpgrade` (feature `ws` on Axum). On connect: auth from cookie/JWT (same as HTTP), subscribe via `redis::aio::Connection` PubSub to channels for joined topics/categories/rooms + user notification channel. On topic/category/messaging mutation: handler `PUBLISH` JSON event to Redis; pubsub task fans out to all WS peers subscribed to that channel, plus writes notification row + pushes to user channel. Typing: ephemeral `SETEX forum:typing:{topic}:{user} 3` + publish `typing_start/stop`; clients debounce 500ms. Presence: `SADD forum:presence:{room}` + TTL heartbeat. Degraded mode: if Redis unavailable, single-process `tokio::sync::broadcast` fanout (logged, health reports degraded). SSE fallback at `/api/forum/stream?channel=forum:topic:{id}` for anonymous/read-only (no `typing`, no DM).
+**Lane C — messaging/DMs** (`forum_messaging.rs`; contracts/forum-messaging.md)
 
-## Frontend + PWA + Theming
+- Rooms (DM = exactly 2 members, group rooms ≥ 2), members, messages,
+  `user_blocks`. Blocks win over every message path.
+- `GET/POST /api/forum/rooms`, `GET /api/forum/rooms/{id}/messages?before=`
+  (cursor pagination, 50/page), `POST /api/forum/rooms/{id}/messages`,
+  `POST/DELETE /api/forum/users/{id}/block`.
+- Helper `is_blocked(a, b)` shared with notifications fan-out (Lane E).
+- Trust: messaging ≥ TL1 unless the contract says otherwise — contract wins.
+- Tests: DM create idempotent (same pair → same room), block prevents send,
+  cursor pagination stable.
 
-AO3 skin over NodeBB IA: ficnexus `docs/frontend-design.md` tokens (`--color-bg`, `--color-surface`, etc.) + header/footer/chrome; NodeBB layout (category cards, topic list, post stream, composer, bottom nav, notification bell) preserved. Svelte 5 runes, `+page.svelte` + `page.test.ts` per route, `i18n` via `t()` dictionaries, WS client `src/lib/forum/ws.ts` (reconnect + `?after=` catch-up) + `sse.ts` fallback, composer `src/lib/forum/composer.ts` (CommonMark via `marked` + NodeBB extensions, `@mention` autocomplete via `GET /api/users/search?q=prefix`, emoji via emoji picker, `/fic {url_id}` card via `GET /api/works/{id}`, drafts via localStorage + `POST /api/forum/drafts` backup every 30s). Uploads: drag-drop + paste handler posting `multipart` to `/api/forum/uploads`. PWA: `manifest.webmanifest` (name=ficnexus Forum, scope=/forum, display=standalone, icons 192/512, shortcuts), `sw.js` caches GET `/api/forum/categories|topics|topics/{id}` + last-read topic pages + drafts, queues failed POSTs in IndexedDB until reconnect, VAPID push via `POST /api/forum/push/subscribe` (applicationServerKey), foreground WS takes precedence when online.
+**Lane D — flags/reports** (`forum_flags.rs`; contracts/forum-flags-moderation.md)
 
-## Build + Execution Order (one big port, ≤3 subagents)
+- `POST /api/forum/flags` (report post/topic/user), `GET /api/forum/flags`
+  (staff queue, `RESOLVE_MIN_TRUST` = 5, trust.rs:43),
+  `POST /api/forum/flags/{id}/resolve`.
+- **Weighted auto-status:** on report insert, weight =
+  `flag_weight(reporter.trust_level)` (trust.rs:47) combined with the
+  reporter's accumulated `user_reports.weight`; when a post's total crosses
+  the threshold in `spec.md`, set `forum_posts.status='hidden'` through the
+  same transition logic as `forum_core::moderation`. Persists into the
+  extended `user_reports` columns (migration 097).
+- Tests: 3× TL2 reporters auto-hide a post; TL5 resolve unhides.
 
-Phase 0 — **Research** (`research.md`): NodeBB src inventory (`src/categories|topics|posts|groups|privileges|flags|messaging|notifications|search|polls|events|rewards|uploads|socket.io|widgets`) → Rust mapping, trust gate inventory, WS transport choice (Axum/ws + Redis pubsub chosen), upload resize lib (image crate), markdown pipeline (marked+dompurify), PWA strategy (Workbox-lite vs hand-rolled sw.js).
+**Lane E — notifications** (`forum_notifications.rs`; contracts/forum-notifications.md)
 
-Phase 1 — **Data model + contracts + quickstart**: `data-model.md` (full DDL deltas, indexes, search_vector triggers, Redis keyspace), `contracts/*.md` (request/response examples + error codes + auth matrix), `quickstart.md` (standalone `cargo run -p forum_core --example standalone` + embedded `cargo run -- middleware mount`, `just` recipes, env vars).
+- Table `forum_notifications` (recipient, actor, kind, payload JSONB,
+  read_at) + digest watermark table (data-model §5).
+- Fan-out write paths: reply-to-your-topic, @mention parsed from post body,
+  followed-topic got a new post, poll ended, room message (goes through
+  Lane C's `is_blocked`), badge/grant (reuse existing metamod grant flow).
+- `GET /api/forum/notifications?unread=`, `POST …/read-all`,
+  `GET …/unread-count` (bell polling endpoint).
+- Digest: extend the cron stub `src/bin/forum_scheduled_promote.rs` to also
+  send daily digests using watermark `forum:digest:last_sent`.
+- Tests: reply → row exists; read-all → unread-count 0; blocked user →
+  no row.
 
-Phase 2 — **Backend** (≤3 subagents, shared context via `plan.md` + `data-model.md` + `contracts/`):
-- Lane A: `forum_core` model/store/pg + migrations 001-007 + `Store` trait tests.
-- Lane B: `src/routes/forum*.rs` + `src/server.rs` registration + services (pubsub, presence, trust gates) + config.
-- Lane C: Messaging + polls + scheduled + events + rewards + uploads (multipart + image resize) + importer crate.
+**Lane F — uploads + drafts** (`forum_uploads.rs`; contracts/forum-uploads.md)
 
-Phase 3 — **Realtime + notifications**: WS handler + Redis fanout + SSE + typing/presence + notification write + digest cron + VAPID push wiring.
+- `POST /api/forum/uploads` — axum `multipart` (feature already enabled,
+  Cargo.toml:22). Per contract: image-mime allowlist, ≤5 MiB, per-user daily
+  cap via Redis `forum:upload:{user}:{date}` (data-model §5).
+- Resize/normalize with the `image` crate (research.md decision) before
+  storing under `cache/uploads/` (add `.gitignore` entry for contents).
+- Serving: `GET /api/forum/uploads/{id}` streaming handler OR existing
+  static service — the contract file is the authority; implement what it
+  says.
+- Drafts ride along: `GET/PUT /api/forum/drafts/{topic_id?}` against
+  `forum_drafts` (composer autosave, Phase 6 uses this).
 
-Phase 4 — **Frontend**: 10+ SvelteKit routes + lib/forum (ws/sse/composer/pwa) + components + AO3 skin + i18n + `page.test.ts` coverage + manifest/sw.
+**Lane G — scheduled topics + NodeBB importer** (`src/bin/` + new crate)
 
-Phase 5 — **Parity checklist + QA**: run NodeBB parity checklist 100% (browse → write → search/tags → groups/privileges → flags/bans → messaging → polls/scheduled → uploads/composer → realtime → PWA → importer), `cargo test` + `vitest run` + `qa/api-walk.js` + manual click-test via `ssh -L` to ThinkCentre if needed, `cargo sqlx prepare --check`, `just`/`nextest` as applicable.
+- `src/bin/forum_scheduled_promote.rs`: loop/cron promoting
+  `forum_topics WHERE scheduled_at <= now()` from scheduled → published
+  (transition via `forum_core::moderation` logic).
+- Importer: new **workspace member** `crates/forum-import` — add to
+  `workspace.members` + `[workspace.dependencies]` exactly the way
+  `forum-core` is declared (`Cargo.toml:16` and `:46`). CLI parses a NodeBB
+  JSON dump (shape in `research.md`), upserts into Phase-3 tables through
+  sqlx. Ship with `--dry-run` as the default; integration test feeds a
+  minimal fixture dump from `tests/fixtures/nodebb/`.
 
-## Risks + Mitigations
+### Phase 5 — Realtime (WS + SSE + presence)
 
-- **NFS git fsync** (`/personal/documents/code`): NodeBB ref already rsynced NFS-safe (`/tmp/NodeBB` → `~/code/js/NodeBB`, `core.fsync false`); all new Cargo work at `~/code/rust/ficnexus` NFS — set `CARGO_TARGET_DIR=/media/alvaro/code-worktrees` per AGENTS.md.
-- **WS + Redis pubsub at scale**: fallback single-process `broadcast` keeps dev/single-host alive; add Redis in CI/deploy; load-test WS fanout before declaring P1 done.
-- **Markdown parity vs XSS**: use `marked` + `dompurify` (already dep) on client, `ammonia` or equivalent on server for stored HTML; never trust client-rendered HTML as stored value.
-- **Trust vs NodeBB karma divergence**: spec-mandated, but document delta in `research.md` + show 403 reason="requires L2 Member" instead of silently failing.
-- **Migration ordering**: never rewrite `migrations/001_initial.sql`; new `07x_` only, replay `forum_core` migrations verbatim; `sqlx migrate run` order is filename-sorted — keep `07x` contiguous.
-- **Scope creep — 1:1 is large**: plan is one big port but lanes cap ≤3 subagents; main thread holds shared context; deliver in Phase 2-4 order so P1 stories unblock manually while P2 finishes.
+Nothing realtime exists yet (no `ws` feature, no pubsub code — verified).
+Build in this order:
 
-## Junior Dev / LLM Execution Guide
+1. **Enable the transport:** add `"ws"` to the axum features list
+   (`Cargo.toml:22`). Add `tokio-tungstenite` is NOT needed — axum's `ws`
+   feature suffices.
+2. **Pubsub helper:** `src/services/forum_pubsub.rs` — thin wrapper around
+   `redis::aio::PubSub`: `publish(channel, json)` and
+   `spawn_subscriber(channels, tx: tokio::sync::mpsc::Sender<Event>)`.
+   Channels per data-model §5: `forum:topic:{id}`, `forum:category:{id}`,
+   `forum:room:{id}`, `forum:notify:{user_id}`.
+3. **WS endpoint:** `src/routes/forum_ws.rs` → `GET /ws/forum` via
+   `axum::extract::ws::WebSocketUpgrade`. On connect: auth (same
+   cookie/JWT as HTTP), subscribe the socket to the user's channels
+   (rooms joined, topics followed, own notify channel). One tokio task per
+   socket reading from the pubsub receiver; one task reading client frames
+   (typing pings, channel joins).
+4. **Emit side:** in the Phase-4 mutation handlers (post create, room
+   message, poll vote), `PUBLISH` a JSON event after the DB write commits.
+   Event shape documented in `contracts/forum-ws-sse.md`.
+5. **Presence/typing:** `SETEX forum:typing:{topic}:{user} 3` + publish
+   `typing_start/stop` (clients debounce 500ms); presence via
+   `SADD forum:presence:{room}` with TTL heartbeat refresh. New
+   `src/services/forum_presence.rs` wraps these.
+6. **Degraded mode:** if Redis is down, fall back to a single-process
+   `tokio::sync::broadcast` fanout and log it (health endpoint reports
+   degraded). Code the seam now: an enum `Fanout::Redis(PubSub) |
+   Fanout::Local(broadcast::Sender<Event>)` chosen at startup.
+7. **SSE fallback:** `GET /api/forum/stream?channel=…` for anonymous
+   read-only streams (no typing, no DMs) — `axum::response::sse::Sse`
+   with the same pubsub backing.
+8. **Tests:** pubsub round-trip against a real Redis (mark `#[ignore]` +
+   run in `just test-db`); WS auth-reject test; typing TTL expiry test.
+   `contracts/forum-ws-sse.md` defines every event payload — implement
+   exactly those.
 
-1. Read `spec.md` + `plan.md` + `data-model.md` + relevant `contracts/*.md` before touching code; treat `~/code/js/NodeBB/src/**` as read-only reference for behavior, not copy source (GPL).
-2. For each lane: write failing test first (`cargo test` or `page.test.ts`), then Rust/Svelte impl, then `cargo sqlx prepare --check` if queries changed, then `cargo test` + `vitest run`.
-3. DB: run `sqlx migrate run` against local Postgres; verify with `psql \d forum_*`; add `ALTER OWNER TO fichub` for any new table created (per AGENTS.md).
-4. Branch: `feat/forum-nodebb-<lane>` via git worktree under `/media/alvaro/code-worktrees` with `CARGO_TARGET_DIR` pointing there; never work on `main`.
-5. Tokens: batch tool calls in scripts; use `caveman` skill (ultra) for comms; max 3 subagents at a time, main thread only for shared context — do not duplicate `plan.md` reads per subagent.
-6. Completion: update `NodeBB Parity Checklist` in `spec.md` (100% required), run `qa/api-walk.js` to verify routes in `server.rs`, click-test `/forum` → create topic → reply → flag → WS live on phone width, then merge.
+### Phase 6 — Frontend (SvelteKit) + PWA completion
 
-## References
+What exists already: category grid + `board/` topic page, search,
+recent/unread/popular, mod pages, `lib/api/forum.ts` (757 lines),
+`TopicThread`/`ReactionPicker`/`PassageContextCard` components,
+`ForumBottomNav`, PWA `register`/`strategies` + `manifest.webmanifest` +
+`sw.js`. What's missing is the UI for the Phase-4/5 features:
 
-- Spec: `.specify/specs/forum-nodebb/spec.md` (trust 0-6, AO3 skin, single account, 1:1 parity)
-- NodeBB 4.15.1: `~/code/js/NodeBB` (NFS-safe) + `/tmp/NodeBB` (local mirror)
-- Existing forum: `forum_core` (model/store/pg) + `src/routes/forum.rs` + `docs/FORUM-API-CONTRACT.md` + `docs/SPEC-COMMUNITY-PLATFORM.md` v2
-- Trust: `src/services/trust.rs` + `migrations/013_071` (flag_weight, PUBLISH/RESOLVE_MIN_TRUST)
-- Frontend design: `docs/frontend-design.md` + `frontend/src/routes/forum/*` + `frontend/src/lib/prefs.ts` + `frontend/src/lib/i18n/`
-- Deploy: `AGENTS.md` + `docs/DEPLOYMENT.md` (ThinkCentre scp→/tmp→/opt/ficnexus/*.tmp then mv, `fichub.service` restart, `FRONTEND_DIR=/var/www/ficnexus`)
+1. **Groups UI:** `frontend/src/routes/forum/groups/` — list (cards),
+   detail (members + join/leave), per-category privilege editor
+   (admin-only guard client-side; server re-checks everything).
+   `+page.svelte` + `page.test.ts` each, like existing routes.
+2. **Poll UI:** `PollBar.svelte` in `lib/components/forum/` — render poll
+   options, vote/revote, live results via WS event; embed inside the
+   existing `board/[topicSlug].[topicId]` thread above the post stream;
+   poll creation form inside the existing composer flow (`forum/new`).
+3. **Messaging UI:** `frontend/src/routes/forum/messaging/` — room list +
+   thread view; composer wired to `POST /rooms/{id}/messages`; live updates
+   via WS room channel; block/unblock controls on user cards.
+4. **Notifications UI:** bell in the header (patch the existing layout
+   component) polling `unread-count`; `frontend/src/routes/forum/
+   notifications/` inbox with mark-all-read; WS notify channel updates the
+   badge live.
+5. **Flags UI:** report button on posts/topics (dialog → `POST /api/forum/
+   flags`); staff queue page `frontend/src/routes/forum/flags/` gated by
+   the existing mod-page pattern (`moderate/` route as reference).
+6. **Uploads UI:** drag-drop + paste handler in the composer → multipart
+   `POST /uploads` → insert markdown image snippet; preview thumbnails.
+7. **WS client lib:** `frontend/src/lib/forum/ws.ts` — reconnect with
+   backoff, `?after=` catch-up on reconnect, typed event union mirroring
+   `contracts/forum-ws-sse.md`. `sse.ts` fallback for anonymous viewers.
+   Keep `lib/api/forum.ts` as the only REST surface; add WS as a sibling
+   module, don't entangle them.
+8. **PWA completion:** extend existing `sw.js` (don't replace — it already
+   works) to cache `GET /api/forum/categories|topics|topics/{id}` and
+   last-read topic pages; queue failed forum POSTs in IndexedDB until
+   reconnect; add forum shortcuts to `manifest.webmanifest` (data-model
+   §5 / spec.md PWA section list exactly what to cache).
+9. **i18n:** every new string through the existing `t()` dictionaries in
+   `lib/i18n/` (en first).
+10. **Tests:** `page.test.ts` per new route + component tests for
+    `PollBar` etc. (vitest, `npm run test`); mock the API layer the same
+    way `lib/api/forum.test.ts` does.
 
+### Phase 7 — NodeBB data migration + cutover (operator task, not code)
 
+Run only after Phases 3–6 ship:
 
+1. Dump NodeBB (`mongodump` → JSON per research.md mapping).
+2. `cargo run -p forum-import -- --dry-run dump.json` → fix mapping errors.
+3. Real run against staging; verify: topic/post/user counts match the dump,
+   slugs resolved, tags attached, `search_vector` populated (run a few
+   `search_forum` queries).
+4. Cut over: DNS/proxy switch, keep NodeBB read-only for 2 weeks, then
+   decommission. Rollback = repoint DNS (no data loss either way).
 
+## 3. Execution order & dependency graph
+
+```
+Phase 3  migrations 090-098        ← everything depends on this
+Phase 4  Lanes A-F (parallel)      ← each lane = one PR, independent
+         Lane G (importer + cron)  ← can start anytime after Phase 3
+Phase 5  realtime                  ← needs Phase 4 emit-points (lane C/E first)
+Phase 6  frontend                  ← trails Phase 4/5 lane by lane:
+                                      groups UI after A, polls after B,
+                                      messaging after C, flags after D,
+                                      notifications after E, uploads after F,
+                                      ws.ts after Phase 5
+Phase 7  cutover                   ← after everything
+```
+
+Junior-dev sanity rules:
+- One lane per PR; never mix a migration with frontend code.
+- Every PR green on `just check && just test && just test-frontend`.
+- `cargo sqlx prepare`-style drift is not in play (no `.sqlx/` dir) — but
+  `just check` fails if sqlx macros can't see the schema, so migrations must
+  be applied to your dev DB before compiling new queries.
+
+## 4. Verification checklist (per phase + final)
+
+1. Phase 3: `sqlx migrate run` twice (idempotent), `just check` compiles,
+   `psql -c '\dt forum_*'` shows all expected tables; standalone crate
+   boots: `cargo run -p forum-core --example standalone` (see quickstart.md §3).
+2. Phase 4 per lane: `just test` (unit), new `tests/forum_*_api.rs` green
+   (`just test-db`), `just clippy` clean, curl each new endpoint with a
+   logged-in cookie and confirm the `{err:0,…}` envelope + 400-on-auth shape.
+3. Phase 5: two browser tabs show live post/typing/presence; kill Redis →
+   degraded fanout logs and messages still flow single-process; SSE stream
+   works logged-out.
+4. Phase 6: `just test-frontend` + `just test-e2e` green; each new page
+   renders logged-in and logged-out; PWA: airplane-mode reload of a
+   previously-read topic still renders from SW cache.
+5. Phase 7: staging counts match dump; sample topic deep-links resolve;
+   search returns hits for imported content.
+6. Update this file's status line and tick phases off in §2 as they land.
+
+## 5. Out of scope (explicit)
+
+- Rewriting the existing 47 handlers in `forum.rs` — they already match the
+  contracts; touch them only if a contract test fails.
+- Reputation/exp systems (data-model §4 ships the hook only; amounts are
+  env-configurable per §9) — no gamification UI in this port.
+- Mobile-native anything — PWA only.
+- Migrating NodeBB *widgets/themes* — the AO3 skin replaces them by design.
+
+## 6. Changelog
+
+- 2026-09-06: Full rewrite. Previous plan predated the codebase: it
+  described `forum_core/` at the repo root with migrations starting at 072
+  and every backend lane as "NEW". Verified ground truth (§0) instead:
+  crate lives at `crates/forum-core` (workspace member), migrations at 089,
+  47 forum handlers + FTS search + tags + moderation/metamod already ship,
+  and several "to build" frontend routes already exist. Remaining scope is
+  now exact: migrations 090-098, seven API lanes, realtime from zero,
+  frontend for the missing features, importer + cutover. All sibling spec
+  docs (spec.md, data-model.md, contracts/, research.md, quickstart.md)
+  remain authoritative for details and are referenced per task.
+- 2026-09-07: Phase 3 (migrations) verified already applied to prod.
+  Recovered missing `.sql` files 072–079 from live DDL (`pg_dump`),
+  committed them, deleted the stale `_sqlx_migrations` rows, and
+  re-ran `fichub migrate` — all 38 migrations apply cleanly. Two issues
+  found and fixed during recovery:
+  1. `forum_topic_tags` uses a `(topic_id, tag text)` shape in prod,
+     not the `(topic_id, tag_id)` normalized shape from data-model.md
+     §1.3 — the Rust handlers use plain tag strings and 089 explicitly
+     drops the triggers that referenced `tag_id`. Migration 074 written
+     to match reality.
+  2. The data-model partial-index predicates `WHERE scheduled_at > NOW()`
+     are not valid (`NOW()` is volatile). Replaced with a static
+     `WHERE scheduled_at IS NOT NULL` predicate; the cron query applies
+     `scheduled_at <= NOW()` at scan time (same selectivity).
+  The `fichub` role did not exist in this DB — created it as
+  `NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT LOGIN` to match the
+  `OWNER TO fichub` lines in the existing migrations. **Phase 3 is
+  done; Phases 4–7 (handlers, realtime, frontend, importer) remain.**
 
