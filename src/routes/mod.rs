@@ -24,6 +24,7 @@ pub mod extensions;
 pub mod fandom;
 pub mod features;
 pub mod find_fic;
+pub mod drafts;
 pub mod feed;
 pub mod follows;
 pub mod forum;
