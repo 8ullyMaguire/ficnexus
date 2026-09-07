@@ -1,5 +1,13 @@
--- 073_forum_parity: NodeBB parity extras — topic tags, user prefs (RSS is view-only).
+-- 082_forum_parity (renumbered from 073): NodeBB parity extras — topic tags,
+-- user prefs (RSS is view-only).
 -- Handlers also CREATE IF NOT EXISTS at runtime, so this migration is advisory/idempotent.
+--
+-- NOTE (2026-09-07 deploy): prod already had a forum_topic_tags(topic_id,
+-- tag_id) table from 074_forum_tags, but the live handlers in
+-- src/routes/forum.rs use a (topic_id, tag text) shape, and both tables were
+-- empty (0 rows). This migration drops the unused normalized table and
+-- creates the shape the code actually uses.
+DROP TABLE IF EXISTS forum_topic_tags;
 CREATE TABLE IF NOT EXISTS forum_topic_tags (
   topic_id bigint NOT NULL REFERENCES forum_topics(id) ON DELETE CASCADE,
   tag text NOT NULL,
