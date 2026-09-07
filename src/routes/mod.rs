@@ -39,6 +39,7 @@ pub mod leaderboard;
 pub mod lists;
 pub mod locales;
 pub mod marginalia_admin;
+pub mod messages;
 pub mod meta;
 pub mod modlog;
 pub mod notifications;

@@ -246,20 +246,19 @@ pub async fn vote_on_poll(
     let user_id = require_user(&auth)?;
 
     // Check poll exists and isn't closed
-    let poll_exists: Option<bool> = sqlx::query_scalar(
-        "SELECT NOT EXISTS(SELECT 1 FROM forum_polls WHERE id = $1 AND close_at IS NULL OR close_at > NOW())",
+    let close_at: Option<Option<chrono::DateTime<chrono::Utc>>> = sqlx::query_scalar(
+        "SELECT close_at FROM forum_polls WHERE id = $1",
     )
     .bind(poll_id)
     .fetch_optional(&state.db)
     .await?;
-
-    match poll_exists.unwrap_or(false) {
-        true => {}
-        false => {
-            return Err(AppError::Conflict(
-                "poll is closed or doesn't exist".to_string(),
-            ))
-        }
+    let Some(close_at) = close_at else {
+        return Err(AppError::Conflict(
+            "poll is closed or doesn't exist".to_string(),
+        ));
+    };
+    if close_at.is_some_and(|ts| ts <= chrono::Utc::now()) {
+        return Err(AppError::Conflict("poll is closed".to_string()));
     }
 
     // Validate option belongs to this poll

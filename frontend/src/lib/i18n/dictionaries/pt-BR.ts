@@ -727,6 +727,26 @@ export const ptBR: Record<TranslationKey, string> = {
   'forum.blocksToInvites': 'Gerenciar convites',
   'forum.blocksToApply': 'Solicitar registro',
 
+  // ── DMs (Lane 3: site-wide messages) ─────────────────────────────────────
+  'messages.title': 'Messages',
+  'messages.rooms': 'Conversations',
+  'messages.noRooms': 'No conversations yet.',
+  'messages.pickRoom': 'Pick a conversation to read it.',
+  'messages.dm': 'DM',
+  'messages.loading': 'Loading…',
+  'messages.loadError': 'Could not load conversations.',
+  'messages.threadError': 'Could not load this conversation.',
+  'messages.roomError': 'Could not open a conversation with this user.',
+  'messages.sendError': 'Could not send the message.',
+  'messages.send': 'Send',
+  'messages.composerPlaceholder': 'Write a message…',
+  'messages.loadOlder': 'Load older messages',
+  'messages.mute': 'Mute',
+  'messages.unmute': 'Unmute',
+  'messages.muted': 'Conversation muted.',
+  'messages.unmuted': 'Conversation unmuted.',
+  'messages.login': 'Log in to read your messages.',
+
   // ── Notifications / Follows / Bookmarks ───────────────────────────────
   'notif.title': 'Notificações',
   'notif.markAllRead': 'Marcar todas como lidas ({count})',

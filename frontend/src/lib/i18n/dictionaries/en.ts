@@ -902,6 +902,26 @@ export const en = {
   'forum.blocksToInvites': 'Manage invites',
   'forum.blocksToApply': 'Apply for registration',
 
+  // ── DMs (Lane 3: site-wide messages) ─────────────────────────────────────
+  'messages.title': 'Messages',
+  'messages.rooms': 'Conversations',
+  'messages.noRooms': 'No conversations yet.',
+  'messages.pickRoom': 'Pick a conversation to read it.',
+  'messages.dm': 'DM',
+  'messages.loading': 'Loading…',
+  'messages.loadError': 'Could not load conversations.',
+  'messages.threadError': 'Could not load this conversation.',
+  'messages.roomError': 'Could not open a conversation with this user.',
+  'messages.sendError': 'Could not send the message.',
+  'messages.send': 'Send',
+  'messages.composerPlaceholder': 'Write a message…',
+  'messages.loadOlder': 'Load older messages',
+  'messages.mute': 'Mute',
+  'messages.unmute': 'Unmute',
+  'messages.muted': 'Conversation muted.',
+  'messages.unmuted': 'Conversation unmuted.',
+  'messages.login': 'Log in to read your messages.',
+
   // ── Approvals (unified curator queue) ────────────────────────────────────
   'approvals.title': 'Approvals',
   'approvals.subtitle': 'Unified queue for every pending curation and moderation item.',

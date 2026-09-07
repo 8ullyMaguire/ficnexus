@@ -1314,6 +1314,23 @@ fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
             axum::routing::put(crate::routes::drafts::upsert_draft)
                 .delete(crate::routes::drafts::delete_draft),
         )
+        // ── Lane 3: site-wide DMs ───────────────────────────────────
+        // (FicHub forum-nodebb spec §3 Lane 3 — tables from 076, blocks via
+        // canonical site `blocked_users`)
+        .route(
+            "/api/messages/rooms",
+            get(crate::routes::messages::list_rooms)
+                .post(crate::routes::messages::create_dm_room),
+        )
+        .route(
+            "/api/messages/rooms/{roomId}/messages",
+            get(crate::routes::messages::get_room_messages)
+                .post(crate::routes::messages::send_message),
+        )
+        .route(
+            "/api/messages/rooms/{roomId}",
+            axum::routing::patch(crate::routes::messages::update_room_prefs),
+        )
         // ── ActivityPub federation (NodeBB parity, opt-in via ACTIVITYPUB_ENABLED) ─
         .route(
             "/.well-known/webfinger",
