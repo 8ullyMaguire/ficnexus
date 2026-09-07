@@ -395,7 +395,7 @@ fn chunk_core_api() -> impl Into<Router<Arc<AppState>>> {
             get(routes::sitemap::sitemap_index_handler),
         )
         .route(
-            "/sitemaps/works/{shard}.xml",
+            "/sitemaps/works",
             get(routes::sitemap::sitemap_works_handler),
         )
 }

@@ -1,6 +1,6 @@
 //! Sitemap generation (`feat(seo)`: item 2 of docs/plans/2026-09-03-improve-existing-site.md).
 //!
-//! Serves `/sitemaps/works/{shard}.xml` and `/sitemaps/index.xml`.
+//! Serves `/sitemaps/works?shard={shard}` and `/sitemaps/index.xml`.
 //! Works are sharded alphabetically by first character of `url_id` so each
 //! file stays well under the 50k-URL / 50MB sitemap limits. All SQL is
 //! on-demand (a nightly crawler hits these endpoints; no background job).
@@ -8,7 +8,7 @@
 //! Endpoint URLs use the `public_origin` config so the sitemap is valid
 //! regardless of which host crawls it.
 
-use axum::extract::{Path, State};
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use std::sync::Arc;
@@ -44,7 +44,7 @@ pub async fn sitemap_index_handler(State(state): State<Arc<AppState>>) -> impl I
     );
     for shard in SHARDS {
         xml.push_str(&format!(
-            "  <sitemap>\n    <loc>{origin}/sitemaps/works/{shard}.xml</loc>\n  </sitemap>\n"
+            "  <sitemap>\n    <loc>{origin}/sitemaps/works?shard={shard}</loc>\n  </sitemap>\n"
         ));
     }
     xml.push_str("</sitemapindex>\n");
@@ -63,13 +63,14 @@ fn xml_escape(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-/// `GET /sitemaps/works/{shard}.xml` — all works whose url_id starts with
+/// `GET /sitemaps/works?shard={shard}` — all works whose url_id starts with
 /// the shard character (case-insensitive). `lastmod` uses `fic_updated`,
 /// falling back to `updated`; omitted when neither is set.
 pub async fn sitemap_works_handler(
     State(state): State<Arc<AppState>>,
-    Path(shard): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
+    let shard: String = params.get("shard").cloned().unwrap_or_default();
     let shard_char = shard.chars().next().unwrap_or('0').to_ascii_lowercase();
     if !SHARDS.contains(&shard_char) {
         return (
