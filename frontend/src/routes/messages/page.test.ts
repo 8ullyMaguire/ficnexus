@@ -15,7 +15,12 @@ vi.mock('$lib/stores/auth.svelte', () => ({
 }));
 
 vi.mock('$app/stores', () => ({
-  page: { url: new URL('http://localhost/messages'), params: {}, data: {}, state: {}, route: { id: null } },
+  page: {
+    subscribe: (fn: Function) => {
+      fn({ url: new URL('http://localhost/messages') });
+      return () => {};
+    },
+  },
 }));
 
 vi.mock('$app/navigation', () => ({
@@ -100,6 +105,8 @@ describe('messages page', () => {
         expect.objectContaining({ method: 'POST' }),
       );
     });
-    expect((box as HTMLTextAreaElement).value).toBe('');
+    await waitFor(() => {
+      expect((screen.getByPlaceholderText('Write a message…') as HTMLTextAreaElement).value).toBe('');
+    });
   });
 });
