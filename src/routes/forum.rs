@@ -67,7 +67,9 @@ fn curator_level() -> i16 {
 }
 
 /// Admin level threshold (F7). Env-overridable via FORUM_ADMIN_LEVEL.
-fn admin_level() -> i16 {
+/// `pub(crate)` so other lane modules (groups, privileges) can gate on
+/// the same value without re-reading config.
+pub(crate) fn admin_level() -> i16 {
     std::env::var("FORUM_ADMIN_LEVEL")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -339,7 +341,7 @@ pub struct CreateBanBody {
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 /// Require a logged-in user; 401 otherwise (repo convention).
-fn require_user(auth: &AuthUser) -> Result<i32, AppError> {
+pub(crate) fn require_user(auth: &AuthUser) -> Result<i32, AppError> {
     auth.user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))
 }
@@ -484,10 +486,16 @@ async fn topic_id_by_slug(state: &AppState, slug: &str) -> Result<i64, AppError>
 }
 
 /// Validate post/topic body markdown: non-empty, ≤ 20000 chars.
-fn validate_forum_body(body: &str) -> Result<String, AppError> {
+fn validate_forum_body(body: &str, min_len: i32) -> Result<String, AppError> {
     let b = body.trim();
     if b.is_empty() {
         return Err(AppError::BadRequest("body must not be empty".to_string()));
+    }
+    let min = if min_len > 0 { min_len as usize } else { 0 };
+    if min > 0 && b.chars().count() < min {
+        return Err(AppError::BadRequest(format!(
+            "body too short (min {min} characters)"
+        )));
     }
     if b.chars().count() > 20_000 {
         return Err(AppError::BadRequest(
@@ -510,7 +518,8 @@ pub const PINNED_FIRST_ORDER: &str = "t.status = 'pinned' DESC";
 
 /// Mod-level check: level ≥ FORUM_CURATOR_LEVEL (50) counts as mod for the
 /// forum (F7 leveling replaces the legacy role gate).
-fn is_mod(auth: &AuthUser) -> bool {
+/// `pub(crate)` so Lane A (groups, privileges) can re-use the same gate.
+pub(crate) fn is_mod(auth: &AuthUser) -> bool {
     auth.level >= curator_level()
 }
 
@@ -570,9 +579,38 @@ async fn require_trust_resolve(state: &AppState, auth: &AuthUser) -> Result<i16,
     Ok(level)
 }
 
-/// Daily action cap: how many moderation actions this user already logged
-/// today (UTC) and the configured cap. Caps `forum_mod_actions` rows —
-/// the audit trail doubles as the counter, so no new table.
+/// Flood control: reject posts faster than FORUM_POST_DELAY_SECS (config,
+/// default 10s) per user, measured from their most recent topic or post.
+/// Staff (role ≥ 10) always passes. Returns the seconds the user must wait.
+async fn check_flood(state: &AppState, auth: &AuthUser) -> Result<(), AppError> {
+    if auth.role >= 10 {
+        return Ok(());
+    }
+    let delay = state.config.forum_post_delay_secs.max(0);
+    if delay <= 0 {
+        return Ok(());
+    }
+    let last: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
+        "SELECT MAX(created_at) FROM (
+            SELECT created_at FROM forum_topics WHERE author_id = $1
+            UNION ALL
+            SELECT created_at FROM forum_posts WHERE author_id = $1
+         ) recent",
+    )
+    .bind(auth.user_id.unwrap_or(0))
+    .fetch_optional(&state.db)
+    .await?;
+    if let Some(last_ts) = last {
+        let elapsed = chrono::Utc::now().signed_duration_since(last_ts).num_seconds();
+        if elapsed < i64::from(delay) {
+            return Err(AppError::BadRequest(format!(
+                "flood control: wait {}s before posting again",
+                i64::from(delay) - elapsed
+            )));
+        }
+    }
+    Ok(())
+}
 async fn daily_mod_usage(state: &AppState, user_id: i32) -> Result<(i64, i32), AppError> {
     let used: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM forum_mod_actions
@@ -2421,7 +2459,8 @@ pub async fn create_topic(
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
     let title = validate_topic_title(&body.title)?;
-    let op_body = validate_forum_body(&body.body)?;
+    check_flood(&state, &auth).await?;
+    let op_body = validate_forum_body(&body.body, state.config.forum_min_post_len)?;
     let category_id = category_id_by_slug(&state, body.category_slug.trim()).await?;
     if is_banned(&state, user_id, category_id).await? {
         return Err(AppError::Forbidden("Banned from the forum".to_string()));
@@ -2628,7 +2667,7 @@ pub async fn update_topic(
         None => cur.0,
     };
     let new_body = match &body.body {
-        Some(b) => validate_forum_body(b)?,
+        Some(b) => validate_forum_body(b, state.config.forum_min_post_len)?,
         None => cur.1,
     };
 
@@ -2784,7 +2823,8 @@ pub async fn create_post(
     if is_banned(&state, user_id, category_id).await? {
         return Err(AppError::Forbidden("Banned from the forum".to_string()));
     }
-    let post_body = validate_forum_body(&body.body)?;
+    check_flood(&state, &auth).await?;
+    let post_body = validate_forum_body(&body.body, state.config.forum_min_post_len)?;
     let quote_of = body.quote_of;
     let payload = body.payload.unwrap_or(json!({}));
 
@@ -2936,7 +2976,7 @@ pub async fn update_post(
     Json(body): Json<UpdatePostBody>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let new_body = validate_forum_body(&body.body)?;
+    let new_body = validate_forum_body(&body.body, state.config.forum_min_post_len)?;
 
     let row: Option<(i32, String, Option<String>)> = sqlx::query_as(
         "SELECT author_id, created_at::text, deleted_at::text

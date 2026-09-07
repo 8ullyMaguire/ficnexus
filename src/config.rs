@@ -334,6 +334,12 @@ pub struct Config {
     /// Max moderation actions per user per UTC day (anti-abuse cap).
     /// (env: FORUM_MOD_ACTIONS_PER_DAY, default 50)
     pub forum_mod_actions_per_day: i32,
+    /// Minimum body length (chars) for a forum post/topic (default 8).
+    /// (env: FORUM_MIN_POST_LEN)
+    pub forum_min_post_len: i32,
+    /// Minimum seconds between posts per user (flood control; default 10).
+    /// Staff (role>=10) bypass. (env: FORUM_POST_DELAY_SECS)
+    pub forum_post_delay_secs: i32,
     // ── F7 site-wide leveling (SPEC-COMMUNITY-PLATFORM §10) ──────────────
     /// Level required to act as curator/mod (level >= this = mod).
     pub forum_curator_level: i16,
@@ -547,6 +553,8 @@ impl Config {
             forum_mod_min_trust: 0,
             forum_resolve_min_trust: 0,
             forum_mod_actions_per_day: 0,
+            forum_min_post_len: 0,
+            forum_post_delay_secs: 0,
             forum_curator_level: 0,
             forum_admin_level: 0,
             forum_exp_per_level: 0,
@@ -1182,6 +1190,14 @@ impl Config {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(50);
+        let forum_min_post_len = std::env::var("FORUM_MIN_POST_LEN")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(8);
+        let forum_post_delay_secs = std::env::var("FORUM_POST_DELAY_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(10);
 
         // ── F7 site-wide leveling (SPEC-COMMUNITY-PLATFORM §10) ─────────
         let forum_curator_level = std::env::var("FORUM_CURATOR_LEVEL")
@@ -1397,6 +1413,8 @@ impl Config {
             forum_mod_min_trust,
             forum_resolve_min_trust,
             forum_mod_actions_per_day,
+            forum_min_post_len,
+            forum_post_delay_secs,
             forum_curator_level,
             forum_admin_level,
             forum_exp_per_level,

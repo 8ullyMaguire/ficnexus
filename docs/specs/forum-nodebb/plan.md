@@ -1,6 +1,6 @@
 # Forum NodeBB parity — implementation plan
 
-**Status:** Phase 3 DONE (2026-09-07). Migrations 072–079 were applied to prod but the `.sql` files were missing from the repo; recovered from live DDL and re-recorded in `_sqlx_migrations`. Phases 4–7 remain (this file, §2). **Critical finding:** no Rust code currently references `forum_groups`, `forum_polls`, `forum_rooms`, `forum_messages`, `forum_notifications`, `forum_uploads`, `forum_user_blocks`, `forum_drafts`, or `forum_privileges` (grep-verified) — the tables are real and the DB is consistent, but handlers/routes/frontend do not exist yet.
+**Status:** Phase 3 DONE (2026-09-07). Migrations 072–079 were applied to prod but the `.sql` files were missing from the repo; recovered from live DDL and re-recorded in `_sqlx_migrations`. Phases 4–7 remain (this file, §2). **Moderation pivot landed** (commit `708cfed`): the trust ladder runs moderation — TL4+ works the queue, TL5+ resolves/hides/locks/pins (env `FORUM_MOD_MIN_TRUST` / `FORUM_RESOLVE_MIN_TRUST`), a per-day action cap replaces the points currency, and metamod endpoints answer **410**. **Uncommitted WIP on the tree** adds flood control + `FORUM_MIN_POST_LEN` to topic/post creation — land or stash it before starting Phase 4. **Critical finding:** no Rust code currently references `forum_groups`, `forum_polls`, `forum_rooms`, `forum_messages`, `forum_notifications`, `forum_uploads`, `forum_user_blocks`, `forum_drafts`, or `forum_privileges` (grep-verified) — the tables are real and the DB is consistent, but handlers/routes/frontend do not exist yet.
 **Spec dir:** `/home/alvaro/code/rust/ficnexus/docs/specs/forum-nodebb/` (spec.md, data-model.md, contracts/, research.md, quickstart.md)
 **Read order for a new dev:** this file → `spec.md` → `data-model.md` → `contracts/*.md` → `quickstart.md`
 **Author:** Cline, 2026-09-06. Every anchor verified against the codebase the same day.
@@ -21,12 +21,13 @@
 | Forum domain crate is `crates/forum-core` (workspace member; dep alias `forum-core = { path = "crates/forum-core" }`, root `Cargo.toml:46`) | `crates/forum-core/src/{lib,model,store,store/pg,moderation,search}.rs` |
 | Crate runs its **own** migrations via `sqlx::migrate!("./migrations")` relative to its manifest dir | `crates/forum-core/src/store/pg.rs:45-49` |
 | Crate's own migration: `crates/forum-core/migrations/202608140001_forum_core.sql` | creates the base `forum_*` tables standalone |
-| Embedded app migrations are at **089** (`089_forum_topic_tags_trigger_fix.sql`); next free numbers are **090+** | `ls migrations/` |
+| Embedded app migrations are at **089** (`089_forum_topic_tags_trigger_fix.sql`); next free numbers are **090+** (080 is a permanent gap — do not reuse it) | `ls migrations/` |
+| **Forum migrations 072–079 exist and are applied** (groups, privileges, tags, polls, messaging, drafts/uploads/notifications, topic/post/user_reports extends, search triggers) — recovered from live DDL in commit `f4cc60f` after `717a008` renumbered the non-forum batch to 081–088. Deltas vs the original plan: the rooms table is `forum_rooms` (not `forum_messages_rooms`) and there is **no** `forum_notification_digests` table — digests ride `forum_notifications.scheduled_at` | `ls migrations/ \| grep ^07`, `grep "CREATE TABLE" migrations/07[2-8]_*.sql` |
 | Base forum tables live in `migrations/001_initial.sql` (categories/topics/posts/votes/follows/read_state/bans/metamod/mod_grants/reactions/edit_proposals/topic_views) | `grep "CREATE TABLE public.forum_" migrations/001_initial.sql` |
 | Parity additions so far: `082_forum_parity.sql` adds `forum_topic_tags`, `forum_user_prefs`; tags handlers exist (`set_topic_tags`, `get_topic_tags`, 5-tag cap) | `migrations/082_forum_parity.sql`, `src/routes/forum.rs:1931-1952` |
-| `src/routes/forum.rs` = 3686 lines, **47 handlers**, including moderation, metamod, edit queue, RSS, prefs, level | `grep -c "pub async fn" src/routes/forum.rs` |
+| `src/routes/forum.rs` = 3686 lines, **47 handlers**, including moderation (metamod retired 2026-09-07 — its queue/vote/verdict endpoints now return 410, grant detail stays readable), edit queue, RSS, prefs, level | `grep -c "pub async fn" src/routes/forum.rs` |
 | FTS search already uses `to_tsquery` + `ts_headline` + `ts_rank` over `search_vector` via `crate::search::parser` | `src/routes/forum.rs:3228+` |
-| Trust system is TL0-6, `trust.rs` has `flag_weight()`, `PUBLISH_MIN_TRUST=2`, `RESOLVE_MIN_TRUST=5`, `assert_min_trust()` | `src/services/trust.rs:25-127` |
+| Trust system is TL0-6: `trust.rs` keeps `flag_weight()`, `PUBLISH_MIN_TRUST=2`, `assert_min_trust()`; **moderation gates are config-driven since `708cfed`** — `FORUM_MOD_MIN_TRUST=4` (queue), `FORUM_RESOLVE_MIN_TRUST=5` (resolve/hide), `FORUM_MOD_ACTIONS_PER_DAY=50`, with helpers `require_trust_queue` / `require_trust_resolve` / `check_daily_cap` / `daily_mod_usage` | `src/services/trust.rs:25-127`, `src/config.rs:329-335`, `src/routes/forum.rs` |
 | Admin gate: `FORUM_ADMIN_LEVEL` env, default 100 | `src/routes/forum.rs:69-71` |
 | Auth extractor is `AuthUser` | `src/routes/auth.rs:209` |
 | Reputation fn exists: `update_reputation_and_promote` | `src/db/queries/reputation.rs:8` |
@@ -55,37 +56,37 @@
   (49 files there already — copy the `*_api.rs` pattern).
 ## 2. Remaining work — phase by phase
 
-Every phase is a separate PR-sized unit. Order: 3 (schema) → 4 (API) →
+Every phase is a separate PR-sized unit. Order: 3 (✅ done — only the
+crate-migration mirror chores remain, see above) → 4 (API) →
 5 (realtime) → 6 (frontend). Within Phase 4 the lanes are independent.
 
-### Phase 3 — Migrations 090–098 (the missing half of the schema)
+### Phase 3 — Migrations ✅ DONE (2026-09-07, commit `f4cc60f`)
 
-The DDL for every table below **already exists in prose** in
-`data-model.md` §1–§3 (columns, indexes, search-vector triggers). Transcribe
-it into house-style SQL: copy `migrations/082_forum_parity.sql` style —
-`CREATE TABLE IF NOT EXISTS`, explicit FKs, `ALTER TABLE … OWNER TO fichub;`
-at the end of each file.
+The planned 090–098 batch shipped **early and renumbered**: after `717a008`
+moved the unrelated 072–079 batch to 081–088, the forum DDL landed as
+**072–079** and was recovered from prod's live DDL (`pg_dump`) because the
+files had never been committed. All tables exist and are applied:
 
-| File | Creates | Source of truth |
+| Shipped file | Contents | Plan delta vs original |
 |---|---|---|
-| `migrations/090_forum_groups.sql` | `forum_groups`, `forum_group_members` | data-model.md §1 |
-| `migrations/091_forum_privileges.sql` | `forum_privileges` (category × group matrix) | data-model.md §1 |
-| `migrations/092_forum_polls.sql` | `forum_polls`, `forum_poll_options`, `forum_poll_votes` | data-model.md §1 |
-| `migrations/093_forum_messaging.sql` | `forum_messages_rooms`, `forum_room_members`, `forum_messages`, `user_blocks` | data-model.md §1 |
-| `migrations/094_forum_drafts_uploads.sql` | `forum_drafts`, `forum_uploads` | data-model.md §1 |
-| `migrations/095_forum_notifications.sql` | `forum_notifications`, `forum_notification_digests` | data-model.md §1 |
-| `migrations/096_forum_scheduled_topics.sql` | `forum_topics.scheduled_at` nullable column | data-model.md §1 |
-| `migrations/097_user_reports_extend.sql` | adds `weight`, `auto_status`, `resolved_by`, `resolved_at` to `user_reports` (base table `001_initial.sql:3418`) | data-model.md §2 |
-| `migrations/098_forum_search_triggers.sql` | `search_vector` tsvector columns + triggers on topics/posts/users/groups | data-model.md §3 |
+| `072_forum_groups.sql` | `forum_groups`, `forum_group_members` | as planned |
+| `073_forum_privileges.sql` | `forum_privileges` (category × group) | as planned |
+| `074_forum_tags.sql` | `forum_tags`, `forum_topic_tags` (denormalized `(topic_id, tag text)` — matches prod + handlers; 089 drops the old `tag_id` triggers) | shape changed by reality, documented in changelog |
+| `075_forum_polls.sql` | `forum_polls`, `forum_poll_options`, `forum_poll_votes` | as planned |
+| `076_forum_messaging.sql` | `forum_rooms` (⚠ not `forum_messages_rooms`), `forum_room_members`, `forum_messages`, `forum_user_blocks` | table renamed vs data-model.md §1 — **handlers must use `forum_rooms`** |
+| `077_forum_drafts_uploads_notifications.sql` | `forum_drafts`, `forum_uploads`, `forum_notifications` (with `scheduled_at` for digests — **no** `forum_notification_digests` table) | digest watermark rides `forum_notifications.scheduled_at` |
+| `078_forum_topics_posts_extend.sql` | `forum_topics.scheduled_at/poll_id/tags_locked/teaser/thumb_url`, `forum_posts.is_op/upload_count`, `user_reports.weight/auto_status/resolved_by` | combines planned 096+097 |
+| `079_forum_search_triggers.sql` | `search_vector` triggers on **topics + posts + messages only** (24 refs; groups has none) | no groups trigger — add one if group search is wanted |
 
-Rules:
-- `user_reports` is ALTERed, never dropped — it has live rows.
-- Mirror each new table into `crates/forum-core/migrations/` as one new file
-  (e.g. `20260906000001_forum_groups.sql`) so the crate boots standalone
-  (`sqlx::migrate!("./migrations")` at `store/pg.rs:49`); the crate copy must
-  not reference ficnexus-only tables.
-- Verify: `sqlx migrate run` on a scratch DB, then `just check` (sqlx macros
-  compile against the live schema).
+**Remaining Phase-3 chores (small, do before Lane A):**
+1. Mirror the crate-side migrations into `crates/forum-core/migrations/`
+   (only `202608140001_forum_core.sql` exists today) so the crate boots
+   standalone with the new tables — copy the same DDL minus ficnexus-only
+   FK references, house style per `082_forum_parity.sql`
+   (`CREATE TABLE IF NOT EXISTS`, trailing `ALTER TABLE … OWNER TO fichub;`).
+2. Verify on a scratch DB: `sqlx migrate run` twice (idempotent), then
+   `just check` (sqlx macros compile against the live schema).
+
 
 ### Phase 4 — Backend API (the bulk of the remaining work)
 
@@ -121,7 +122,9 @@ contracts/forum-groups-privileges.md)
 **Lane C — messaging/DMs** (`forum_messaging.rs`; contracts/forum-messaging.md)
 
 - Rooms (DM = exactly 2 members, group rooms ≥ 2), members, messages,
-  `user_blocks`. Blocks win over every message path.
+  `user_blocks`. Blocks win over every message path. **Table names per the
+  shipped 076:** `forum_rooms` (data-model.md's `forum_messages_rooms` is
+  outdated), `forum_room_members`, `forum_messages`, `forum_user_blocks`.
 - `GET/POST /api/forum/rooms`, `GET /api/forum/rooms/{id}/messages?before=`
   (cursor pagination, 50/page), `POST /api/forum/rooms/{id}/messages`,
   `POST/DELETE /api/forum/users/{id}/block`.
@@ -140,20 +143,34 @@ contracts/forum-groups-privileges.md)
   reporter's accumulated `user_reports.weight`; when a post's total crosses
   the threshold in `spec.md`, set `forum_posts.status='hidden'` through the
   same transition logic as `forum_core::moderation`. Persists into the
-  extended `user_reports` columns (migration 097).
-- Tests: 3× TL2 reporters auto-hide a post; TL5 resolve unhides.
+  extended `user_reports` columns (**shipped in 078**:
+  `weight`/`auto_status`/`resolved_by`).
+- Queue/resolve gates use the **pivot helpers, not the old constants**:
+  `require_trust_queue` (default TL4) for the queue view,
+  `require_trust_resolve` (default TL5) for resolve/hide, and wrap every
+  moderation action in `check_daily_cap` (`FORUM_MOD_ACTIONS_PER_DAY`,
+  default 50 — the audit trail doubles as the counter). Do NOT re-add
+  `RESOLVE_MIN_TRUST` from trust.rs — it is config-driven now.
+- Contested resolutions escalate via reports (the pivot's replacement for
+  metamod); record `resolved_by` on resolve.
+- Tests: 3× TL2 reporters auto-hide a post; TL5 resolve unhides; daily cap
+  blocks the 51st action.
 
 **Lane E — notifications** (`forum_notifications.rs`; contracts/forum-notifications.md)
 
 - Table `forum_notifications` (recipient, actor, kind, payload JSONB,
-  read_at) + digest watermark table (data-model §5).
+  read_at) — **no digests table exists** (077); digest scheduling rides
+  `forum_notifications.scheduled_at` + its partial index.
 - Fan-out write paths: reply-to-your-topic, @mention parsed from post body,
   followed-topic got a new post, poll ended, room message (goes through
-  Lane C's `is_blocked`), badge/grant (reuse existing metamod grant flow).
+  Lane C's `is_blocked`), mod actions on your content. The notification
+  `type` allowlist is in the 077 DDL comment — stick to it.
 - `GET /api/forum/notifications?unread=`, `POST …/read-all`,
   `GET …/unread-count` (bell polling endpoint).
-- Digest: extend the cron stub `src/bin/forum_scheduled_promote.rs` to also
-  send daily digests using watermark `forum:digest:last_sent`.
+- Digests: **no digests table exists** — schedule digest rows on
+  `forum_notifications.scheduled_at` (indexed, 077) and extend the cron
+  stub `src/bin/forum_scheduled_promote.rs` to flush due rows
+  (`scheduled_at <= NOW()`, the 077 partial index covers the scan).
 - Tests: reply → row exists; read-all → unread-count 0; blocked user →
   no row.
 
@@ -279,9 +296,14 @@ Run only after Phases 3–6 ship:
 ## 3. Execution order & dependency graph
 
 ```
-Phase 3  migrations 090-098        ← everything depends on this
-Phase 4  Lanes A-F (parallel)      ← each lane = one PR, independent
-         Lane G (importer + cron)  ← can start anytime after Phase 3
+Phase 3  ✅ DONE (072-079, commit f4cc60f)
+                                     ← only the §2 crate-mirror chores
+                                       remain; no lane needs a new migration
+                                       (next free number is 090+)
+Phase 4  Lanes A-F (parallel)      ← each lane = one PR, independent;
+                                     every lane builds on the shipped
+                                     072-079 tables, nothing else
+         Lane G (importer + cron)  ← can start anytime (tables exist)
 Phase 5  realtime                  ← needs Phase 4 emit-points (lane C/E first)
 Phase 6  frontend                  ← trails Phase 4/5 lane by lane:
                                       groups UI after A, polls after B,
@@ -300,9 +322,9 @@ Junior-dev sanity rules:
 
 ## 4. Verification checklist (per phase + final)
 
-1. Phase 3: `sqlx migrate run` twice (idempotent), `just check` compiles,
-   `psql -c '\dt forum_*'` shows all expected tables; standalone crate
-   boots: `cargo run -p forum-core --example standalone` (see quickstart.md §3).
+1. Phase 3: ✅ done — re-verify only the §2 chores: the mirrored
+   `crates/forum-core/migrations/` apply on a scratch DB, `just check`
+   compiles, `psql -c '\dt forum_*'` shows all expected tables.
 2. Phase 4 per lane: `just test` (unit), new `tests/forum_*_api.rs` green
    (`just test-db`), `just clippy` clean, curl each new endpoint with a
    logged-in cookie and confirm the `{err:0,…}` envelope + 400-on-auth shape.
@@ -355,4 +377,11 @@ Junior-dev sanity rules:
   `NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT LOGIN` to match the
   `OWNER TO fichub` lines in the existing migrations. **Phase 3 is
   done; Phases 4–7 (handlers, realtime, frontend, importer) remain.**
+- 2026-09-07 (hygiene pass): de-staled the §3 dependency graph — Phase 3
+  was still listed as "migrations 090-098 pending" after shipping as
+  072-079. Removed Lane E's reference to the nonexistent digest watermark
+  table (use `forum_notifications.scheduled_at`). Re-verified: uncommitted
+  WIP (flood control + `FORUM_MIN_POST_LEN`) still unlanded; no new
+  migrations since 089; git shows 6 modified files, `f4cc60f` on top.
+  No scope changes.
 

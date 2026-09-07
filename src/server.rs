@@ -1227,6 +1227,60 @@ fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
                 .post(crate::routes::forum::set_topic_tags)
                 .put(crate::routes::forum::set_topic_tags),
         )
+        // ── Lane A: groups + per-category privilege matrix ────────────
+        // (FicHub forum-nodebb spec §1.1 + §1.2; see
+        //  docs/specs/forum-nodebb/contracts/forum-groups-privileges.md)
+        .route(
+            "/api/forum/groups",
+            get(crate::routes::forum_groups::list_groups)
+                .post(crate::routes::forum_groups::create_group),
+        )
+        .route(
+            "/api/forum/groups/{groupId}",
+            get(crate::routes::forum_groups::get_group)
+                .patch(crate::routes::forum_groups::update_group)
+                .delete(crate::routes::forum_groups::delete_group),
+        )
+        .route(
+            "/api/forum/groups/{groupId}/join",
+            axum::routing::post(crate::routes::forum_groups::join_group),
+        )
+        .route(
+            "/api/forum/groups/{groupId}/leave",
+            axum::routing::post(crate::routes::forum_groups::leave_group),
+        )
+        .route(
+            "/api/forum/groups/{groupId}/invite",
+            axum::routing::post(crate::routes::forum_groups::invite_to_group),
+        )
+        .route(
+            "/api/forum/groups/{groupId}/members",
+            get(crate::routes::forum_groups::list_group_members),
+        )
+        .route(
+            "/api/forum/groups/{groupId}/members/{userId}/role",
+            axum::routing::post(crate::routes::forum_groups::change_member_role),
+        )
+        .route(
+            "/api/forum/groups/{groupId}/members/{userId}",
+            axum::routing::delete(crate::routes::forum_groups::remove_group_member),
+        )
+        .route(
+            "/api/forum/privileges",
+            get(crate::routes::forum_privileges::list_all_privs),
+        )
+        .route(
+            "/api/forum/categories/{id}/privileges",
+            get(crate::routes::forum_privileges::list_category_privs).post(
+                crate::routes::forum_privileges::grant_category_priv,
+            ),
+        )
+        .route(
+            "/api/forum/categories/{id}/privileges/{privilegeId}",
+            axum::routing::delete(
+                crate::routes::forum_privileges::revoke_category_priv,
+            ),
+        )
         // ── ActivityPub federation (NodeBB parity, opt-in via ACTIVITYPUB_ENABLED) ─
         .route(
             "/.well-known/webfinger",

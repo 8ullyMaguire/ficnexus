@@ -1,0 +1,34 @@
+-- forum-core: extend forum_topics, forum_posts, user_reports
+-- (FicHub spec §2, 078_forum_topics_posts_extend).
+--
+-- Stripped of `OWNER TO fichub` for crate portability. The `user_reports`
+-- extension is idempotent against the base migration that already
+-- re-defines its CHECK constraint; IF NOT EXISTS keeps both safe to apply.
+--
+-- Partial index note: NOW() is volatile, so a static predicate is used
+-- and the cron query applies `scheduled_at <= NOW()` at scan time. Same
+-- selectivity.
+
+ALTER TABLE forum_topics
+    ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ,       -- future publish time
+    ADD COLUMN IF NOT EXISTS poll_id BIGINT REFERENCES forum_polls(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS tags_locked BOOL NOT NULL DEFAULT FALSE,  -- mod-locked tags
+    ADD COLUMN IF NOT EXISTS teaser TEXT,                    -- auto-generated excerpt
+    ADD COLUMN IF NOT EXISTS thumb_url TEXT;                 -- first upload as thumbnail;
+
+CREATE INDEX IF NOT EXISTS idx_forum_topics_scheduled ON forum_topics (scheduled_at) WHERE scheduled_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_forum_topics_poll ON forum_topics (poll_id) WHERE poll_id IS NOT NULL;
+
+ALTER TABLE forum_posts
+    ADD COLUMN IF NOT EXISTS is_op BOOL NOT NULL DEFAULT FALSE,  -- denormalized for easy OP fetch
+    ADD COLUMN IF NOT EXISTS upload_count INT NOT NULL DEFAULT 0;
+
+-- user_reports extension is gated behind `IF EXISTS` so the crate stays
+-- usable on a fresh DB that has no reports table yet (the embedding app
+-- defines it). Idempotent against the base migration that already
+-- re-defines the table's CHECK constraint.
+ALTER TABLE IF EXISTS user_reports
+    ADD COLUMN IF NOT EXISTS weight INT NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS auto_status TEXT,  -- 'auto_hidden' | 'needs_admin' | NULL
+    ADD COLUMN IF NOT EXISTS resolved_by INT4,  -- FK users(id)
+    ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;
