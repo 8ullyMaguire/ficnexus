@@ -142,6 +142,10 @@ name = "backfill_body_search"
 path = "src/bin/backfill_body_search.rs"
 
 [[bin]]
+name = "publish-scheduled"
+path = "src/bin/publish_scheduled.rs"
+
+[[bin]]
 name = "seed-roadmap"
 path = "src/bin/seed_roadmap.rs"
 

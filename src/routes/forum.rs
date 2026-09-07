@@ -280,6 +280,10 @@ pub struct CreateTopicBody {
     pub body: String,
     #[serde(default)]
     pub payload: Option<Value>,
+    /// Future publish time (RFC3339). Must be in the future; the topic stays
+    /// hidden from listings until the publish-scheduled cron flips it.
+    #[serde(default)]
+    pub scheduled_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -288,6 +292,12 @@ pub struct UpdateTopicBody {
     pub title: Option<String>,
     #[serde(default)]
     pub body: Option<String>,
+    /// Reschedule (future) or publish now (null clears a pending schedule —
+    /// only the author or staff may clear).
+    #[serde(default)]
+    pub scheduled_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub clear_schedule: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1679,7 +1689,7 @@ pub async fn list_topics(
                   t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text,
                   (t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id, 0)) AS unread, rs.last_read_post_id
            FROM forum_topics t LEFT JOIN users u ON u.id = t.author_id LEFT JOIN forum_read_state rs ON rs.user_id = $4 AND rs.topic_id = t.id
-           WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND ($2::bigint IS NULL OR t.id < $2)
+           WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND t.scheduled_at IS NULL AND ($2::bigint IS NULL OR t.id < $2)
            ORDER BY t.status = 'pinned' DESC, (SELECT COUNT(*) FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL) DESC, t.id DESC LIMIT $3"#,
         ).bind(category_id).bind(cursor).bind(fetch_n).bind(user_id).fetch_all(&state.db).await?,
         "most_views" | "views" => sqlx::query_as(
@@ -1689,7 +1699,7 @@ pub async fn list_topics(
                   t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text,
                   (t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id, 0)) AS unread, rs.last_read_post_id
            FROM forum_topics t LEFT JOIN users u ON u.id = t.author_id LEFT JOIN forum_read_state rs ON rs.user_id = $4 AND rs.topic_id = t.id
-           WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND ($2::bigint IS NULL OR t.id < $2)
+           WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND t.scheduled_at IS NULL AND ($2::bigint IS NULL OR t.id < $2)
            ORDER BY t.status = 'pinned' DESC, t.view_count DESC, t.id DESC LIMIT $3"#,
         ).bind(category_id).bind(cursor).bind(fetch_n).bind(user_id).fetch_all(&state.db).await?,
         "most_votes" | "votes" => sqlx::query_as(
@@ -1699,7 +1709,7 @@ pub async fn list_topics(
                   t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text,
                   (t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id, 0)) AS unread, rs.last_read_post_id
            FROM forum_topics t LEFT JOIN users u ON u.id = t.author_id LEFT JOIN forum_read_state rs ON rs.user_id = $4 AND rs.topic_id = t.id
-           WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND ($2::bigint IS NULL OR t.id < $2)
+           WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND t.scheduled_at IS NULL AND ($2::bigint IS NULL OR t.id < $2)
            ORDER BY t.status = 'pinned' DESC, (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id) DESC, t.id DESC LIMIT $3"#,
         ).bind(category_id).bind(cursor).bind(fetch_n).bind(user_id).fetch_all(&state.db).await?,
         "oldest" | "old" => sqlx::query_as(
@@ -1709,7 +1719,7 @@ pub async fn list_topics(
                   t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text,
                   (t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id, 0)) AS unread, rs.last_read_post_id
            FROM forum_topics t LEFT JOIN users u ON u.id = t.author_id LEFT JOIN forum_read_state rs ON rs.user_id = $4 AND rs.topic_id = t.id
-           WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND ($2::bigint IS NULL OR t.id < $2)
+           WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND t.scheduled_at IS NULL AND ($2::bigint IS NULL OR t.id < $2)
            ORDER BY t.status = 'pinned' DESC, t.created_at ASC, t.id ASC LIMIT $3"#,
         ).bind(category_id).bind(cursor).bind(fetch_n).bind(user_id).fetch_all(&state.db).await?,
         _ => sqlx::query_as(
@@ -1719,7 +1729,7 @@ pub async fn list_topics(
                   t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text,
                   (t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id, 0)) AS unread, rs.last_read_post_id
            FROM forum_topics t LEFT JOIN users u ON u.id = t.author_id LEFT JOIN forum_read_state rs ON rs.user_id = $4 AND rs.topic_id = t.id
-           WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND ($2::bigint IS NULL OR t.id < $2)
+           WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND t.scheduled_at IS NULL AND ($2::bigint IS NULL OR t.id < $2)
            ORDER BY t.status = 'pinned' DESC, t.last_activity_at DESC, t.id DESC LIMIT $3"#,
         ).bind(category_id).bind(cursor).bind(fetch_n).bind(user_id).fetch_all(&state.db).await?,
     };
@@ -1805,7 +1815,7 @@ pub async fn unread_topics(
         t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text, c.slug, c.title
         FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id
         LEFT JOIN forum_read_state rs ON rs.user_id=$1 AND rs.topic_id=t.id
-        WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id,0)
+        WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND t.scheduled_at IS NULL AND t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id,0)
         AND ($2::bigint IS NULL OR t.id < $2) ORDER BY t.last_activity_at DESC, t.id DESC LIMIT $3"#)
         .bind(user_id).bind(cursor).bind(fetch_n).fetch_all(&state.db).await?;
     let has_more = rows.len() as i64 > limit;
@@ -1852,7 +1862,7 @@ pub async fn recent_topics(
         (t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id,0)) AS unread, c.slug, c.title
         FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id
         LEFT JOIN forum_read_state rs ON rs.user_id=$3 AND rs.topic_id=t.id
-        WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND ($4::bigint IS NULL OR t.category_id=$4) AND ($1::bigint IS NULL OR t.id < $1)
+        WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND t.scheduled_at IS NULL AND ($4::bigint IS NULL OR t.category_id=$4) AND ($1::bigint IS NULL OR t.id < $1)
         ORDER BY t.last_activity_at DESC, t.id DESC LIMIT $2"#)
         .bind(cursor).bind(fetch_n).bind(user_id).bind(cat_id).fetch_all(&state.db).await?;
     let has_more = rows.len() as i64 > limit;
@@ -1899,21 +1909,21 @@ pub async fn popular_topics(
             (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id)::bigint,
             t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text, c.slug, c.title
             FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id
-            WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND ($1::bigint IS NULL OR t.id < $1) ORDER BY (SELECT COUNT(*) FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL) DESC, t.id DESC LIMIT $2"#)
+            WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND t.scheduled_at IS NULL AND ($1::bigint IS NULL OR t.id < $1) ORDER BY (SELECT COUNT(*) FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL) DESC, t.id DESC LIMIT $2"#)
             .bind(cursor).bind(fetch_n).fetch_all(&state.db).await?,
         "votes" => sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
             (SELECT COUNT(*) - 1 FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL AND p.is_hidden=FALSE)::bigint,
             (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id)::bigint,
             t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text, c.slug, c.title
             FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id
-            WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND ($1::bigint IS NULL OR t.id < $1) ORDER BY (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id) DESC, t.id DESC LIMIT $2"#)
+            WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND t.scheduled_at IS NULL AND ($1::bigint IS NULL OR t.id < $1) ORDER BY (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id) DESC, t.id DESC LIMIT $2"#)
             .bind(cursor).bind(fetch_n).fetch_all(&state.db).await?,
         _ => sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
             (SELECT COUNT(*) - 1 FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL AND p.is_hidden=FALSE)::bigint,
             (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id)::bigint,
             t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text, c.slug, c.title
             FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id
-            WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND ($1::bigint IS NULL OR t.id < $1) ORDER BY t.view_count DESC, t.id DESC LIMIT $2"#)
+            WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND t.scheduled_at IS NULL AND ($1::bigint IS NULL OR t.id < $1) ORDER BY t.view_count DESC, t.id DESC LIMIT $2"#)
             .bind(cursor).bind(fetch_n).fetch_all(&state.db).await?,
     };
     let _ = (user_id, order_sql);
@@ -1947,9 +1957,9 @@ pub async fn forum_rss(
     };
     let _ = order;
     let rows: Vec<(i64, String, Option<String>, String, String)> = if feed == "popular" {
-        sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.created_at::text, c.title FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE ORDER BY t.view_count DESC, t.id DESC LIMIT $1"#).bind(limit).fetch_all(&state.db).await?
+        sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.created_at::text, c.title FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND t.scheduled_at IS NULL ORDER BY t.view_count DESC, t.id DESC LIMIT $1"#).bind(limit).fetch_all(&state.db).await?
     } else {
-        sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.created_at::text, c.title FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE ORDER BY t.last_activity_at DESC, t.id DESC LIMIT $1"#).bind(limit).fetch_all(&state.db).await?
+        sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.created_at::text, c.title FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND t.scheduled_at IS NULL ORDER BY t.last_activity_at DESC, t.id DESC LIMIT $1"#).bind(limit).fetch_all(&state.db).await?
     };
     let mut xml = String::from(
         r#"<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>FicNexus Forum</title><link>/forum</link><description>Recent topics</description>"#,
@@ -2213,9 +2223,12 @@ pub async fn topic_detail(
         String,
         Option<String>,
         Option<String>,
+        i32,
+        Option<chrono::DateTime<chrono::Utc>>,
     )> = sqlx::query_as(
         r#"SELECT u.username, c.slug, c.title, t.body, t.topic_slug, t.view_count,
-                      t.created_at::text, t.updated_at::text, t.payload::text
+                      t.created_at::text, t.updated_at::text, t.payload::text,
+                      t.author_id, t.scheduled_at
                FROM forum_topics t
                JOIN users u ON u.id = t.author_id
                JOIN forum_categories c ON c.id = t.category_id
@@ -2234,10 +2247,21 @@ pub async fn topic_detail(
         created_at,
         updated_at,
         payload,
+        topic_author_id,
+        topic_scheduled_at,
     )) = topic_row
     else {
         return Err(AppError::BadRequest("topic not found".to_string()));
     };
+    // Scheduled topics are invisible until published — except to the author
+    // and staff (who need to preview). 404-shape to avoid leaking existence.
+    if topic_scheduled_at.is_some() {
+        let viewer = auth.user_id.unwrap_or(0);
+        let staff = auth.level >= 50 || auth.role >= 10;
+        if !staff && viewer != topic_author_id {
+            return Err(AppError::BadRequest("topic not found".to_string()));
+        }
+    }
     let payload_value = payload
         .as_deref()
         .and_then(|p| serde_json::from_str::<Value>(p).ok())
@@ -2508,6 +2532,15 @@ pub async fn create_topic(
         return Err(AppError::Forbidden("Banned from the forum".to_string()));
     }
     check_category_priv(&state.db, &auth, user_id, category_id, "write").await?;
+    // Scheduled topics must publish in the future.
+    let scheduled_at = match body.scheduled_at {
+        Some(ts) if ts <= chrono::Utc::now() => {
+            return Err(AppError::BadRequest(
+                "scheduled_at must be in the future".to_string(),
+            ));
+        }
+        ts => ts,
+    };
     let payload = body.payload.unwrap_or(json!({}));
 
     // Marginalia gate: Level 5+ required
@@ -2588,8 +2621,8 @@ pub async fn create_topic(
 
     let mut tx = state.db.begin().await?;
     let topic_id: i64 = sqlx::query_scalar(
-        "INSERT INTO forum_topics (category_id, author_id, title, body, payload, search_vector)
-         VALUES ($1, $2, $3, $4, $5, to_tsvector('english', $3 || ' ' || $4))
+        "INSERT INTO forum_topics (category_id, author_id, title, body, payload, scheduled_at, search_vector)
+         VALUES ($1, $2, $3, $4, $5, $6, to_tsvector('english', $3 || ' ' || $4))
          RETURNING id",
     )
     .bind(category_id)
@@ -2597,6 +2630,7 @@ pub async fn create_topic(
     .bind(&title)
     .bind(&op_body)
     .bind(&payload)
+    .bind(scheduled_at)
     .fetch_one(&mut *tx)
     .await?;
     // Canonical slug: `{base}-{id}` — the id suffix guarantees uniqueness even
@@ -2677,6 +2711,7 @@ pub async fn create_topic(
         "id": topic_id,
         "post_id": post_id,
         "topic_slug": topic_slug,
+        "scheduled_at": scheduled_at,
         "msg": "Topic created"
     })))
 }
@@ -2721,6 +2756,28 @@ pub async fn update_topic(
         return Ok(Json(
             json!({"err":0,"id":id,"proposal_id":id,"status":"pending","msg":"Edit proposal submitted"}),
         ));
+    }
+    // Schedule handling: future timestamp reschedules; clear_schedule (or an
+    // explicit past value is rejected) publishes now. Only author/staff reach
+    // here, so no extra gate needed.
+    if let Some(clear) = body.clear_schedule {
+        if clear {
+            sqlx::query("UPDATE forum_topics SET scheduled_at = NULL WHERE id = $1")
+                .bind(topic_id)
+                .execute(&state.db)
+                .await?;
+        }
+    } else if let Some(ts) = body.scheduled_at {
+        if ts <= chrono::Utc::now() {
+            return Err(AppError::BadRequest(
+                "scheduled_at must be in the future".to_string(),
+            ));
+        }
+        sqlx::query("UPDATE forum_topics SET scheduled_at = $2 WHERE id = $1")
+            .bind(topic_id)
+            .bind(ts)
+            .execute(&state.db)
+            .await?;
     }
     sqlx::query(
         "UPDATE forum_topics SET title = $2, body = $3,
@@ -3341,7 +3398,7 @@ pub async fn search_forum(
            JOIN users u ON u.id = t.author_id
            JOIN forum_categories c ON c.id = t.category_id
            WHERE t.search_vector @@ to_tsquery($1::text)
-             AND t.deleted_at IS NULL AND t.is_hidden = FALSE
+             AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND t.scheduled_at IS NULL
              AND ($2::bigint IS NULL OR t.category_id = $2)
              AND ($4::boolean OR c.is_mod_only = FALSE)
            ORDER BY ts_rank(t.search_vector, to_tsquery($1::text)) DESC, t.id DESC
@@ -3379,7 +3436,7 @@ pub async fn search_forum(
            JOIN forum_categories c ON c.id = t.category_id
            WHERE p.search_vector @@ to_tsquery($1::text)
              AND p.deleted_at IS NULL AND p.is_hidden = FALSE
-             AND t.deleted_at IS NULL AND t.is_hidden = FALSE
+             AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND t.scheduled_at IS NULL
              AND ($2::bigint IS NULL OR t.category_id = $2)
              AND ($4::boolean OR c.is_mod_only = FALSE)
            ORDER BY ts_rank(p.search_vector, to_tsquery($1::text)) DESC, p.id DESC
