@@ -579,6 +579,48 @@ async fn require_trust_resolve(state: &AppState, auth: &AuthUser) -> Result<i16,
     Ok(level)
 }
 
+/// Privilege-matrix enforcement for write paths (Lane 5).
+///
+/// Open-by-default: a category with NO privilege rows keeps today's gates
+/// (ban/flood/trust at the call sites). A category becomes *restricted* the
+/// moment an admin grants any privilege row on it (or flips `is_mod_only`),
+/// and from then on `can()` decides (staff bypass inside, default deny).
+/// This preserves current behavior on prod (zero rows) while making the
+/// matrix meaningful where configured.
+pub(crate) async fn check_category_priv(
+    db: &sqlx::PgPool,
+    auth: &AuthUser,
+    user_id: i32,
+    category_id: i64,
+    privilege: &str,
+) -> Result<(), AppError> {
+    let restricted: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM forum_privileges WHERE category_id = $1)
+         OR COALESCE((SELECT is_mod_only FROM forum_categories WHERE id = $1), FALSE)",
+    )
+    .bind(category_id)
+    .fetch_one(db)
+    .await
+    .map_err(|e| AppError::Database(e.to_string()))?;
+    if !restricted {
+        return Ok(());
+    }
+    let allowed = crate::routes::forum_privileges::can(
+        db,
+        Some(user_id),
+        auth.level,
+        auth.role,
+        category_id,
+        privilege,
+    )
+    .await?;
+    if !allowed {
+        return Err(AppError::Forbidden(
+            "You don't have permission to post in this category".to_string(),
+        ));
+    }
+    Ok(())
+}
 /// Flood control: reject posts faster than FORUM_POST_DELAY_SECS (config,
 /// default 10s) per user, measured from their most recent topic or post.
 /// Staff (role ≥ 10) always passes. Returns the seconds the user must wait.
@@ -598,7 +640,7 @@ async fn check_flood(state: &AppState, auth: &AuthUser) -> Result<(), AppError> 
          ) recent",
     )
     .bind(auth.user_id.unwrap_or(0))
-    .fetch_optional(&state.db)
+    .fetch_one(&state.db)
     .await?;
     if let Some(last_ts) = last {
         let elapsed = chrono::Utc::now().signed_duration_since(last_ts).num_seconds();
@@ -2465,6 +2507,7 @@ pub async fn create_topic(
     if is_banned(&state, user_id, category_id).await? {
         return Err(AppError::Forbidden("Banned from the forum".to_string()));
     }
+    check_category_priv(&state.db, &auth, user_id, category_id, "write").await?;
     let payload = body.payload.unwrap_or(json!({}));
 
     // Marginalia gate: Level 5+ required
@@ -2823,6 +2866,7 @@ pub async fn create_post(
     if is_banned(&state, user_id, category_id).await? {
         return Err(AppError::Forbidden("Banned from the forum".to_string()));
     }
+    check_category_priv(&state.db, &auth, user_id, category_id, "reply").await?;
     check_flood(&state, &auth).await?;
     let post_body = validate_forum_body(&body.body, state.config.forum_min_post_len)?;
     let quote_of = body.quote_of;
