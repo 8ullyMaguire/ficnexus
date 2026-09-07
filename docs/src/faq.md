@@ -18,7 +18,9 @@ No! FicHub downloads stories from their original sites and converts them for you
 ## Downloading
 
 **What formats can I download?**
-EPUB (best for e-readers), HTML (best for browsers), PDF (best for printing), and MOBI (for older Kindles).
+EPUB (best for e-readers), HTML (best for browsers), PDF (best for printing),
+MOBI (older Kindles), AZW3 (newer Kindles), TXT, Markdown, KEPUB (Kobo), and
+DOCX. See [How to Download Fics](./downloading.md) for the full table.
 
 **Can I download multi-chapter stories?**
 Yes! FicHub grabs all chapters automatically.
@@ -54,7 +56,13 @@ Profile & Leaderboard](./profile.md)) are the active gates.
 **What is the forum?**
 A community discussion area (categories, topics, replies) with follows,
 notifications, full-text search, read-state tracking, moderation points,
-and metamoderation. It lives at `/forum`.
+and metamoderation. It lives at `/forum` — see [Community
+Forum](./forum.md) for the full guide.
+
+**How do I find a fic I remember the title of?**
+Type `Title by Author` (optionally `on Site`) into the Download tab, use
+the command palette (`Ctrl+K`), or follow the suggestions on a 404 work
+page. See [Find a fic by name](./searching.md#find-a-fic-by-name).
 
 ## Progression & Customization
 

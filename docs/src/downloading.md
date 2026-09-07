@@ -30,8 +30,26 @@ format and you're done.
 | **AZW3** | Newer Kindles (better than MOBI) |
 | **TXT** | Simple text, works everywhere |
 | **Markdown** | Developers, note-taking apps |
+| **KEPUB** | Kobo e-readers (enhanced EPUB) |
+| **DOCX** | Word processors, editing |
 
 **Tip:** EPUB is the most portable — it works on almost everything.
+MOBI/PDF/AZW3 need Calibre on the server and may take longer.
+
+## Choosing formats once, downloading everywhere
+
+Set your preferred formats in **Settings → Download formats** (or
+`GET /api/formats` for the canonical list of 9). Author and series
+bulk-downloads then bundle exactly those formats — one work × one format
+streams directly, anything bigger arrives as a ZIP with per-work folders.
+
+## Dual-mode input: URL *or* "Title by Author"
+
+The Download tab accepts two kinds of input: a story URL (the classic flow
+above), or plain text like `The Long Way Home by amusewithaview on AO3`.
+The find-fic parser splits title/author/site and searches the archive first
+— handy when you remember the story but not the link. See [Find a fic by
+name](./searching.md#find-a-fic-by-name).
 
 ## Pro tips
 

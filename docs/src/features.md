@@ -154,7 +154,15 @@ matches rise to the top.
 
 Follow fics, authors, and users; get an updates feed.
 - **Reading lists & shelves** — curate bundles and track your reading status
-- **Series & author pages** — browse an author's bibliography and series in order
+- **Series & author pages** — browse an author's bibliography (with an
+  AO3-style filter sidebar: sort, complete/in-progress, word-count range,
+  include/exclude tags) and series in order. Author pages show social links,
+  which curators can propose via quorum vote rather than editing directly.
+- **Reading time** — fic pages show an estimated reading time that accounts
+  for dialogue density (dialogue reads faster than prose).
+- **Smarter discovery** — Blind Date picks use your taste history, the reader
+  suggests what to read next from community reading sequences, and fic
+  requests without a seed work get semantic matches from the archive.
 - **RSS/Atom feeds** — subscribe to new arrivals and your follows in your feed reader
 - **Recommendations** — discover new stories
 - **Leaderboards** — see top contributors

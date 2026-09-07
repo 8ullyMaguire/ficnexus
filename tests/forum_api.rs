@@ -4009,6 +4009,98 @@ async fn f7_level_gate_curator() {
         .ok();
 }
 
+/// Regression (2026-09-07 prod outage): a stale pair of row triggers on
+/// `forum_topics` (`trg_forum_topics_search_vector` +
+/// `forum_topics_search_vector_update`) referenced a `forum_topic_tags.tag_id`
+/// column that migration 082 had removed. Every UPDATE on a topic row —
+/// including the `view_count + 1` bump in `topic_detail` — fired the broken
+/// function and turned GET /api/forum/topics/{id} into a 500.
+///
+/// Migration 089 drops both triggers + the orphan function (the Rust handlers
+/// maintain `search_vector` inline). This test pins the invariant two ways:
+///  1. No non-FK trigger may exist on forum_topics (FK constraint triggers
+///     are noise — filter them out).
+///  2. A raw UPDATE on a topic row must succeed — this is exactly the
+///     statement that used to abort inside the trigger.
+#[tokio::test]
+#[ignore]
+async fn regression_no_stale_forum_topic_triggers() {
+    let _g = db_guard();
+    let db = pool().await;
+
+    let triggers: Vec<String> = sqlx::query_scalar(
+        "SELECT tgname FROM pg_trigger
+          WHERE tgrelid = 'forum_topics'::regclass
+            AND tgname NOT LIKE 'RI_%'",
+    )
+    .fetch_all(&db)
+    .await
+    .expect("list forum_topics triggers");
+    assert!(
+        triggers.is_empty(),
+        "stale forum_topics triggers present (089 must drop them): {triggers:?}"
+    );
+
+    let orphan: Option<String> = sqlx::query_scalar(
+        "SELECT proname FROM pg_proc WHERE proname = 'forum_topics_search_vector_update'",
+    )
+    .fetch_optional(&db)
+    .await
+    .expect("orphan function lookup");
+    assert!(
+        orphan.is_none(),
+        "orphan function forum_topics_search_vector_update still exists"
+    );
+}
+
+/// End-to-end half of the same regression: seed a topic, then UPDATE the row
+/// (what topic_detail's view-count bump does) and read it back through the
+/// real handler — must be err:0, not a 500.
+#[tokio::test]
+#[ignore]
+async fn regression_topic_update_survives_view_count_bump() {
+    let _g = db_guard();
+    let db = pool().await;
+    let u = "fr_regress_trig_author";
+    let uid = seed_user(&db, u).await;
+    wipe_forum_for_users(&db, &[u]).await;
+    sqlx::query("DELETE FROM forum_categories WHERE slug = 'fr-regress-trig'")
+        .execute(&db)
+        .await
+        .ok();
+    let cid = seed_category(&db, "fr-regress-trig", "Regress Trig").await;
+    let tid = seed_topic(&db, cid, uid, "fr regress trigger topic").await;
+
+    // The exact statement class that used to fire the broken trigger.
+    let bumped: i64 = sqlx::query_scalar(
+        "UPDATE forum_topics SET view_count = view_count + 1 WHERE id = $1 RETURNING view_count",
+    )
+    .bind(tid)
+    .fetch_one(&db)
+    .await
+    .expect("view_count bump must not abort in a trigger");
+    assert_eq!(bumped, 1, "first bump lands on 0-seeded topic");
+
+    // And the handler path returns err:0 with the bumped count.
+    let app = app().await;
+    let token = auth_header(uid, u, 0);
+    let (s, b) = get_json(&app, &format!("/api/forum/topics/{tid}"), Some(&token)).await;
+    assert_eq!(s, StatusCode::OK, "detail after bump: {b}");
+    assert_eq!(b["err"], 0, "detail err after bump: {b}");
+
+    // Cleanup
+    sqlx::query("DELETE FROM forum_categories WHERE id = $1")
+        .bind(cid)
+        .execute(&db)
+        .await
+        .ok();
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(u)
+        .execute(&db)
+        .await
+        .ok();
+}
+
 #[tokio::test]
 #[ignore]
 async fn f7_level_gate_admin() {

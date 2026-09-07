@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "light";
-            window.path_to_searchindex_js = "searchindex-eeaeca7c.js";
+            window.path_to_searchindex_js = "searchindex-84f14ab3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-d9f53dff.js"></script>
+        <script src="toc-9e2a5dc5.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -210,10 +210,24 @@ format and you’re done.</p>
 <tr><td><strong>AZW3</strong></td><td>Newer Kindles (better than MOBI)</td></tr>
 <tr><td><strong>TXT</strong></td><td>Simple text, works everywhere</td></tr>
 <tr><td><strong>Markdown</strong></td><td>Developers, note-taking apps</td></tr>
+<tr><td><strong>KEPUB</strong></td><td>Kobo e-readers (enhanced EPUB)</td></tr>
+<tr><td><strong>DOCX</strong></td><td>Word processors, editing</td></tr>
 </tbody>
 </table>
 </div>
-<p><strong>Tip:</strong> EPUB is the most portable — it works on almost everything.</p>
+<p><strong>Tip:</strong> EPUB is the most portable — it works on almost everything.
+MOBI/PDF/AZW3 need Calibre on the server and may take longer.</p>
+<h2 id="choosing-formats-once-downloading-everywhere"><a class="header" href="#choosing-formats-once-downloading-everywhere">Choosing formats once, downloading everywhere</a></h2>
+<p>Set your preferred formats in <strong>Settings → Download formats</strong> (or
+<code>GET /api/formats</code> for the canonical list of 9). Author and series
+bulk-downloads then bundle exactly those formats — one work × one format
+streams directly, anything bigger arrives as a ZIP with per-work folders.</p>
+<h2 id="dual-mode-input-url-or-title-by-author"><a class="header" href="#dual-mode-input-url-or-title-by-author">Dual-mode input: URL <em>or</em> “Title by Author”</a></h2>
+<p>The Download tab accepts two kinds of input: a story URL (the classic flow
+above), or plain text like <code>The Long Way Home by amusewithaview on AO3</code>.
+The find-fic parser splits title/author/site and searches the archive first
+— handy when you remember the story but not the link. See <a href="./searching.html#find-a-fic-by-name">Find a fic by
+name</a>.</p>
 <h2 id="pro-tips"><a class="header" href="#pro-tips">Pro tips</a></h2>
 <ul>
 <li><strong>Bookmarklet</strong>: drag the “FicHub ↗” link to your bookmarks bar. Then when

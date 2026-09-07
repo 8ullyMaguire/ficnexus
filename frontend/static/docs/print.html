@@ -37,10 +37,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "light";
-            window.path_to_searchindex_js = "searchindex-eeaeca7c.js";
+            window.path_to_searchindex_js = "searchindex-84f14ab3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-d9f53dff.js"></script>
+        <script src="toc-9e2a5dc5.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -395,10 +395,24 @@ format and you’re done.</p>
 <tr><td><strong>AZW3</strong></td><td>Newer Kindles (better than MOBI)</td></tr>
 <tr><td><strong>TXT</strong></td><td>Simple text, works everywhere</td></tr>
 <tr><td><strong>Markdown</strong></td><td>Developers, note-taking apps</td></tr>
+<tr><td><strong>KEPUB</strong></td><td>Kobo e-readers (enhanced EPUB)</td></tr>
+<tr><td><strong>DOCX</strong></td><td>Word processors, editing</td></tr>
 </tbody>
 </table>
 </div>
-<p><strong>Tip:</strong> EPUB is the most portable — it works on almost everything.</p>
+<p><strong>Tip:</strong> EPUB is the most portable — it works on almost everything.
+MOBI/PDF/AZW3 need Calibre on the server and may take longer.</p>
+<h2 id="choosing-formats-once-downloading-everywhere"><a class="header" href="#choosing-formats-once-downloading-everywhere">Choosing formats once, downloading everywhere</a></h2>
+<p>Set your preferred formats in <strong>Settings → Download formats</strong> (or
+<code>GET /api/formats</code> for the canonical list of 9). Author and series
+bulk-downloads then bundle exactly those formats — one work × one format
+streams directly, anything bigger arrives as a ZIP with per-work folders.</p>
+<h2 id="dual-mode-input-url-or-title-by-author"><a class="header" href="#dual-mode-input-url-or-title-by-author">Dual-mode input: URL <em>or</em> “Title by Author”</a></h2>
+<p>The Download tab accepts two kinds of input: a story URL (the classic flow
+above), or plain text like <code>The Long Way Home by amusewithaview on AO3</code>.
+The find-fic parser splits title/author/site and searches the archive first
+— handy when you remember the story but not the link. See <a href="#find-a-fic-by-name">Find a fic by
+name</a>.</p>
 <h2 id="pro-tips"><a class="header" href="#pro-tips">Pro tips</a></h2>
 <ul>
 <li><strong>Bookmarklet</strong>: drag the “FicHub ↗” link to your bookmarks bar. Then when
@@ -531,6 +545,21 @@ on any chip to remove just that filter, or <strong>✕ Clear all</strong> to res
 tags matching your bookmarks — marked <strong>for you</strong>). Click a suggestion to add it
 as a filter. Suggestions you already filtered by are hidden, and the row disappears
 if the suggestion service is unavailable.</p>
+<h2 id="find-a-fic-by-name"><a class="header" href="#find-a-fic-by-name">Find a fic by name</a></h2>
+<p>Already know the story and just want its archive page? Three ways in:</p>
+<ul>
+<li><strong>Download tab, dual-mode box</strong> — type <code>Title by Author</code> (optionally <code>on Site</code>, e.g. <code>on AO3</code>) instead of a URL. FicHub parses the title/author/site
+and shows matching works already in the archive. If nothing matches and you
+pasted a URL instead, the normal download flow takes over.</li>
+<li><strong>Command palette (<code>Ctrl+K</code>)</strong> — type the title; a “🔍 Find fic” row jumps
+to the archive match.</li>
+<li><strong>Work pages that 404</strong> — a dead work link offers “did you mean …”
+suggestions from fuzzy title matching, plus a one-click “Request this fic”
+button that prefills a Fic Request.</li>
+</ul>
+<p>New Fic Requests also auto-suggest: as you type the title/body on
+<code>/requests/new</code>, a dismissible box lists up to 5 works already in the
+archive so duplicates get caught before posting.</p>
 <h2 id="advanced-filters"><a class="header" href="#advanced-filters">Advanced Filters</a></h2>
 <p>Click <strong>▸ Show Advanced Filters</strong> to see all the options:</p>
 <h3 id="tags"><a class="header" href="#tags">Tags</a></h3>
@@ -670,6 +699,111 @@ and topics for talking about anything — stories, recs, the site, and more.</p>
 <h2 id="who-can-see-my-comments"><a class="header" href="#who-can-see-my-comments">Who can see my comments?</a></h2>
 <p>Your comments are public and linked to your username. If you want to comment
 anonymously, you’d need to do that on the original site.</p>
+<hr>
+<p><em>Next: <a href="#getting-recommendations">Getting Recommendations</a></em></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="community-forum"><a class="header" href="#community-forum">Community Forum</a></h1>
+<p>The <a href="/forum">forum</a> is where the community talks — fic discussion, meta,
+announcements, and everything that doesn’t fit in a comment thread.
+Categories hold topics, topics hold posts, and the system remembers where
+you left off in every thread.</p>
+<p>You need an account to post. Reading is open to everyone (unless an admin
+sets <code>FORUM_PUBLIC_READ=false</code>); mod-only categories stay hidden from
+anonymous visitors.</p>
+<h2 id="reading"><a class="header" href="#reading">Reading</a></h2>
+<ul>
+<li><strong>Categories</strong> (<code>/forum</code>) — every visible category with topic and unread
+counts.</li>
+<li><strong>Topics in a category</strong> (<code>/forum/{category}</code>) — newest activity first,
+cursor-paginated.</li>
+<li><strong>A topic</strong> (<code>/forum/board/{slug}.{id}</code>) — the opening post plus replies.
+Every topic gets a stable slug URL at creation (e.g.
+<code>/forum/board/what-s-your-opinion-on-the-site.42</code>) generated from the
+title. The slug never changes, so links keep working even if the topic is
+renamed. The older <code>/forum/{category}/{id}</code> URLs still work.</li>
+<li><strong>Views that help you catch up</strong> — <code>/forum/recent</code> (latest activity),
+<code>/forum/unread</code> (topics with posts you haven’t read, login required),
+<code>/forum/popular</code> (most-viewed), and a per-topic RSS feed at
+<code>/api/forum/rss</code>.</li>
+<li><strong>Read state</strong> — opening a topic marks it read; unread topics show a dot /
+badge. You can also mark a topic read explicitly
+(<code>POST /api/forum/topics/{id}/read</code>), e.g. to skip a long thread.</li>
+<li><strong>Preferences</strong> — posts-per-page and topic sort order live in
+<code>GET/PUT /api/forum/preferences</code> and apply across your sessions.</li>
+</ul>
+<h2 id="posting"><a class="header" href="#posting">Posting</a></h2>
+<ul>
+<li><strong>New topic</strong> (<code>/forum/new</code> or <code>POST /api/forum/topics</code>) — pick a
+category, write a title (max 120 characters) and a body (max 20,000
+characters). The first post becomes the topic’s opening post.</li>
+<li><strong>Reply</strong> (<code>POST /api/forum/topics/{id}/posts</code>) — plain body, optional
+<code>quote_of</code> to quote another post (the topic page renders a preview of the
+quoted post).</li>
+<li><strong>Tags</strong> — topics can carry free-text tags
+(<code>GET/POST /api/forum/topics/{id}/tags</code>), which feed the topic’s
+full-text search entry so tag words help the topic surface in search.</li>
+<li><strong>Editing</strong> — the topic/post author can edit directly, and every edit is
+recorded in immutable history (<code>GET /api/forum/edits/{topic|post}/{id}</code>).
+Non-authors (below curator level) can <em>propose</em> an edit instead; curators
+review the proposal queue (<code>GET /api/forum/edits/queue</code>,
+<code>POST /api/forum/edits/{id}/review</code>) and approve or reject it.</li>
+<li><strong>Deleting</strong> — authors can soft-delete their own topics/posts; curators
+can delete anything. Deleted content is hidden, not purged.</li>
+<li><strong>Mentions</strong> — write <code>@username</code> in a reply and the mentioned user gets a
+notification (deduped against users already notified as followers).</li>
+</ul>
+<h2 id="following--notifications"><a class="header" href="#following--notifications">Following &amp; notifications</a></h2>
+<ul>
+<li><strong>Follow a topic</strong> (<code>POST /api/forum/topics/{id}/follow</code> toggles,
+<code>GET …/follow</code> reads state) to get a <code>forum_reply</code> notification whenever
+someone replies. The reply author is never notified of their own post.</li>
+<li>Notifications link straight back to the topic’s board URL and carry the
+topic id, so clients can deep-link and badge correctly.</li>
+</ul>
+<h2 id="search"><a class="header" href="#search">Search</a></h2>
+<p><code>/forum/search</code> (or <code>GET /api/forum/search?q=…&amp;category=…</code>) runs full-text
+search over topic titles/bodies <em>and</em> post bodies, ranked by relevance with
+<code>&lt;mark&gt;</code>-highlighted snippets. Anonymous visitors only see public
+categories. Limit is capped at 50 per page and <code>next_cursor</code> is always null
+(deterministic ordering: rank, then post id, then topic id).</p>
+<p>For fic search rather than forum search, see <a href="#finding-great-stories">Finding Great
+Stories</a> — including the find-fic-by-name box and For-You
+chips.</p>
+<h2 id="moderation-points--metamoderation"><a class="header" href="#moderation-points--metamoderation">Moderation points &amp; metamoderation</a></h2>
+<p>Instead of a small fixed mod team, trusted members earn <strong>moderation
+points</strong> and spend them from the queue:</p>
+<ul>
+<li><strong>Status</strong> (<code>GET /api/forum/moderation/status</code>) — your points, window
+expiry, and eligibility.</li>
+<li><strong>Queue</strong> (<code>GET /api/forum/moderation/queue</code>) — posts needing attention,
+reported and low-score first.</li>
+<li><strong>Moderate</strong> (<code>POST /api/forum/posts/{postId}/moderate</code> with a <code>reason</code>) —
+spends one point; reasons map to score deltas server-side. You can’t
+moderate your own posts or the same post twice.</li>
+<li><strong>History</strong> (<code>GET /api/forum/posts/{postId}/moderations</code>) — the public
+moderation history of a post, mirroring the modlog.</li>
+<li><strong>Metamoderation</strong> — moderator actions are audited anonymously:
+<code>GET /api/forum/metamod/queue</code> serves random under-reviewed actions with
+the moderator anonymized, and you vote <code>fair</code> / <code>unfair</code> / <code>unsure</code>
+(<code>POST /api/forum/metamod/{actionId}/vote</code>). Rolling unfair-rates and
+cooldowns keep the system honest. Full detail on a grant at
+<code>GET /api/forum/metamod/grants/{id}</code> (+ <code>/verdict</code> to resolve).</li>
+<li><strong>Curator fast-hide</strong> (<code>POST /api/admin/forum/hide/{postId}</code>, auto-expires
+after 72h), <strong>lock / pin topics</strong>
+(<code>POST /api/admin/forum/topics/{id}/lock|pin</code>), and <strong>scoped bans</strong>
+(<code>POST /api/admin/forum/bans</code> with <code>scope: forum|category</code>) round out the
+toolkit. Bans block forum writes only — reading and fic features keep
+working. Your per-user grants are visible at
+<code>GET /api/forum/moderation/user/{userId}/grants</code>.</li>
+</ul>
+<p>All of this is level-gated: your <a href="#your-profile--leaderboard">level</a> (not just your role
+label) decides whether you can moderate, fast-hide, or run admin actions.
+Every action lands in the public <a href="/modlog">modlog</a> — see
+<a href="#transparency-moderation-log--usage-analytics">Transparency</a>.</p>
+<h2 id="reactions"><a class="header" href="#reactions">Reactions</a></h2>
+<p>Posts accept emoji reactions (<code>POST /api/forum/posts/{id}/react</code>,
+<code>GET …/reactions</code>, <code>DELETE …/reactions</code>) — a lightweight positive-only
+signal alongside the moderation-points system.</p>
 <hr>
 <p><em>Next: <a href="#getting-recommendations">Getting Recommendations</a></em></p>
 <div style="break-before: page; page-break-before: always;"></div>
@@ -973,7 +1107,7 @@ and the requester can accept the best answer to mark the request resolved.</p>
 offers “Turn this into a request”, prefilling the prompt; and a request
 page’s “Ask the Archive” box surfaces fics already in the library that fit
 the prompt, each one click away from becoming an answer.</p>
-<h3 id="community-forum"><a class="header" href="#community-forum">Community Forum</a></h3>
+<h3 id="community-forum-1"><a class="header" href="#community-forum-1">Community Forum</a></h3>
 <p>The <a href="/forum">forum</a> is where the community talks — categories, topics, and
 replies, plus:</p>
 <ul>
@@ -1000,7 +1134,15 @@ matches rise to the top.</p>
 <p>Follow fics, authors, and users; get an updates feed.</p>
 <ul>
 <li><strong>Reading lists &amp; shelves</strong> — curate bundles and track your reading status</li>
-<li><strong>Series &amp; author pages</strong> — browse an author’s bibliography and series in order</li>
+<li><strong>Series &amp; author pages</strong> — browse an author’s bibliography (with an
+AO3-style filter sidebar: sort, complete/in-progress, word-count range,
+include/exclude tags) and series in order. Author pages show social links,
+which curators can propose via quorum vote rather than editing directly.</li>
+<li><strong>Reading time</strong> — fic pages show an estimated reading time that accounts
+for dialogue density (dialogue reads faster than prose).</li>
+<li><strong>Smarter discovery</strong> — Blind Date picks use your taste history, the reader
+suggests what to read next from community reading sequences, and fic
+requests without a seed work get semantic matches from the archive.</li>
 <li><strong>RSS/Atom feeds</strong> — subscribe to new arrivals and your follows in your feed reader</li>
 <li><strong>Recommendations</strong> — discover new stories</li>
 <li><strong>Leaderboards</strong> — see top contributors</li>
@@ -1171,6 +1313,50 @@ it shares FicHub’s Redis only for a transient pagination cache so <code>!next<
 <li><code>/link &lt;username&gt; &lt;password&gt;</code> — exchanges credentials <strong>once</strong> via <code>POST /api/auth/login</code>, stores only the JWT in Redis (<code>archivist:token:&lt;discord_id&gt;</code>, TTL 30d, refreshed on use). Passwords are never persisted.</li>
 <li><code>/unlink</code>, <code>/whoami</code>.</li>
 </ul>
+<h2 id="lemmy--activitypub-adapter-fanfic_archivist"><a class="header" href="#lemmy--activitypub-adapter-fanfic_archivist">Lemmy / ActivityPub adapter (fanfic_archivist)</a></h2>
+<p>The same bot also federates as <code>@fanfic_archivist@ficnexus.polarisocial.xyz</code>
+— a first-class ActivityPub actor served by ficnexus itself
+(<code>src/activitypub/</code>), so Lemmy instances (e.g. reddthat.com) and the wider
+Fediverse can follow it, mention it, and receive its posts.</p>
+<h3 id="configuration"><a class="header" href="#configuration">Configuration</a></h3>
+<pre><code class="language-env">ACTIVITYPUB_ENABLED=true
+ACTIVITYPUB_DOMAIN=ficnexus.polarisocial.xyz
+ACTIVITYPUB_ALLOW_LOOPBACK=false   # true only for local testing
+ACTIVITYPUB_BOT_USERNAME=fanfic_archivist
+</code></pre>
+<p>(The <code>BOT_USERNAME</code> is separate from <code>NODE_NAME</code> on purpose — node names
+feed agent/exporter pipelines and must not be repurposed.) Keys are
+auto-generated into the <code>ap_keys</code> table (RSA-2048) on first run.</p>
+<h3 id="endpoints-served-by-ficnexus"><a class="header" href="#endpoints-served-by-ficnexus">Endpoints (served by ficnexus)</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Endpoint</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td><code>GET /actor</code></td><td>Actor document (<code>preferredUsername: fanfic_archivist</code>)</td></tr>
+<tr><td><code>POST /actor/inbox</code></td><td>Receives <code>Create</code> / <code>Like</code> / <code>Follow</code> / <code>Announce</code> (HTTP-signature required — unsigned POSTs get 401)</td></tr>
+<tr><td><code>GET /api/activitypub/status</code></td><td><code>{"enabled":true,"domain":…}</code> health check</td></tr>
+</tbody>
+</table>
+</div>
+<p>Inbound activities validate HTTP signatures + <code>Digest</code> headers
+(<code>src/activitypub/signatures.rs</code>) and land in <code>ap_inbox_log</code>.</p>
+<h3 id="mention-monitoring-lemmy-communities"><a class="header" href="#mention-monitoring-lemmy-communities">Mention monitoring (Lemmy communities)</a></h3>
+<p>Point the bot at a Lemmy community (e.g. the fanfiction community on
+reddthat.com) and it watches its inbox for mentions. The Python reference
+bots under <code>~/code/python/lemmy/</code> show the complementary half of the
+pattern: <code>Reddit-Lemmy-Repost-bot/bot.py</code> (Reddit→Lemmy reposting with PRAW)
+and <code>lemmy-rss-pybot/</code> (RSS→Lemmy with keyword filtering). The Rust side
+posts back out via <code>src/activitypub/outbox.rs</code>, signing with the actor key.</p>
+<h3 id="operator-notes"><a class="header" href="#operator-notes">Operator notes</a></h3>
+<ul>
+<li>Credentials and instance URLs live in <code>/opt/ficnexus/.env</code> on the server —
+never in the repo.</li>
+<li>Verify live: <code>curl https://ficnexus.polarisocial.xyz/actor</code> should return
+the actor JSON; <code>curl -X POST …/actor/inbox</code> without a signature should
+return 401 (not 404).</li>
+</ul>
 <h3 id="honest-limitation"><a class="header" href="#honest-limitation">Honest limitation</a></h3>
 <p>The recommendation engine learns from what people like on the archive. Until a
 few users like a few fics, “personalized” recs won’t be proper — the more it’s
@@ -1262,7 +1448,9 @@ Yes. It doesn’t collect personal info, doesn’t track you, and doesn’t show
 No! FicHub downloads stories from their original sites and converts them for you. The stories always stay on their original sites.</p>
 <h2 id="downloading"><a class="header" href="#downloading">Downloading</a></h2>
 <p><strong>What formats can I download?</strong>
-EPUB (best for e-readers), HTML (best for browsers), PDF (best for printing), and MOBI (for older Kindles).</p>
+EPUB (best for e-readers), HTML (best for browsers), PDF (best for printing),
+MOBI (older Kindles), AZW3 (newer Kindles), TXT, Markdown, KEPUB (Kobo), and
+DOCX. See <a href="#how-to-download-fics">How to Download Fics</a> for the full table.</p>
 <p><strong>Can I download multi-chapter stories?</strong>
 Yes! FicHub grabs all chapters automatically.</p>
 <p><strong>Why did I get “Unknown Title”?</strong>
@@ -1290,7 +1478,12 @@ Profile &amp; Leaderboard</a>) are the active gates.</p>
 <p><strong>What is the forum?</strong>
 A community discussion area (categories, topics, replies) with follows,
 notifications, full-text search, read-state tracking, moderation points,
-and metamoderation. It lives at <code>/forum</code>.</p>
+and metamoderation. It lives at <code>/forum</code> — see <a href="#community-forum">Community
+Forum</a> for the full guide.</p>
+<p><strong>How do I find a fic I remember the title of?</strong>
+Type <code>Title by Author</code> (optionally <code>on Site</code>) into the Download tab, use
+the command palette (<code>Ctrl+K</code>), or follow the suggestions on a 404 work
+page. See <a href="#find-a-fic-by-name">Find a fic by name</a>.</p>
 <h2 id="progression--customization"><a class="header" href="#progression--customization">Progression &amp; Customization</a></h2>
 <p><strong>How do I earn XP?</strong>
 Read, download, bookmark, rate, review, comment, post in the forum, and
@@ -1322,7 +1515,7 @@ is later renamed. The old <code>/forum/{category}/{id}</code> URLs still work to
 Trusted members earn moderation points; moderating from the queue spends
 one. Moderator actions are audited (metamoderation) so the community can
 vote on whether each was fair.</p>
-<h2 id="search"><a class="header" href="#search">Search</a></h2>
+<h2 id="search-1"><a class="header" href="#search-1">Search</a></h2>
 <p><strong>Why is FicHub search better than AO3?</strong>
 FicHub supports full boolean queries (<code>AND</code>/<code>OR</code>/<code>NOT</code>), quoted phrases,
 fielded search (<code>title:</code>, <code>author:</code>, <code>fandom:</code>), exclusions (<code>-angst</code>),

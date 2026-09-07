@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Self-Healing - FicHub Docs</title>
+        <title>Community Forum - FicHub Docs</title>
 
 
         <!-- Custom HTML head -->
@@ -178,119 +178,120 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="self-healing--scrape-failure-telemetry"><a class="header" href="#self-healing--scrape-failure-telemetry">Self-Healing &amp; Scrape Failure Telemetry</a></h1>
-<blockquote>
-<p>Status: milestone 1 (failure telemetry + diagnose-only agent trigger)
-implemented. Autonomy is OFF by default (<code>AGENT_ENABLED=false</code>).</p>
-</blockquote>
-<p>FicHub records every scrape failure, classifies it, and (when enabled) asks
-an LLM agent to diagnose the cause. This chapter is for operators running
-the live instance.</p>
-<h2 id="site-as-a-cache-of-gathered-fanfiction"><a class="header" href="#site-as-a-cache-of-gathered-fanfiction">Site as a cache of gathered fanfiction</a></h2>
-<p>Every successfully scraped fic body is persisted on the attached drive
-(<code>BODY_CACHE_DIR</code>, default <code>/public/literature/fichub/bodies</code>), NOT in the
-database. Layout is two-level hex sharding on <code>url_id</code> (git-objects style),
-versioned per fix:</p>
+                        <h1 id="community-forum"><a class="header" href="#community-forum">Community Forum</a></h1>
+<p>The <a href="/forum">forum</a> is where the community talks — fic discussion, meta,
+announcements, and everything that doesn’t fit in a comment thread.
+Categories hold topics, topics hold posts, and the system remembers where
+you left off in every thread.</p>
+<p>You need an account to post. Reading is open to everyone (unless an admin
+sets <code>FORUM_PUBLIC_READ=false</code>); mod-only categories stay hidden from
+anonymous visitors.</p>
+<h2 id="reading"><a class="header" href="#reading">Reading</a></h2>
 <ul>
-<li><code>bodies/{url_id[0:2]}/{url_id[2:4]}/{url_id}.v{version}.html</code> — the
-extracted body HTML (so a bad extraction can be re-done from saved
-content without re-scraping).</li>
-<li><code>bodies/{url_id[0:2]}/{url_id[2:4]}/{url_id}.v{version}.json</code> — the
-structured chapters the exports render.</li>
+<li><strong>Categories</strong> (<code>/forum</code>) — every visible category with topic and unread
+counts.</li>
+<li><strong>Topics in a category</strong> (<code>/forum/{category}</code>) — newest activity first,
+cursor-paginated.</li>
+<li><strong>A topic</strong> (<code>/forum/board/{slug}.{id}</code>) — the opening post plus replies.
+Every topic gets a stable slug URL at creation (e.g.
+<code>/forum/board/what-s-your-opinion-on-the-site.42</code>) generated from the
+title. The slug never changes, so links keep working even if the topic is
+renamed. The older <code>/forum/{category}/{id}</code> URLs still work.</li>
+<li><strong>Views that help you catch up</strong> — <code>/forum/recent</code> (latest activity),
+<code>/forum/unread</code> (topics with posts you haven’t read, login required),
+<code>/forum/popular</code> (most-viewed), and a per-topic RSS feed at
+<code>/api/forum/rss</code>.</li>
+<li><strong>Read state</strong> — opening a topic marks it read; unread topics show a dot /
+badge. You can also mark a topic read explicitly
+(<code>POST /api/forum/topics/{id}/read</code>), e.g. to skip a long thread.</li>
+<li><strong>Preferences</strong> — posts-per-page and topic sort order live in
+<code>GET/PUT /api/forum/preferences</code> and apply across your sessions.</li>
 </ul>
-<p>Exports reuse the cached body (no re-scrape). Version bumps GC old files
-for the same url_id (bounded disk, no background job).</p>
-<p>Curator fixes go through <strong>peer voting</strong> — a single curator cannot silently
-replace a fic’s content:</p>
+<h2 id="posting"><a class="header" href="#posting">Posting</a></h2>
 <ul>
-<li><code>POST /api/curator/content/{url_id}/propose</code> — submit a fix proposal
-(body_html + reason) → <code>pending</code>.</li>
-<li><code>POST /api/curator/content/proposals/{id}/vote</code> — other curators vote
-up/down (no self-vote). At quorum (≥2 votes) with net ≥ 1 the fix is
-<strong>applied</strong> (body blob written at the next version); net &lt; 0 → rejected.</li>
-<li><code>GET /api/curator/content/proposals?status=pending</code> — review queue.</li>
-<li><code>GET /api/curator/content/{url_id}</code> — inspect what was gathered.</li>
-<li><code>DELETE /api/curator/content/{url_id}</code> — delete the blob, force a
-re-scrape (safe: only triggers re-scrape, doesn’t replace content).</li>
+<li><strong>New topic</strong> (<code>/forum/new</code> or <code>POST /api/forum/topics</code>) — pick a
+category, write a title (max 120 characters) and a body (max 20,000
+characters). The first post becomes the topic’s opening post.</li>
+<li><strong>Reply</strong> (<code>POST /api/forum/topics/{id}/posts</code>) — plain body, optional
+<code>quote_of</code> to quote another post (the topic page renders a preview of the
+quoted post).</li>
+<li><strong>Tags</strong> — topics can carry free-text tags
+(<code>GET/POST /api/forum/topics/{id}/tags</code>), which feed the topic’s
+full-text search entry so tag words help the topic surface in search.</li>
+<li><strong>Editing</strong> — the topic/post author can edit directly, and every edit is
+recorded in immutable history (<code>GET /api/forum/edits/{topic|post}/{id}</code>).
+Non-authors (below curator level) can <em>propose</em> an edit instead; curators
+review the proposal queue (<code>GET /api/forum/edits/queue</code>,
+<code>POST /api/forum/edits/{id}/review</code>) and approve or reject it.</li>
+<li><strong>Deleting</strong> — authors can soft-delete their own topics/posts; curators
+can delete anything. Deleted content is hidden, not purged.</li>
+<li><strong>Mentions</strong> — write <code>@username</code> in a reply and the mentioned user gets a
+notification (deduped against users already notified as followers).</li>
 </ul>
-<p>All gated to role ≥ 10 (400-as-403 convention).</p>
-<h2 id="failure-telemetry"><a class="header" href="#failure-telemetry">Failure telemetry</a></h2>
-<p>Every failed scrape lands in the <code>scrape_failures</code> table:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Column</th><th>Meaning</th></tr>
-</thead>
-<tbody>
-<tr><td><code>url</code> / <code>url_id</code></td><td>the requested fic URL</td></tr>
-<tr><td><code>domain</code></td><td>host (e.g. <code>royalroad.com</code>)</td></tr>
-<tr><td><code>error_kind</code></td><td><code>blocked</code> / <code>timeout</code> / <code>parse</code> / <code>not_found</code> / <code>export</code> / <code>unknown</code></td></tr>
-<tr><td><code>message</code></td><td>scraper error text</td></tr>
-<tr><td><code>html_snapshot_path</code></td><td>captured page (parse failures only, sanitized, ≤200KB)</td></tr>
-<tr><td><code>fingerprint</code></td><td>stable hash — dedupes identical failures</td></tr>
-<tr><td><code>created_at</code> / <code>resolved_at</code> / <code>resolution</code></td><td>lifecycle</td></tr>
-</tbody>
-</table>
-</div>
-<p>On parse failures the offending HTML is saved under
-<code>tests/fixtures/scrape/&lt;domain&gt;/&lt;fingerprint&gt;.html</code> — it doubles as agent
-context and as a future regression fixture.</p>
-<h2 id="classifier"><a class="header" href="#classifier">Classifier</a></h2>
-<p>Pure Rust (no LLM), maps an error to a healing class:</p>
+<h2 id="following--notifications"><a class="header" href="#following--notifications">Following &amp; notifications</a></h2>
 <ul>
-<li><strong>transient</strong> — 429/timeouts/525/not-found: back off, no agent.</li>
-<li><strong>blocked</strong> — 403 / Cloudflare from known-bad hosts (AO3, FFN,
-FictionPress): the agent cannot fix an IP-level block; surface to users.</li>
-<li><strong>structural</strong> — selector/parse error: agent territory (site layout
-changed).</li>
-<li><strong>systemic</strong> — 5xx / panic / build failure: service-level playbook.</li>
+<li><strong>Follow a topic</strong> (<code>POST /api/forum/topics/{id}/follow</code> toggles,
+<code>GET …/follow</code> reads state) to get a <code>forum_reply</code> notification whenever
+someone replies. The reply author is never notified of their own post.</li>
+<li>Notifications link straight back to the topic’s board URL and carry the
+topic id, so clients can deep-link and badge correctly.</li>
 </ul>
-<p>Debounce: ≥3 same-domain structural failures in 15 min → one healing event.
-Fingerprint: one heal per fingerprint per 24h unless it changes.</p>
-<h2 id="agent-runtime"><a class="header" href="#agent-runtime">Agent runtime</a></h2>
+<h2 id="search"><a class="header" href="#search">Search</a></h2>
+<p><code>/forum/search</code> (or <code>GET /api/forum/search?q=…&amp;category=…</code>) runs full-text
+search over topic titles/bodies <em>and</em> post bodies, ranked by relevance with
+<code>&lt;mark&gt;</code>-highlighted snippets. Anonymous visitors only see public
+categories. Limit is capped at 50 per page and <code>next_cursor</code> is always null
+(deterministic ordering: rank, then post id, then topic id).</p>
+<p>For fic search rather than forum search, see <a href="./searching.html">Finding Great
+Stories</a> — including the find-fic-by-name box and For-You
+chips.</p>
+<h2 id="moderation-points--metamoderation"><a class="header" href="#moderation-points--metamoderation">Moderation points &amp; metamoderation</a></h2>
+<p>Instead of a small fixed mod team, trusted members earn <strong>moderation
+points</strong> and spend them from the queue:</p>
 <ul>
-<li>Endpoint (OpenAI-compatible <code>chat/completions</code>): CommandCode
-<code>https://api.commandcode.ai/provider/v1</code> — key in
-<code>COMMANDCODE_API_KEY</code> / <code>AGENT_API_KEY</code>, model <code>poolside/laguna-s-2.1-free</code>
-(override <code>AGENT_MODEL</code>). Local fallback: <code>AGENT_OLLAMA_URL</code>.</li>
-<li>Diagnose-only this pass: <code>POST /api/admin/heal?domain=X</code> (role ≥ 10)
-returns recent failures + a plan, and if <code>AGENT_ENABLED=true</code> makes one
-diagnose call (30s timeout) recording the reply in <code>agent_runs</code>.
-It never writes files or modifies code.</li>
+<li><strong>Status</strong> (<code>GET /api/forum/moderation/status</code>) — your points, window
+expiry, and eligibility.</li>
+<li><strong>Queue</strong> (<code>GET /api/forum/moderation/queue</code>) — posts needing attention,
+reported and low-score first.</li>
+<li><strong>Moderate</strong> (<code>POST /api/forum/posts/{postId}/moderate</code> with a <code>reason</code>) —
+spends one point; reasons map to score deltas server-side. You can’t
+moderate your own posts or the same post twice.</li>
+<li><strong>History</strong> (<code>GET /api/forum/posts/{postId}/moderations</code>) — the public
+moderation history of a post, mirroring the modlog.</li>
+<li><strong>Metamoderation</strong> — moderator actions are audited anonymously:
+<code>GET /api/forum/metamod/queue</code> serves random under-reviewed actions with
+the moderator anonymized, and you vote <code>fair</code> / <code>unfair</code> / <code>unsure</code>
+(<code>POST /api/forum/metamod/{actionId}/vote</code>). Rolling unfair-rates and
+cooldowns keep the system honest. Full detail on a grant at
+<code>GET /api/forum/metamod/grants/{id}</code> (+ <code>/verdict</code> to resolve).</li>
+<li><strong>Curator fast-hide</strong> (<code>POST /api/admin/forum/hide/{postId}</code>, auto-expires
+after 72h), <strong>lock / pin topics</strong>
+(<code>POST /api/admin/forum/topics/{id}/lock|pin</code>), and <strong>scoped bans</strong>
+(<code>POST /api/admin/forum/bans</code> with <code>scope: forum|category</code>) round out the
+toolkit. Bans block forum writes only — reading and fic features keep
+working. Your per-user grants are visible at
+<code>GET /api/forum/moderation/user/{userId}/grants</code>.</li>
 </ul>
-<h2 id="config"><a class="header" href="#config">Config</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Env</th><th>Default</th><th>Meaning</th></tr>
-</thead>
-<tbody>
-<tr><td><code>AGENT_ENABLED</code></td><td><code>false</code></td><td>master switch (healing loop + agent calls)</td></tr>
-<tr><td><code>AGENT_MODEL</code></td><td><code>deepseek/deepseek-v4-flash</code></td><td>agent model (deploy uses <code>poolside/laguna-s-2.1-free</code>)</td></tr>
-<tr><td><code>AGENT_API_KEY</code> / <code>COMMANDCODE_API_KEY</code></td><td>—</td><td>remote API key</td></tr>
-<tr><td><code>AGENT_API_URL</code></td><td><code>https://api.commandcode.ai/provider/v1</code></td><td>OpenAI-compatible base</td></tr>
-<tr><td><code>AGENT_OLLAMA_URL</code></td><td><code>http://localhost:11434</code></td><td>local fallback</td></tr>
-<tr><td><code>AGENT_MAX_RUNS_PER_DAY</code></td><td><code>6</code></td><td>daily budget</td></tr>
-<tr><td><code>AGENT_COOLDOWN_DOMAIN_SECS</code></td><td><code>3600</code></td><td>per-domain cooldown</td></tr>
-<tr><td><code>AGENT_USE_ON_FLY</code></td><td><code>false</code></td><td>M2: on-the-fly extraction on structural failure (needs <code>AGENT_ENABLED=true</code>)</td></tr>
-<tr><td><code>AGENT_EXTRACT_MAX_SNAPSHOT_CHARS</code></td><td><code>120000</code></td><td>max snapshot HTML sent to the extraction agent</td></tr>
-</tbody>
-</table>
-</div>
-<h2 id="whats-next"><a class="header" href="#whats-next">What’s next</a></h2>
-<p>See <code>docs/brainstorm-02-roadmap-status.md</code> — T1 auto-merge + deploy/rollback
-harness, T2 service heal (health watcher → restart), T3 QA-driven site
-regen, <code>/admin/agent</code> UI panel.</p>
+<p>All of this is level-gated: your <a href="./profile.html">level</a> (not just your role
+label) decides whether you can moderate, fast-hide, or run admin actions.
+Every action lands in the public <a href="/modlog">modlog</a> — see
+<a href="./transparency.html">Transparency</a>.</p>
+<h2 id="reactions"><a class="header" href="#reactions">Reactions</a></h2>
+<p>Posts accept emoji reactions (<code>POST /api/forum/posts/{id}/react</code>,
+<code>GET …/reactions</code>, <code>DELETE …/reactions</code>) — a lightweight positive-only
+signal alongside the moderation-points system.</p>
+<hr>
+<p><em>Next: <a href="./recommendations.html">Getting Recommendations</a></em></p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="rec-engines.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="comments.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="contributing.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="recommendations.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -300,11 +301,11 @@ regen, <code>/admin/agent</code> UI panel.</p>
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="rec-engines.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="comments.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="contributing.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="recommendations.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

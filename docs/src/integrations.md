@@ -33,6 +33,54 @@ Socrates-style recommendations right in chat:
 - `/link <username> <password>` — exchanges credentials **once** via `POST /api/auth/login`, stores only the JWT in Redis (`archivist:token:<discord_id>`, TTL 30d, refreshed on use). Passwords are never persisted.
 - `/unlink`, `/whoami`.
 
+## Lemmy / ActivityPub adapter (fanfic_archivist)
+
+The same bot also federates as `@fanfic_archivist@ficnexus.polarisocial.xyz`
+— a first-class ActivityPub actor served by ficnexus itself
+(`src/activitypub/`), so Lemmy instances (e.g. reddthat.com) and the wider
+Fediverse can follow it, mention it, and receive its posts.
+
+### Configuration
+
+```env
+ACTIVITYPUB_ENABLED=true
+ACTIVITYPUB_DOMAIN=ficnexus.polarisocial.xyz
+ACTIVITYPUB_ALLOW_LOOPBACK=false   # true only for local testing
+ACTIVITYPUB_BOT_USERNAME=fanfic_archivist
+```
+
+(The `BOT_USERNAME` is separate from `NODE_NAME` on purpose — node names
+feed agent/exporter pipelines and must not be repurposed.) Keys are
+auto-generated into the `ap_keys` table (RSA-2048) on first run.
+
+### Endpoints (served by ficnexus)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /actor` | Actor document (`preferredUsername: fanfic_archivist`) |
+| `POST /actor/inbox` | Receives `Create` / `Like` / `Follow` / `Announce` (HTTP-signature required — unsigned POSTs get 401) |
+| `GET /api/activitypub/status` | `{"enabled":true,"domain":…}` health check |
+
+Inbound activities validate HTTP signatures + `Digest` headers
+(`src/activitypub/signatures.rs`) and land in `ap_inbox_log`.
+
+### Mention monitoring (Lemmy communities)
+
+Point the bot at a Lemmy community (e.g. the fanfiction community on
+reddthat.com) and it watches its inbox for mentions. The Python reference
+bots under `~/code/python/lemmy/` show the complementary half of the
+pattern: `Reddit-Lemmy-Repost-bot/bot.py` (Reddit→Lemmy reposting with PRAW)
+and `lemmy-rss-pybot/` (RSS→Lemmy with keyword filtering). The Rust side
+posts back out via `src/activitypub/outbox.rs`, signing with the actor key.
+
+### Operator notes
+
+- Credentials and instance URLs live in `/opt/ficnexus/.env` on the server —
+  never in the repo.
+- Verify live: `curl https://ficnexus.polarisocial.xyz/actor` should return
+  the actor JSON; `curl -X POST …/actor/inbox` without a signature should
+  return 401 (not 404).
+
 ### Honest limitation
 
 The recommendation engine learns from what people like on the archive. Until a

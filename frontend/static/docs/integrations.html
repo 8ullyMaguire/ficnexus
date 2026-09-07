@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "light";
-            window.path_to_searchindex_js = "searchindex-eeaeca7c.js";
+            window.path_to_searchindex_js = "searchindex-84f14ab3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-d9f53dff.js"></script>
+        <script src="toc-9e2a5dc5.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -207,6 +207,50 @@ it shares FicHub’s Redis only for a transient pagination cache so <code>!next<
 <ul>
 <li><code>/link &lt;username&gt; &lt;password&gt;</code> — exchanges credentials <strong>once</strong> via <code>POST /api/auth/login</code>, stores only the JWT in Redis (<code>archivist:token:&lt;discord_id&gt;</code>, TTL 30d, refreshed on use). Passwords are never persisted.</li>
 <li><code>/unlink</code>, <code>/whoami</code>.</li>
+</ul>
+<h2 id="lemmy--activitypub-adapter-fanfic_archivist"><a class="header" href="#lemmy--activitypub-adapter-fanfic_archivist">Lemmy / ActivityPub adapter (fanfic_archivist)</a></h2>
+<p>The same bot also federates as <code>@fanfic_archivist@ficnexus.polarisocial.xyz</code>
+— a first-class ActivityPub actor served by ficnexus itself
+(<code>src/activitypub/</code>), so Lemmy instances (e.g. reddthat.com) and the wider
+Fediverse can follow it, mention it, and receive its posts.</p>
+<h3 id="configuration"><a class="header" href="#configuration">Configuration</a></h3>
+<pre><code class="language-env">ACTIVITYPUB_ENABLED=true
+ACTIVITYPUB_DOMAIN=ficnexus.polarisocial.xyz
+ACTIVITYPUB_ALLOW_LOOPBACK=false   # true only for local testing
+ACTIVITYPUB_BOT_USERNAME=fanfic_archivist
+</code></pre>
+<p>(The <code>BOT_USERNAME</code> is separate from <code>NODE_NAME</code> on purpose — node names
+feed agent/exporter pipelines and must not be repurposed.) Keys are
+auto-generated into the <code>ap_keys</code> table (RSA-2048) on first run.</p>
+<h3 id="endpoints-served-by-ficnexus"><a class="header" href="#endpoints-served-by-ficnexus">Endpoints (served by ficnexus)</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Endpoint</th><th>Purpose</th></tr>
+</thead>
+<tbody>
+<tr><td><code>GET /actor</code></td><td>Actor document (<code>preferredUsername: fanfic_archivist</code>)</td></tr>
+<tr><td><code>POST /actor/inbox</code></td><td>Receives <code>Create</code> / <code>Like</code> / <code>Follow</code> / <code>Announce</code> (HTTP-signature required — unsigned POSTs get 401)</td></tr>
+<tr><td><code>GET /api/activitypub/status</code></td><td><code>{"enabled":true,"domain":…}</code> health check</td></tr>
+</tbody>
+</table>
+</div>
+<p>Inbound activities validate HTTP signatures + <code>Digest</code> headers
+(<code>src/activitypub/signatures.rs</code>) and land in <code>ap_inbox_log</code>.</p>
+<h3 id="mention-monitoring-lemmy-communities"><a class="header" href="#mention-monitoring-lemmy-communities">Mention monitoring (Lemmy communities)</a></h3>
+<p>Point the bot at a Lemmy community (e.g. the fanfiction community on
+reddthat.com) and it watches its inbox for mentions. The Python reference
+bots under <code>~/code/python/lemmy/</code> show the complementary half of the
+pattern: <code>Reddit-Lemmy-Repost-bot/bot.py</code> (Reddit→Lemmy reposting with PRAW)
+and <code>lemmy-rss-pybot/</code> (RSS→Lemmy with keyword filtering). The Rust side
+posts back out via <code>src/activitypub/outbox.rs</code>, signing with the actor key.</p>
+<h3 id="operator-notes"><a class="header" href="#operator-notes">Operator notes</a></h3>
+<ul>
+<li>Credentials and instance URLs live in <code>/opt/ficnexus/.env</code> on the server —
+never in the repo.</li>
+<li>Verify live: <code>curl https://ficnexus.polarisocial.xyz/actor</code> should return
+the actor JSON; <code>curl -X POST …/actor/inbox</code> without a signature should
+return 401 (not 404).</li>
 </ul>
 <h3 id="honest-limitation"><a class="header" href="#honest-limitation">Honest limitation</a></h3>
 <p>The recommendation engine learns from what people like on the archive. Until a

@@ -8,6 +8,7 @@
 - [Saving Your Favorites](./bookmarks.md)
 - [Rating Stories](./ratings.md)
 - [Chatting About Fics](./comments.md)
+- [Community Forum](./forum.md)
 - [Getting Recommendations](./recommendations.md)
 - [Translations & the Curator Queue](./translations.md)
 - [Your Profile & Leaderboard](./profile.md)

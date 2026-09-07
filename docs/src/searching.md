@@ -113,6 +113,24 @@ tags matching your bookmarks — marked **for you**). Click a suggestion to add 
 as a filter. Suggestions you already filtered by are hidden, and the row disappears
 if the suggestion service is unavailable.
 
+## Find a fic by name
+
+Already know the story and just want its archive page? Three ways in:
+
+- **Download tab, dual-mode box** — type `Title by Author` (optionally `on
+  Site`, e.g. `on AO3`) instead of a URL. FicHub parses the title/author/site
+  and shows matching works already in the archive. If nothing matches and you
+  pasted a URL instead, the normal download flow takes over.
+- **Command palette (`Ctrl+K`)** — type the title; a "🔍 Find fic" row jumps
+  to the archive match.
+- **Work pages that 404** — a dead work link offers "did you mean …"
+  suggestions from fuzzy title matching, plus a one-click "Request this fic"
+  button that prefills a Fic Request.
+
+New Fic Requests also auto-suggest: as you type the title/body on
+`/requests/new`, a dismissible box lists up to 5 works already in the
+archive so duplicates get caught before posting.
+
 ## Advanced Filters
 
 Click **▸ Show Advanced Filters** to see all the options:
