@@ -3691,6 +3691,8 @@ pub async fn react_to_post(
         .execute(&state.db)
         .await?;
     }
+        // Award XP for reaction (upvote equivalent)
+        award_reaction_exp(&state.db, user_id, post_id).await;
     // Return updated reactions for this post
     let reactions = load_reactions(&state.db, post_id, Some(user_id)).await?;
     Ok(Json(json!({ "err": 0, "reactions": reactions })))
@@ -4038,4 +4040,58 @@ pub async fn widget_stats(
             serde_json::json!({ "username": username, "created_at": created_at })
         }),
     })))
+}
+
+// ── Phase 8d: Additional XP awards ─────────────────────────────────────────
+
+/// Exp awarded when a post receives a reaction (upvote equivalent): +5.
+pub async fn award_reaction_exp(db: &sqlx::PgPool, user_id: i32, post_id: i64) {
+    // Daily cap: count today's reaction events for this user.
+    let today: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM exp_events
+         WHERE user_id = $1 AND event_type = 'post_reacted'
+           AND created_at >= CURRENT_DATE",
+    )
+    .bind(user_id)
+    .fetch_one(db)
+    .await
+    .unwrap_or(0);
+    if today >= 10 {
+        return; // daily cap: 10 reactions * 5 XP = 50 XP max
+    }
+    award_exp(
+        db,
+        user_id,
+        5,
+        "post_reacted",
+        Some("forum_post"),
+        Some(post_id),
+    )
+    .await;
+}
+
+/// Exp awarded when a user votes on a poll: +3.
+pub async fn award_poll_vote_exp(db: &sqlx::PgPool, user_id: i32, poll_id: i64) {
+    // Daily cap: count today's poll vote events for this user.
+    let today: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM exp_events
+         WHERE user_id = $1 AND event_type = 'poll_voted'
+           AND created_at >= CURRENT_DATE",
+    )
+    .bind(user_id)
+    .fetch_one(db)
+    .await
+    .unwrap_or(0);
+    if today >= 10 {
+        return; // daily cap: 10 votes * 3 XP = 30 XP max
+    }
+    award_exp(
+        db,
+        user_id,
+        3,
+        "poll_voted",
+        Some("forum_poll"),
+        Some(poll_id),
+    )
+    .await;
 }

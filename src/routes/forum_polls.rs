@@ -338,6 +338,8 @@ pub async fn vote_on_poll(
             .await?;
     }
 
+    // Award XP for poll vote
+    crate::routes::forum::award_poll_vote_exp(&state.db, user_id, poll_id).await;
     Ok(Json(json!({ "err": 0, "voted": true, "option_id": body.option_id })))
 }
 
