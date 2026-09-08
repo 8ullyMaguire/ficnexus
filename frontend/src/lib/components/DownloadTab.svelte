@@ -6,6 +6,7 @@
   import { auth } from '$lib/stores/auth.svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { getPref, setPref } from '$lib/prefs';
+  import { goto } from '$app/navigation';
   import {
     addBookmark,
     removeBookmark,
@@ -226,7 +227,7 @@ async function handleFindFic() {
         const r = findResults[0];
         if (r.work_id) {
           // Build a work URL — the SPA work page handles work_id routing
-          goto(`/works/${r.url_id ?? r.work_id}`);
+          goto(`/works/${r.work_id}`);
         }
       }
     } catch (e) {

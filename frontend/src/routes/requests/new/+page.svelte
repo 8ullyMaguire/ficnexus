@@ -171,7 +171,7 @@
           <ul>
             {#each matches as m}
               <li>
-                <a href="/works/{m.url_id ?? m.work_id}">{m.title}</a>
+                <a href="/works/{m.work_id}">{m.title}</a>
                 <span class="by">by {m.author}</span>
                 <span class="words">{m.words.toLocaleString('en-US')} words</span>
               </li>
@@ -237,7 +237,7 @@
           <ul>
             {#each matches as m}
               <li>
-                <a href="/works/{m.url_id ?? m.work_id}">{m.title}</a>
+                <a href="/works/{m.work_id}">{m.title}</a>
                 <span class="by">by {m.author}</span>
                 <span class="words">{m.words.toLocaleString('en-US')} words</span>
               </li>
