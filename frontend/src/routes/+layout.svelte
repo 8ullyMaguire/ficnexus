@@ -23,7 +23,7 @@
  let { children } = $props();
 
  // Determine if we're on a route page (needs {children}) or a tab page
- const routePages = ['/search', '/ask', '/leaderboard', '/bookmarks', '/works/', '/notifications', '/follows', '/updates', '/badges', '/trending', '/stats', '/roadmap', '/roadmap/board', '/roadmap/changelog', '/blind-date', '/quests', '/read/', '/work/', '/curator', '/requests', '/series', '/authors', '/lists', '/shelves', '/admin', '/admin/auto-tag', '/admin/bulk-actions', '/admin/comment-triage', '/admin/blacklist', '/admin/stats', '/curator/flags', '/work-proposals', '/recommendations', '/download', '/settings', '/settings/theme', '/forum', '/forum/new', '/forum/search', '/forum/moderate', '/forum/metamod', '/forum/invites', '/forum/apply', '/forum/blocks', '/messages', '/fandoms', '/fandom', '/tags', '/upload', '/my-works'];
+ const routePages = ['/search', '/ask', '/leaderboard', '/bookmarks', '/works/', '/notifications', '/follows', '/updates', '/badges', '/trending', '/stats', '/roadmap', '/roadmap/board', '/roadmap/changelog', '/blind-date', '/quests', '/read/', '/work/', '/curator', '/requests', '/series', '/authors', '/lists', '/shelves', '/admin', '/admin/auto-tag', '/admin/bulk-actions', '/admin/comment-triage', '/admin/blacklist', '/admin/stats', '/curator/flags', '/work-proposals', '/recommendations', '/download', '/settings', '/settings/theme', '/forum', '/forum/new', '/forum/search', '/forum/moderate', '/forum/metamod', '/forum/invites', '/forum/apply', '/forum/blocks', '/forum/groups', '/messages', '/fandoms', '/fandom', '/tags', '/upload', '/my-works'];
  let isRoutePage = $derived(routePages.some(p => $page.url.pathname.startsWith(p)));
 
  // Landing page renders HomeDashboard directly; all other paths are real
