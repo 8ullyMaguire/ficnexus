@@ -17,8 +17,44 @@ pub struct ImportStats {
     pub notifications_created: u64,
 }
 
+/// Check that the target database is empty (required for safe import).
+/// NodeBB import uses explicit IDs and ON CONFLICT DO NOTHING, so running
+/// against a non-empty DB silently orphans children.
+/// Pass `force: true` to skip this check (use with caution).
+async fn check_preconditions(pool: &PgPool, force: bool) -> Result<()> {
+    if force {
+        tracing::warn!("--force: skipping precondition checks");
+        return Ok(());
+    }
+
+    let (user_count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await?;
+    let (topic_count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM forum_topics")
+        .fetch_one(pool)
+        .await?;
+
+    if user_count > 0 || topic_count > 0 {
+        anyhow::bail!(
+            "Import precondition failed: target DB is not empty \
+             (users: {}, topics: {}). \
+             NodeBB import uses explicit IDs and requires an empty database. \
+             Re-run with --force to override (WARNING: collisions will be \
+             silently skipped, orphaning children).",
+            user_count,
+            topic_count
+        );
+    }
+
+    Ok(())
+}
+
 /// Run the full import. If dry_run is true, validates without writing.
-pub async fn run_import(pool: &PgPool, data: &ImportFile, dry_run: bool) -> Result<ImportStats> {
+/// Pass `force: true` to skip the empty-database precondition check.
+pub async fn run_import(pool: &PgPool, data: &ImportFile, dry_run: bool, force: bool) -> Result<ImportStats> {
+    // Check preconditions before doing any work.
+    check_preconditions(pool, force).await?;
+
     let mut stats = ImportStats::default();
 
     // Phase 1: Users
@@ -319,6 +355,137 @@ mod tests {
         ms_to_datetime, ImportCategory, ImportFile, ImportPost, ImportTopic, ImportUser,
     };
     use chrono::{TimeZone, Utc};
+
+    /// Test database URL for integration tests.
+    /// Set DATABASE_URL to run these tests.
+    fn test_db_url() -> String {
+        std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/fichub_test".into())
+    }
+
+    async fn test_pool() -> PgPool {
+        PgPool::connect(&test_db_url())
+            .await
+            .expect("failed to connect to test database")
+    }
+
+    #[tokio::test]
+    async fn test_import_small_fixture() {
+        let pool = test_pool().await;
+
+        // Clean up any previous test data.
+        sqlx::query("DELETE FROM forum_posts WHERE id = 1000")
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM forum_topics WHERE id = 100")
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM forum_categories WHERE id = 1")
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM users WHERE id = 1")
+            .execute(&pool)
+            .await
+            .ok();
+
+        let data = ImportFile {
+            users: vec![ImportUser {
+                uid: 1,
+                username: "alice".into(),
+                email: Some("a@b.com".into()),
+                joindate: Some(1672531200000),
+                banned: None,
+                reputation: Some(0),
+            }],
+            categories: vec![ImportCategory {
+                cid: 1,
+                name: "General".into(),
+                slug: Some("general".into()),
+                description: None,
+                order: None,
+                is_private: None,
+            }],
+            topics: vec![ImportTopic {
+                tid: 100,
+                cid: 1,
+                uid: 1,
+                title: "Hello".into(),
+                timestamp: 1672531200000,
+                lastposttimestamp: None,
+                locked: None,
+                pinned: None,
+                deleted: None,
+                viewcount: None,
+                slug: None,
+            }],
+            posts: vec![ImportPost {
+                pid: 1000,
+                tid: 100,
+                uid: 1,
+                content: Some("Hi!".into()),
+                timestamp: 1672531200000,
+                edited: None,
+                deleted: None,
+                upvotes: None,
+                downvotes: None,
+            }],
+        };
+
+        let stats = run_import(&pool, &data, false, true)
+            .await
+            .expect("import failed");
+
+        assert_eq!(stats.users_inserted, 1);
+        assert_eq!(stats.categories_inserted, 1);
+        assert_eq!(stats.topics_inserted, 1);
+        assert_eq!(stats.posts_inserted, 1);
+
+        // Verify rows landed with expected IDs.
+        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+
+        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM forum_categories WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+
+        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM forum_topics WHERE id = 100")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+
+        let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM forum_posts WHERE id = 1000")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+
+        // Clean up.
+        sqlx::query("DELETE FROM forum_posts WHERE id = 1000")
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM forum_topics WHERE id = 100")
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM forum_categories WHERE id = 1")
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM users WHERE id = 1")
+            .execute(&pool)
+            .await
+            .ok();
+    }
 
     #[test]
     fn test_ms_to_datetime() {

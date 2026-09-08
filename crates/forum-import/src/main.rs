@@ -24,6 +24,11 @@ struct Cli {
     /// Dry run — validate without writing.
     #[arg(long)]
     dry_run: bool,
+
+    /// Force import even if tables are not empty (default: abort).
+    /// Only use this if you understand the consequences of ID collisions.
+    #[arg(long)]
+    force: bool,
 }
 
 #[tokio::main]
@@ -63,7 +68,7 @@ async fn main() -> Result<()> {
     tracing::info!("Connected to database");
 
     // Run import.
-    let stats = import::run_import(&pool, &data, cli.dry_run).await?;
+    let stats = import::run_import(&pool, &data, cli.dry_run, cli.force).await?;
 
     tracing::info!(
         "Import complete: {} users inserted ({} skipped), {} categories ({} skipped), {} topics ({} skipped), {} posts ({} skipped), {} notifications",
