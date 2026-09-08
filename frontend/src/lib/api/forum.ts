@@ -485,10 +485,8 @@ export interface ForumPollOption {
   text: string;
   position: number;
   vote_count: number;
-  /** Vote count for the authenticated user's choice (closed polls only). */
+  /** Live vote tally (closed polls only; 0 when not fetched). */
   votes: number;
-  /** Whether the current user voted for this option (closed polls only). */
-  voted_by_user: boolean;
 }
 
 export interface ForumPoll {

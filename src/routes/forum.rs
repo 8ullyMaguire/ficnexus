@@ -2508,7 +2508,6 @@ pub async fn topic_detail(
         .ok()
         .flatten();
     if let Some((poll_id, question, max_selections, allow_change, close_at)) = poll_row {
-        let is_closed = close_at.is_some_and(|ts| ts <= chrono::Utc::now());
         let options: Vec<(i64, String, i32, i64)> = sqlx::query_as(
             "SELECT id, text, position, vote_count \
              FROM forum_poll_options WHERE poll_id = $1 ORDER BY position",
@@ -2518,23 +2517,18 @@ pub async fn topic_detail(
         .await
         .ok()
         .unwrap_or_default();
-        resp["poll"] = json!({
-            "id": poll_id,
-            "topic_id": topic_id,
-            "question": question,
-            "max_selections": max_selections,
-            "allow_change": allow_change,
-            "is_closed": is_closed,
-            "close_at": close_at,
-            "options": options.into_iter().map(|(oid, text, position, vote_count)| json!({
-                "id": oid,
-                "text": text,
-                "position": position,
-                "vote_count": vote_count,
-                "votes": 0,
-                "voted_by_user": false,
-            })).collect::<Vec<_>>(),
-        });
+        resp["poll"] = crate::routes::forum_polls::serialize_poll(
+            poll_id,
+            topic_id,
+            question,
+            max_selections,
+            allow_change,
+            close_at,
+            options.into_iter().map(|(oid, text, position, vc)| crate::routes::forum_polls::PollOption {
+                id: oid, text, position, vote_count: vc,
+            }).collect(),
+            None,
+        );
     }
 
     Ok(Json(resp))

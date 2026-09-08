@@ -32,7 +32,7 @@ pub struct Poll {
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct PollOption {
     pub id: i64,
     pub text: String,
@@ -63,6 +63,54 @@ fn default_max_selections() -> i32 {
 
 fn default_allow_change() -> bool {
     true
+}
+
+// ── Shared poll serializer ────────────────────────────────────────────────
+
+/// Serialize a poll + options into a `serde_json::Value` matching the shape
+/// that PollBar.svelte expects on the frontend.
+///
+/// `is_closed` is derived from `close_at` — callers should not pass both
+/// independently. `option_votes` is an optional pre-fetched set of real
+/// vote counts per option (the `forum_poll_votes` COUNT). When provided
+/// it replaces the static `vote_count` column; `None` means the caller
+/// did not fetch live tallies (e.g. the inline topic_detail attachment).
+pub fn serialize_poll(
+    id: i64,
+    topic_id: i64,
+    question: String,
+    max_selections: i32,
+    allow_change: bool,
+    close_at: Option<chrono::DateTime<chrono::Utc>>,
+    options: Vec<PollOption>,
+    option_votes: Option<Vec<(i64, i64)>>,
+) -> Value {
+    let is_closed = close_at.is_some_and(|ts| ts <= chrono::Utc::now());
+
+    let options = options.into_iter().map(|o| {
+        let votes = match &option_votes {
+            Some(memo) => memo.iter().find_map(|(oid, c)| if *oid == o.id { Some(*c as i32) } else { None }).unwrap_or(0),
+            None => 0,
+        };
+        json!({
+            "id": o.id,
+            "text": o.text,
+            "position": o.position,
+            "vote_count": o.vote_count,
+            "votes": votes,
+        })
+    }).collect::<Vec<_>>();
+
+    json!({
+        "id": id,
+        "topic_id": topic_id,
+        "question": question,
+        "max_selections": max_selections,
+        "allow_change": allow_change,
+        "is_closed": is_closed,
+        "close_at": close_at,
+        "options": options,
+    })
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────
@@ -179,7 +227,8 @@ pub async fn get_poll(
     // Fetch poll + options + votes in two queries
     let poll_row = sqlx::query_as::<_, PollRow>(
         "SELECT id, topic_id, question, max_selections, allow_change,
-                coalesce(close_at < now(), false), created_at, updated_at
+                coalesce(close_at < now(), false) AS is_closed,
+                close_at, created_at, updated_at
          FROM forum_polls WHERE id = $1",
     )
     .bind(poll_id)
@@ -206,31 +255,16 @@ pub async fn get_poll(
 
     let item = json!({
         "err": 0,
-        "poll": {
-            "id": poll_row.id,
-            "topic_id": poll_row.topic_id,
-            "question": poll_row.question,
-            "max_selections": poll_row.max_selections,
-            "allow_change": poll_row.allow_change,
-            "is_closed": poll_row.is_closed,
-            "created_at": poll_row.created_at,
-            "updated_at": poll_row.updated_at,
-            "options": options.into_iter().map(|o| json!({
-                "id": o.id,
-                "text": o.text,
-                "position": o.position,
-                "vote_count": o.vote_count,
-                "votes": if poll_row.is_closed {
-                    option_votes.iter()
-                        .find(|(oid, _)| *oid == o.id)
-                        .map(|(_, c)| *c as i32)
-                        .unwrap_or(0)
-                } else {
-                    0
-                },
-                "voted_by_user": false, // TODO: check against session user
-            })).collect::<Vec<_>>(),
-        },
+        "poll": serialize_poll(
+            poll_row.id,
+            poll_row.topic_id,
+            poll_row.question,
+            poll_row.max_selections,
+            poll_row.allow_change,
+            poll_row.close_at,
+            options.clone().into_iter().map(|o| PollOption { id: o.id, text: o.text, position: o.position, vote_count: o.vote_count }).collect(),
+            Some(option_votes),
+        ),
     });
 
     Ok(Json(item))
@@ -384,7 +418,8 @@ pub async fn get_poll_results(
 ) -> Result<Json<Value>, AppError> {
     let poll = sqlx::query_as::<_, PollRow>(
         "SELECT id, topic_id, question, max_selections, allow_change,
-                coalesce(close_at < now(), false), created_at, updated_at
+                coalesce(close_at < now(), false) AS is_closed,
+                close_at, created_at, updated_at
          FROM forum_polls WHERE id = $1",
     )
     .bind(poll_id)
@@ -455,11 +490,12 @@ struct PollRow {
     max_selections: i32,
     allow_change: bool,
     is_closed: bool,
+    close_at: Option<chrono::DateTime<chrono::Utc>>,
     created_at: chrono::DateTime<chrono::Utc>,
     updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(sqlx::FromRow, Clone)]
 struct PollOptionRow {
     id: i64,
     #[sqlx(rename = "poll_id")]
@@ -490,5 +526,47 @@ mod tests {
         let json = serde_json::to_value(&poll).unwrap();
         assert_eq!(json["question"], "Test?");
         assert_eq!(json["max_selections"].as_i64().unwrap(), 1);
+    }
+
+    /// Contract test: verify `serialize_poll` emits the JSON shape
+    /// that PollBar.svelte consumes on the frontend.
+    #[test]
+    fn serialize_poll_contract_shape() {
+        let options = vec![
+            PollOption { id: 1, text: "Yes".into(), position: 1, vote_count: 3 },
+            PollOption { id: 2, text: "No".into(), position: 2, vote_count: 1 },
+        ];
+        let ser = serialize_poll(
+            42, 100, "Question?".into(), 1, true, None, options, None,
+        );
+        // Poll-level keys
+        assert_eq!(ser["id"], 42);
+        assert_eq!(ser["topic_id"], 100);
+        assert_eq!(ser["question"], "Question?");
+        assert_eq!(ser["is_closed"], false);
+        assert_eq!(ser["allow_change"], true);
+        // Options array
+        let opts = ser["options"].as_array().unwrap();
+        assert_eq!(opts.len(), 2);
+        assert_eq!(opts[0]["id"], 1);
+        assert_eq!(opts[0]["text"], "Yes");
+        assert_eq!(opts[0]["vote_count"], 3);
+        assert_eq!(opts[0]["votes"], 0); // None → default
+        assert!(!opts[0].as_object().unwrap().contains_key("voted_by_user")); // placeholder dropped
+    }
+
+    /// Verify closed-poll serialize_poll carries actual option votes.
+    #[test]
+    fn serialize_poll_with_option_votes() {
+        let options = vec![
+            PollOption { id: 1, text: "A".into(), position: 1, vote_count: 1 },
+            PollOption { id: 2, text: "B".into(), position: 2, vote_count: 2 },
+        ];
+        let votes = vec![(1, 5), (2, 3)];
+        let past = Some(chrono::Utc::now() - chrono::Duration::hours(1));
+        let ser = serialize_poll(42, 1, "Q".into(), 1, true, past, options, Some(votes));
+        let opts = ser["options"].as_array().unwrap();
+        assert_eq!(opts[0]["votes"], 5);
+        assert_eq!(opts[1]["votes"], 3);
     }
 }
