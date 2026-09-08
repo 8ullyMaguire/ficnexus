@@ -65,6 +65,8 @@ pub struct AppState {
     /// Email transport for Send-to-Kindle. `SmtpMailer` in production,
     /// `MockMailer` in tests (recorded sends, no relay needed).
     pub mailer: Box<dyn crate::services::mailer::Mailer>,
+    /// Realtime connection manager for WebSocket / SSE pubsub.
+    pub rt_manager: crate::realtime::ConnectionManager,
 }
 
 /// Redirect to root — used by legacy redirect routes.
@@ -203,6 +205,7 @@ pub async fn run(config: Config) {
                 from: config.smtp_from.clone(),
             },
         }),
+        rt_manager: crate::realtime::ConnectionManager::new(),
     });
 
     // Spawn the batch training pipeline for the pluggable recommendation
@@ -2300,6 +2303,11 @@ fn chunk_uploads() -> impl Into<Router<Arc<AppState>>> {
         )
 }
 
+fn chunk_realtime() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
+        .route("/ws", axum::routing::get(crate::realtime::ws::ws_handler))
+}
+
 /// Route chain split into domain chunks (Task 14 refactor).
 async fn build_router(state: Arc<AppState>) -> Router {
     let _frontend_dir = state.config.frontend_dir.clone();
@@ -2319,7 +2327,8 @@ async fn build_router(state: Arc<AppState>) -> Router {
         .merge(chunk_comments_upload().into())
         .merge(chunk_feeds_admin().into())
         .merge(chunk_customization_redirects().into())
-        .merge(chunk_uploads().into());
+        .merge(chunk_uploads().into())
+        .merge(chunk_realtime().into());
 
     merged.with_state(state.clone())
 

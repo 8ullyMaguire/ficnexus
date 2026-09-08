@@ -16,6 +16,7 @@ pub mod meta_store;
 pub mod modlog;
 pub mod progression;
 pub mod recommender;
+pub mod realtime;
 pub mod routes;
 pub mod scrape;
 pub mod search;

@@ -17,6 +17,7 @@ pub mod modlog;
 pub mod progression;
 pub mod recommender;
 pub mod roadmap_seed;
+pub mod realtime;
 pub mod routes;
 pub mod scrape;
 pub mod search;
