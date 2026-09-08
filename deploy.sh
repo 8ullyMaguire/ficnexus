@@ -27,7 +27,7 @@ echo "==> $(date) FicHub deploy"
 
 if [ "${1:-}" != "--skip-build" ]; then
   echo "==> Building release on $GAMINGPC (shared NFS tree)..."
-  ssh "$GAMINGPC" "cd /personal/documents/code/rust/fichub && unset CARGO_TARGET_DIR && cargo build --release --bin fichub --bin migrate" || {
+  ssh "$GAMINGPC" "cd /personal/documents/code/rust/fichub && unset CARGO_TARGET_DIR && cargo build --release --bin fichub --bin migrate --bin publish-scheduled" || {
     echo "ERROR: build on $GAMINGPC failed"; exit 1
   }
 fi
@@ -46,6 +46,19 @@ echo "==> Running database migrations (explicit deploy step)..."
 sudo systemctl start "$SERVICE"
 sleep 2
 ./target/release/migrate || { echo "ERROR: migrate failed"; exit 1; }
+
+echo "==> Copying publish-scheduled binary..."
+cp target/release/publish-scheduled "$BIN_DIR/publish-scheduled" 2>/dev/null || true
+chmod +x "$BIN_DIR/publish-scheduled" 2>/dev/null || true
+
+# Install systemd timer if unit files exist
+if [ -f deploy/systemd/publish-scheduled.service ] && [ -f deploy/systemd/publish-scheduled.timer ]; then
+  sudo cp deploy/systemd/publish-scheduled.service /etc/systemd/system/
+  sudo cp deploy/systemd/publish-scheduled.timer /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now publish-scheduled.timer
+  echo "publish-scheduled timer enabled (runs every minute)"
+fi
 
 echo "==> Restarting $SERVICE..."
 sudo systemctl restart "$SERVICE"
