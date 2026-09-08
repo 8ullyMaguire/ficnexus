@@ -3940,3 +3940,102 @@ pub async fn user_xp_history(
         }).collect::<Vec<_>>(),
     })))
 }
+
+// ── Phase 8: Forum widgets ──────────────────────────────────────────────────
+
+/// GET /api/forum/widgets/recent
+/// Returns recent topics for widget display.
+pub async fn widget_recent_topics(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::server::AppState>>,
+) -> Result<axum::Json<serde_json::Value>, AppError> {
+    let topics = sqlx::query_as::<_, (i64, String, String, i32, chrono::DateTime<chrono::Utc>, i64)>(
+        "SELECT t.id, t.title, c.slug as category_slug, t.author_id, t.created_at,
+                (SELECT COUNT(*) FROM forum_posts p WHERE p.topic_id = t.id) as reply_count
+         FROM forum_topics t
+         JOIN forum_categories c ON c.id = t.category_id
+         WHERE t.scheduled_at IS NULL AND t.deleted_at IS NULL AND t.is_hidden = false
+         ORDER BY t.created_at DESC LIMIT 5",
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(axum::Json(serde_json::json!({
+        "topics": topics.into_iter().map(|(id, title, category_slug, author_id, created_at, reply_count)| {
+            serde_json::json!({
+                "id": id,
+                "title": title,
+                "category": { "slug": category_slug },
+                "author_id": author_id,
+                "created_at": created_at,
+                "reply_count": reply_count,
+            })
+        }).collect::<Vec<_>>(),
+    })))
+}
+
+/// GET /api/forum/widgets/popular
+/// Returns popular topics by views for widget display.
+pub async fn widget_popular_topics(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::server::AppState>>,
+) -> Result<axum::Json<serde_json::Value>, AppError> {
+    let topics = sqlx::query_as::<_, (i64, String, i64, i32, i64)>(
+        "SELECT t.id, t.title, t.view_count, t.score,
+                (SELECT COUNT(*) FROM forum_posts p WHERE p.topic_id = t.id) as reply_count
+         FROM forum_topics t
+         WHERE t.scheduled_at IS NULL AND t.deleted_at IS NULL AND t.is_hidden = false
+         ORDER BY t.view_count DESC LIMIT 5",
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(axum::Json(serde_json::json!({
+        "topics": topics.into_iter().map(|(id, title, view_count, score, reply_count)| {
+            serde_json::json!({
+                "id": id,
+                "title": title,
+                "view_count": view_count,
+                "score": score,
+                "reply_count": reply_count,
+            })
+        }).collect::<Vec<_>>(),
+    })))
+}
+
+/// GET /api/forum/widgets/stats
+/// Returns forum statistics for widget display.
+pub async fn widget_stats(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::server::AppState>>,
+) -> Result<axum::Json<serde_json::Value>, AppError> {
+    let (total_topics,) = sqlx::query_as::<_, (i64,)>(
+        "SELECT COUNT(*) FROM forum_topics WHERE deleted_at IS NULL AND is_hidden = false",
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    let (total_posts,) = sqlx::query_as::<_, (i64,)>(
+        "SELECT COUNT(*) FROM forum_posts WHERE deleted_at IS NULL AND is_hidden = false",
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    let (total_users,) = sqlx::query_as::<_, (i64,)>(
+        "SELECT COUNT(*) FROM users WHERE is_banned = false",
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    let newest_user = sqlx::query_as::<_, (String, chrono::DateTime<chrono::Utc>)>(
+        "SELECT username, created_at FROM users ORDER BY created_at DESC LIMIT 1",
+    )
+    .fetch_optional(&state.db)
+    .await?;
+
+    Ok(axum::Json(serde_json::json!({
+        "total_topics": total_topics,
+        "total_posts": total_posts,
+        "total_users": total_users,
+        "newest_user": newest_user.map(|(username, created_at)| {
+            serde_json::json!({ "username": username, "created_at": created_at })
+        }),
+    })))
+}

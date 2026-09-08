@@ -1355,6 +1355,19 @@ fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
             "/api/forum/users/{userId}/xp-history",
             get(crate::routes::forum::user_xp_history),
         )
+        // ── Phase 8: Forum widgets ─────────────────────────────
+        .route(
+            "/api/forum/widgets/recent",
+            get(crate::routes::forum::widget_recent_topics),
+        )
+        .route(
+            "/api/forum/widgets/popular",
+            get(crate::routes::forum::widget_popular_topics),
+        )
+        .route(
+            "/api/forum/widgets/stats",
+            get(crate::routes::forum::widget_stats),
+        )
         // ── ActivityPub federation (NodeBB parity, opt-in via ACTIVITYPUB_ENABLED) ─
         .route(
             "/.well-known/webfinger",
