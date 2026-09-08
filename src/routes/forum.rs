@@ -91,61 +91,71 @@ fn level_for_exp(exp: i64) -> i16 {
     ((exp / per).clamp(0, 100)) as i16
 }
 
-/// Award exp to a user. Best-effort: failures are logged, never fail the caller.
-/// Writes to exp_events + users.exp (the forum-specific ledger).
-/// TODO: delegate to services::progression::award_xp for full ledger unification.
+/// Award XP to a user. Best-effort: failures are logged, never fail the caller.
+/// Delegates to `services::progression::award_xp` which writes to the unified
+/// `xp_events` / `users.xp` ledger, respects daily caps, and handles cooldowns.
 async fn award_exp(
     db: &sqlx::PgPool,
     user_id: i32,
-    amount: i64,
     event_type: &str,
     reference_type: Option<&str>,
     reference_id: Option<i64>,
 ) {
-    let res = sqlx::query_as::<_, (i64, i16)>(
-        "WITH upd AS (
-           UPDATE users SET exp = exp + $2, level = LEAST(100, (exp + $2) / $3::bigint)
-           WHERE id = $1
-           RETURNING exp, level
-         )
-         SELECT exp, level FROM upd",
+    // Compute the flat XP amount from xp_source_defs for this event type.
+    let amount: i64 = sqlx::query_scalar::<_, i32>(
+        "SELECT xp_amount FROM xp_source_defs WHERE event_type = $1",
     )
-    .bind(user_id)
-    .bind(amount)
-    .bind(exp_per_level())
-    .fetch_optional(db)
-    .await;
-
-    let Ok(Some((new_exp, new_level))) = res else {
-        tracing::warn!("award_exp: no user {user_id} or db error");
-        return;
-    };
-
-    if let Err(e) = sqlx::query(
-        "INSERT INTO exp_events (user_id, amount, event_type, reference_type, reference_id)
-         VALUES ($1, $2, $3, $4, $5)",
-    )
-    .bind(user_id)
-    .bind(amount)
     .bind(event_type)
-    .bind(reference_type)
-    .bind(reference_id)
-    .execute(db)
+    .fetch_optional(db)
     .await
-    {
-        tracing::warn!("award_exp: exp_events insert failed: {e}");
+    .ok()
+    .flatten()
+    .unwrap_or(0) as i64;
+
+    if amount == 0 {
+        return;
     }
 
-    // Level-up notification: compute the pre-award level from the new exp.
-    let pre_level = level_for_exp(new_exp - amount);
-    if new_level > pre_level && pre_level >= 0 {
+    let source_ref = match (reference_type, reference_id) {
+        (Some(rt), Some(rid)) => Some(format!("{}:{}", rt, rid)),
+        (Some(rt), None) => Some(rt.to_string()),
+        _ => None,
+    };
+
+    // Capture pre-award state for level-up notification.
+    let pre_level: i16 = sqlx::query_scalar("SELECT level FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(0);
+
+    let _ = crate::services::progression::award_xp(
+        db,
+        user_id,
+        event_type,
+        source_ref.as_deref(),
+    )
+    .await;
+
+    // Check for level-up and send notification.
+    let post_level: i16 = sqlx::query_scalar("SELECT level FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(db)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(0);
+
+    if post_level > pre_level {
         if let Err(e) = sqlx::query(
             "INSERT INTO notifications (user_id, notification_type, title, body, created_at)
              VALUES ($1, 'level_up', $2, $3, NOW())",
         )
         .bind(user_id)
-        .bind(format!("Level {new_level}!"))
-        .bind(format!("You reached level {new_level} ({new_exp} exp)."))
+        .bind(format!("Level {post_level}!"))
+        .bind(format!("You reached level {post_level}."))
         .execute(db)
         .await
         {
@@ -154,12 +164,12 @@ async fn award_exp(
     }
 }
 
-/// Exp awarded for creating a forum post or topic (SPEC §10): +2.
+/// XP awarded for creating a forum post or topic (SPEC §10): +2.
+/// Amount is read from xp_source_defs by award_exp.
 async fn award_post_exp(db: &sqlx::PgPool, user_id: i32, post_id: i64) {
     award_exp(
         db,
         user_id,
-        2,
         "forum_post_create",
         Some("forum_post"),
         Some(post_id),
@@ -172,7 +182,7 @@ async fn award_post_exp(db: &sqlx::PgPool, user_id: i32, post_id: i64) {
 async fn award_mod_received_exp(db: &sqlx::PgPool, user_id: i32, modlog_id: i64) {
     // Daily cap: count today's positive mod-received events for this user.
     let today: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM exp_events
+        "SELECT COUNT(*) FROM xp_events
          WHERE user_id = $1 AND event_type = 'mod_received'
            AND created_at >= CURRENT_DATE",
     )
@@ -186,7 +196,6 @@ async fn award_mod_received_exp(db: &sqlx::PgPool, user_id: i32, modlog_id: i64)
     award_exp(
         db,
         user_id,
-        1,
         "mod_received",
         Some("forum_moderation"),
         Some(modlog_id),
@@ -200,24 +209,24 @@ pub async fn my_level(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let row: Option<(i16, i64)> = sqlx::query_as("SELECT level, exp FROM users WHERE id = $1")
+    let row: Option<(i16, i64)> = sqlx::query_as("SELECT level, xp FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(&state.db)
         .await?;
-    let (level, exp) = row.ok_or_else(|| AppError::BadRequest("user not found".to_string()))?;
+    let (level, xp) = row.ok_or_else(|| AppError::BadRequest("user not found".to_string()))?;
     let per = exp_per_level().max(1);
-    let next_level_exp = i64::from(level.saturating_add(1)) * per;
-    let cur_level_exp = i64::from(level) * per;
+    let next_level_xp = i64::from(level.saturating_add(1)) * per;
+    let cur_level_xp = i64::from(level) * per;
     let progress = if level >= 100 {
         1.0
     } else {
-        (exp - cur_level_exp) as f64 / (next_level_exp - cur_level_exp).max(1) as f64
+        (xp - cur_level_xp) as f64 / (next_level_xp - cur_level_xp).max(1) as f64
     };
     Ok(Json(json!({
         "err": 0,
         "level": level,
-        "exp": exp,
-        "exp_to_next": (next_level_exp - exp).max(0),
+        "xp": xp,
+        "xp_to_next": (next_level_xp - xp).max(0),
         "progress": progress.clamp(0.0, 1.0),
         "level_up": false,
     })))
@@ -3863,13 +3872,13 @@ pub async fn user_profile(
     .await?
     .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
 
-    let (id, username, level, exp, xp, rank, trust, reputation, created_at, last_active_at, total_words_read, total_works_read) = row;
+    let (id, username, level, _exp, xp, rank, trust, reputation, created_at, last_active_at, total_words_read, total_works_read) = row;
 
-    // Compute XP progress within current level
-    let next_level_exp = exp_per_level() * (level as i64 + 1);
-    let level_start_exp = exp_per_level() * (level as i64);
-    let progress = if next_level_exp > level_start_exp {
-        ((xp as f64) / (next_level_exp - level_start_exp) as f64 * 100.0).min(100.0) as i32
+    // Compute XP progress within current level (using unified xp column)
+    let next_level_xp = exp_per_level() * (level as i64 + 1);
+    let level_start_xp = exp_per_level() * (level as i64);
+    let progress = if next_level_xp > level_start_xp {
+        ((xp as f64) / (next_level_xp - level_start_xp) as f64 * 100.0).min(100.0) as i32
     } else {
         100
     };
@@ -3880,7 +3889,6 @@ pub async fn user_profile(
             "id": id,
             "username": username,
             "level": level,
-            "exp": exp,
             "xp": xp,
             "rank": rank,
             "trust": trust,
@@ -3889,8 +3897,8 @@ pub async fn user_profile(
             "last_active_at": last_active_at,
             "total_words_read": total_words_read,
             "total_works_read": total_works_read,
-            "next_level_exp": next_level_exp,
-            "level_start_exp": level_start_exp,
+            "next_level_xp": next_level_xp,
+            "level_start_xp": level_start_xp,
             "progress_percent": progress,
         }
     })))
@@ -3904,25 +3912,25 @@ pub async fn user_xp_history(
 ) -> Result<axum::Json<serde_json::Value>, AppError> {
     // Get current XP info
     let user = sqlx::query_as::<_, (i64, i16, i32)>(
-        "SELECT exp, level, xp FROM users WHERE id = $1",
+        "SELECT xp, level, rank FROM users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
 
-    let (exp, level, xp) = user;
-    let next_level_exp = exp_per_level() * (level as i64 + 1);
-    let level_start_exp = exp_per_level() * (level as i64);
-    let progress = if next_level_exp > level_start_exp {
-        ((xp as f64) / (next_level_exp - level_start_exp) as f64 * 100.0).min(100.0) as i32
+    let (xp, level, rank) = user;
+    let next_level_xp = exp_per_level() * (level as i64 + 1);
+    let level_start_xp = exp_per_level() * (level as i64);
+    let progress = if next_level_xp > level_start_xp {
+        ((xp as f64) / (next_level_xp - level_start_xp) as f64 * 100.0).min(100.0) as i32
     } else {
         100
     };
 
     // Get recent XP events (last 20)
-    let events = sqlx::query_as::<_, (String, i64, chrono::DateTime<chrono::Utc>)>(
-        "SELECT event_type, amount, created_at FROM exp_events
+    let events = sqlx::query_as::<_, (String, i32, chrono::DateTime<chrono::Utc>)>(
+        "SELECT event_type, xp, created_at FROM xp_events
          WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20",
     )
     .bind(user_id)
@@ -3931,7 +3939,7 @@ pub async fn user_xp_history(
 
     // Today's XP by type (for daily cap display)
     let today_events = sqlx::query_as::<_, (String, i64)>(
-        "SELECT event_type, SUM(amount) as total FROM exp_events
+        "SELECT event_type, SUM(xp) as total FROM xp_events
          WHERE user_id = $1 AND created_at >= CURRENT_DATE
          GROUP BY event_type",
     )
@@ -3940,25 +3948,28 @@ pub async fn user_xp_history(
     .await?;
 
     Ok(axum::Json(serde_json::json!({
-        "current_xp": exp,
-        "current_level": level,
-        "xp_in_level": xp,
-        "next_level_xp": next_level_exp,
-        "level_start_xp": level_start_exp,
-        "progress_percent": progress,
-        "recent_events": events.into_iter().map(|(event_type, amount, created_at)| {
-            serde_json::json!({
-                "event_type": event_type,
-                "xp": amount,
-                "created_at": created_at,
-            })
-        }).collect::<Vec<_>>(),
-        "today_by_type": today_events.into_iter().map(|(event_type, total)| {
-            serde_json::json!({
-                "event_type": event_type,
-                "total_xp": total,
-            })
-        }).collect::<Vec<_>>(),
+        "err": 0,
+        "data": {
+            "current_xp": xp,
+            "current_level": level,
+            "rank": rank,
+            "next_level_xp": next_level_xp,
+            "level_start_xp": level_start_xp,
+            "progress_percent": progress,
+            "recent_events": events.into_iter().map(|(event_type, xp, created_at)| {
+                serde_json::json!({
+                    "event_type": event_type,
+                    "xp": xp,
+                    "created_at": created_at,
+                })
+            }).collect::<Vec<_>>(),
+            "today_by_type": today_events.into_iter().map(|(event_type, total)| {
+                serde_json::json!({
+                    "event_type": event_type,
+                    "total_xp": total,
+                })
+            }).collect::<Vec<_>>(),
+        }
     })))
 }
 
@@ -4081,7 +4092,6 @@ pub async fn award_reaction_exp(db: &sqlx::PgPool, user_id: i32, post_id: i64) {
     award_exp(
         db,
         user_id,
-        5,
         "post_reacted",
         Some("forum_post"),
         Some(post_id),
@@ -4089,11 +4099,11 @@ pub async fn award_reaction_exp(db: &sqlx::PgPool, user_id: i32, post_id: i64) {
     .await;
 }
 
-/// Exp awarded when a user votes on a poll: +3.
+/// XP awarded when a user votes on a poll: +3.
 pub async fn award_poll_vote_exp(db: &sqlx::PgPool, user_id: i32, poll_id: i64) {
     // Daily cap: count today's poll vote events for this user.
     let today: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM exp_events
+        "SELECT COUNT(*) FROM xp_events
          WHERE user_id = $1 AND event_type = 'poll_voted'
            AND created_at >= CURRENT_DATE",
     )
@@ -4107,7 +4117,6 @@ pub async fn award_poll_vote_exp(db: &sqlx::PgPool, user_id: i32, poll_id: i64) 
     award_exp(
         db,
         user_id,
-        3,
         "poll_voted",
         Some("forum_poll"),
         Some(poll_id),
