@@ -109,7 +109,7 @@ effort moves into messaging (site DMs) and uploads (site service).
 | 5 | site-wide realtime: WS `/ws` + SSE + Redis pubsub | ✅ DONE — WS + SSE + Redis cross-instance pubsub (`e12fef6`) |
 | 6 | PWA + theming (v1 scope) | ✅ DONE — manifest, offline fallback, update/install prompts (`76dfe99`) |
 | 7 | NodeBB cutover via importer (v1 scope) | ✅ DONE — crates/forum-import CLI + JSON schema + tests (`5ac26d2`) |
-| **8** | **Forum reputation/gamification UI + widgets + theme parity** | **PLANNED — see §8 below** |
+| **8** | **Forum reputation/gamification UI + widgets + theme parity** | ✅ DONE — 4 lanes: AuthorCard, widgets, theme tokens, XP wiring (`e88d268`) |
 
 ## 3. Phase 4 lanes (each = one PR-sized task)
 
