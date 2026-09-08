@@ -1367,6 +1367,10 @@ fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
             "/api/forum/users/{userId}/xp-history",
             get(crate::routes::forum::user_xp_history),
         )
+        .route(
+            "/api/forum/users/{userId}/achievements",
+            get(crate::routes::forum::user_achievements),
+        )
         // ── Phase 8: Forum widgets ─────────────────────────────
         .route(
             "/api/forum/widgets/recent",

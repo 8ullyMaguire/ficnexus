@@ -3973,6 +3973,39 @@ pub async fn user_xp_history(
     })))
 }
 
+/// GET /api/forum/users/{user_id}/achievements
+/// Returns achievements unlocked by a user. Stub endpoint — the actual
+/// achievement-unlocking logic is deferred; this returns whatever is in
+/// user_features with feature_type='achievement' for the user.
+pub async fn user_achievements(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::server::AppState>>,
+    axum::extract::Path(user_id): axum::extract::Path<i32>,
+) -> Result<axum::Json<serde_json::Value>, AppError> {
+    let achievements = sqlx::query_as::<_, (String, String, chrono::DateTime<chrono::Utc>)>(
+        "SELECT f.slug, f.name, uf.unlocked_at
+         FROM user_features uf
+         JOIN features f ON f.id = uf.feature_id
+         WHERE uf.user_id = $1 AND f.feature_type = 'achievement'
+         ORDER BY uf.unlocked_at DESC",
+    )
+    .bind(user_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(axum::Json(serde_json::json!({
+        "err": 0,
+        "data": {
+            "achievements": achievements.into_iter().map(|(slug, name, unlocked_at)| {
+                serde_json::json!({
+                    "type": slug,
+                    "name": name,
+                    "unlocked_at": unlocked_at,
+                })
+            }).collect::<Vec<_>>(),
+        }
+    })))
+}
+
 // ── Phase 8: Forum widgets ──────────────────────────────────────────────────
 
 /// GET /api/forum/widgets/recent
