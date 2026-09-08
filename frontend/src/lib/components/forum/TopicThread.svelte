@@ -6,7 +6,7 @@
   // Shared by two routes:
   //   * /forum/board/{topicSlug}.{topicId}  — canonical (slug form)
   //   * /forum/{categorySlug}/{topicId}     — legacy numeric fallback
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { marked } from 'marked';
   import DOMPurify from 'dompurify';
@@ -36,6 +36,7 @@
     type ForumPost,
     type ForumModStatus,
   } from '$lib/api/forum';
+  import { saveDraft, deleteDraft, listDrafts } from '$lib/api/drafts';
   import { auth } from '$lib/stores/auth.svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { getPref } from '$lib/prefs';
@@ -97,6 +98,25 @@
   let replyError = $state('');
   let replyOk = $state(false);
   let showPreview = $state(false);
+
+  // Draft autosave for reply composer
+  let replyDraftTimer: ReturnType<typeof setInterval> | null = null;
+  let replyDraftRestored = $state(false);
+
+  function replyDraftRef(): string {
+    return String(topicId);
+  }
+
+  async function persistReplyDraft() {
+    if (!auth.isLoggedIn || !replyBody.trim()) return;
+    await saveDraft('forum_post', replyDraftRef(), { body: replyBody });
+  }
+
+  function scheduleReplyAutosave() {
+    replyDraftTimer = setInterval(() => { persistReplyDraft(); }, 30_000);
+  }
+
+  onDestroy(() => { if (replyDraftTimer) clearInterval(replyDraftTimer); });
 
   // Follow
   let following = $state(false);
@@ -276,6 +296,20 @@
       // F5: moderation allowance for logged-in curators (level ≥ 50). This
       // gates the per-post mod buttons; failure just hides them.
       await loadModStatus();
+      // Restore reply draft if one exists
+      if (auth.isLoggedIn && Number.isFinite(topicId)) {
+        try {
+          const drafts = await listDrafts('forum_post');
+          if (drafts.err === 0 && drafts.items) {
+            const draft = drafts.items.find(d => d.topic_id === topicId && d.body);
+            if (draft && draft.body && !replyBody) {
+              replyBody = draft.body;
+              replyDraftRestored = true;
+            }
+          }
+        } catch { /* ignore restore errors */ }
+      }
+      scheduleReplyAutosave();
       // F4: mark the topic read up to its last post (debounced fire-and-forget —
       // never block render on this, and ignore failures silently).
       if (auth.isLoggedIn && Number.isFinite(topicId)) {
@@ -461,6 +495,8 @@
       if (res.err === 0) {
         replyBody = '';
         replyOk = true;
+        // Draft no longer needed
+        deleteDraft('forum_post', replyDraftRef()).catch(() => {});
         await load();
       } else {
         replyError = res.msg ?? t('forum.actionFailed');
@@ -893,7 +929,7 @@
             {#if replyError}<div class="error-card"><strong>{replyError}</strong></div>{/if}
             {#if replyOk}<p class="ok">{t('forum.replyPosted')}</p>{/if}
             <label class="arc-label">Comment
-              <textarea class="arc-textarea" bind:value={replyBody} rows="4" placeholder={t('forum.replyPlaceholder')}></textarea>
+              <textarea class="arc-textarea" bind:value={replyBody} rows="4" placeholder={t('forum.replyPlaceholder')} onblur={() => persistReplyDraft()}></textarea>
             </label>
             {#if replyBody.trim()}
               <button class="arc-btn" type="button" onclick={() => (showPreview = !showPreview)}>{showPreview ? 'Hide preview' : 'Show preview'}</button>
@@ -1068,7 +1104,7 @@
             <h2>{t('forum.reply')}</h2>
             {#if replyError}<div class="error-card"><strong>⚠️ {replyError}</strong></div>{/if}
             {#if replyOk}<p class="ok">{t('forum.replyPosted')}</p>{/if}
-            <textarea bind:value={replyBody} rows="4" placeholder={t('forum.replyPlaceholder')}></textarea>
+            <textarea bind:value={replyBody} rows="4" placeholder={t('forum.replyPlaceholder')} onblur={() => persistReplyDraft()}></textarea>
             {#if replyBody.trim()}
               <button class="btn btn-secondary" type="button" onclick={() => (showPreview = !showPreview)}>{showPreview ? 'Hide preview' : 'Show preview'}</button>
               {#if showPreview}

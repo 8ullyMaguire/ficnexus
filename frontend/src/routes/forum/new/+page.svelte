@@ -1,10 +1,12 @@
 <script lang="ts">
   // New-topic composer (F3): title + category + opening post, POSTs to
   // /api/forum/topics, then navigates to the created topic.
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { createTopic, getForumCategories, type ForumCategory } from '$lib/api/forum';
+  import { saveDraft, deleteDraft, listDrafts } from '$lib/api/drafts';
+  import { auth } from '$lib/stores/auth.svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { getPref } from '$lib/prefs';
   import ArchiveButton from '$lib/ui/archive/ArchiveButton.svelte';
@@ -19,6 +21,23 @@
   let submitting = $state(false);
   let error = $state('');
   let ok = $state(false);
+  let draftRestored = $state(false);
+  let autosaveTimer: ReturnType<typeof setInterval> | null = null;
+
+  function draftRef(): string {
+    return 'new:' + (categorySlug || '_');
+  }
+
+  async function persistDraft() {
+    if (!auth.isLoggedIn || (!title.trim() && !body.trim())) return;
+    await saveDraft('forum_topic', draftRef(), { title, body });
+  }
+
+  function scheduleAutosave() {
+    autosaveTimer = setInterval(() => { persistDraft(); }, 30_000);
+  }
+
+  onDestroy(() => { if (autosaveTimer) clearInterval(autosaveTimer); });
 
   onMount(async () => {
     const preset = $page?.url?.searchParams?.get('category');
@@ -39,6 +58,21 @@
     } finally {
       loadingCategories = false;
     }
+    // Restore draft if one exists
+    if (auth.isLoggedIn) {
+      try {
+        const drafts = await listDrafts('forum_topic');
+        if (drafts.err === 0 && drafts.items) {
+          const draft = drafts.items.find(d => d.category_id === null && d.title);
+          if (draft && (draft.title || draft.body)) {
+            title = draft.title ?? '';
+            body = draft.body;
+            draftRestored = true;
+          }
+        }
+      } catch { /* ignore restore errors */ }
+    }
+    scheduleAutosave();
   });
 
   async function submit() {
@@ -54,6 +88,8 @@
       });
       if (res.err === 0 && res.id) {
         ok = true;
+        // Draft no longer needed
+        deleteDraft('forum_topic', draftRef()).catch(() => {});
         try {
           // Prefer the canonical slug URL when the server returned one.
           await goto(res.topic_slug ? `/forum/board/${res.topic_slug}.${res.id}` : `/forum/${categorySlug}/${res.id}`);
@@ -107,7 +143,7 @@
 
         <dt class="arc-dt">Opening Post</dt>
         <dd class="arc-dd">
-          <textarea class="arc-textarea" bind:value={body} rows="8" maxlength="20000" placeholder={t('forum.topicBodyPlaceholder')}></textarea>
+          <textarea class="arc-textarea" bind:value={body} rows="8" maxlength="20000" placeholder={t('forum.topicBodyPlaceholder')} onblur={() => persistDraft()}></textarea>
         </dd>
       </dl>
 
@@ -146,7 +182,7 @@
 
       <label>
         {t('forum.topicBody')}
-        <textarea bind:value={body} rows="8" maxlength="20000" placeholder={t('forum.topicBodyPlaceholder')}></textarea>
+        <textarea bind:value={body} rows="8" maxlength="20000" placeholder={t('forum.topicBodyPlaceholder')} onblur={() => persistDraft()}></textarea>
       </label>
 
       <p class="muted hint">{t('forum.mentionHint')}</p>
