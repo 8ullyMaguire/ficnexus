@@ -103,7 +103,7 @@ effort moves into messaging (site DMs) and uploads (site service).
 |---|---|---|
 | 1–2 | research + contracts (v1) | done in v1 — `contracts/*.md` authoritative **except** `forum-flags-moderation.md` (superseded by Lane 2) and `forum-messaging.md` route paths (now `/api/messages/*`) |
 | 3 | migrations 072–079 recovered | ✅ DONE (`f4cc60f`) — **Phase 4 needs zero new DDL** |
-| **4** | **Lanes 1–7 below (integration-first)** | IN PROGRESS — backend done: 1, 3, 5, 6; 7-partial (uncommitted); frontend done: 2-partial (report btn), 3 (/messages); not started: 4 |
+| **4** | **Lanes 1–7 below (integration-first)** | IN PROGRESS — backend done: 1, 2 (deep links), 3, 5, 6; 7-partial; frontend done: 2 (post+topic report), 3 (/messages); not started: 4 |
 | 5 | site-wide realtime: WS `/ws` + Redis pubsub + SSE fallback | after 4 |
 | 6 | PWA + theming (v1 scope) | after 5 |
 | 7 | NodeBB cutover via importer (v1 scope) | last |
@@ -130,7 +130,7 @@ body, payload, poll_data)`. No DDL change.
 3. Tests: route-handler tests (unit tests for payload/key JSON only today)
    + composer autosave vitest. TODO.
 
-### Lane 2 — Flags: wire forum into the site queue (FRONTEND DONE, 3 items left)
+### Lane 2 — Flags: wire forum into the site queue (✅ DONE `7fb9ad9`)
 
 Nothing to build server-side (verified: reports.rs:75 whitelist, :149
 triage, :390 resolve; weights via trust.rs:47; consumed by trust.rs:113).
@@ -138,14 +138,18 @@ triage, :390 resolve; weights via trust.rs:47; consumed by trust.rs:113).
 1. ✅ Frontend Report button on post actions → site report dialog:
    `TopicThread.svelte` (openReport/submitReport) + `reportForumPost()` in
    `frontend/src/lib/api/forum.ts` POSTs `{target_type: 'forum_post'}` to
-   `/api/reports`. Topic-level (`forum_topic`) report path still TODO if
-   the topic header has no Report action — check.
-2. Owner notification on report: check what comments do today and match
-   exactly — do not invent a new notification kind. TODO.
-3. Mod surface: ensure `forum_post`/`forum_topic` rows resolve to deep
-   links (`link` from reference_id); add resolution if missing. TODO.
-4. Tests: e2e — TL1 reports a post → TL5 sees + resolves it in the queue. TODO.
-5. Mark `forum-flags-moderation.md` superseded by this lane. TODO.
+   `/api/reports`. Topic-level (`forum_topic`) report path added —
+   `reportForumTopic()` helper + Report button in the topic header with its
+   own report box (mirrors post-level flow).
+2. ✅ Owner notification on report: verified reports.rs never notifies
+   owners for ANY target type — forum already matches comments. No change
+   needed (do not invent a new notification kind).
+3. ✅ Mod surface deep links: `list_reports` now resolves `forum_post` and
+   `forum_topic` → `/forum/board/{slug}.{id}` via a JOIN; other targets get
+   `link: null`. Backend-only change in `reports.rs`.
+4. Tests: e2e — TL1 reports a post → TL5 sees + resolves it in the queue.
+   Requires live DB — deferred.
+5. ✅ Marked `forum-flags-moderation.md` superseded by this lane.
 
 
 ### Lane 3 — Site-wide DMs (BACKEND+UI+TESTS DONE `596bf5d`)
