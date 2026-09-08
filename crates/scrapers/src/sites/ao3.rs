@@ -533,6 +533,15 @@ impl SiteScraper for Ao3Scraper {
 
         Ok(tags)
     }
+
+    async fn list_author_works(
+        &self,
+        client: &reqwest::Client,
+        profile_url: &str,
+        _creds: &[crate::SiteCredentials],
+    ) -> Result<Vec<String>, crate::ScrapeError> {
+        Self::list_author_works(client, profile_url).await
+    }
 }
 
 #[cfg(test)]

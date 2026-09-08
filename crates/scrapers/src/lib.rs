@@ -280,6 +280,26 @@ pub trait SiteScraper: Send + Sync {
     ) -> Result<Vec<ExtractedTag>, ScrapeError> {
         Ok(vec![])
     }
+
+    /// List all works/stories started by an author on their profile page.
+    ///
+    /// Used for batch download: given an author profile URL (e.g.
+    /// `archiveofourown.org/users/{name}` or
+    /// `forum.questionablequesting.com/members/{name}.{id}/`), return
+    /// the URLs of all threads/works the author created.
+    ///
+    /// `creds` provides optional login credentials for gated content.
+    /// Default: unsupported (only AO3 and XenForo implement this).
+    async fn list_author_works(
+        &self,
+        _client: &reqwest::Client,
+        _profile_url: &str,
+        _creds: &[SiteCredentials],
+    ) -> Result<Vec<String>, ScrapeError> {
+        Err(ScrapeError::Unsupported(
+            "list_author_works not implemented for this site".into(),
+        ))
+    }
 }
 
 /// Credentials for a site that requires login. Hosts source these from
