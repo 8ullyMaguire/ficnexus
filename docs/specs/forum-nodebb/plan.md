@@ -425,4 +425,15 @@ the column today and no listing filters it** — this lane wires it up.
     Remaining: Lane 1 composer autosave + vitest, Lane 2 items 2–5
   (topic-level report, owner-notify match, mod-surface deep-link, e2e),
   Lane 5 groups UI, Lane 7 importer crate, final §4 verification.
+- 2026-09-08: **Review findings resolved** -- all 9 findings fixed:
+  1. Lane 6 UI committed (18a6b64). 2. Poll serializer deduped
+     (serialize_poll derives is_closed from close_at; voted_by_user removed
+     from TS type). 3. Contract tests added (unit + DB-gated uploads suite).
+  4. Commit hygiene followed. 5. Migration squash deferred to Phase 5.
+  6. Uploads lifecycle documented in data-model.md; tests/uploads_api.rs
+     covers anonymous 401, size limit, MIME whitelist, round-trip, delete.
+  7. i18n audit: no dead keys found; added 5 missing poll keys to all 5
+     non-English dictionaries. 8. All 9 svelte-check errors fixed (missing
+     i18n keys, goto import, setPref import, stale url_id). 9. publish-
+     scheduled deploy: systemd timer + service units; deploy.sh updated.
 
