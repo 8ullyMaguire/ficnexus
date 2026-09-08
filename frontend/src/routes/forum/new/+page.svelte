@@ -6,6 +6,7 @@
   import { page } from '$app/stores';
   import { createTopic, getForumCategories, type ForumCategory } from '$lib/api/forum';
   import { saveDraft, deleteDraft, listDrafts } from '$lib/api/drafts';
+  import { handleImageEvent } from '$lib/api/uploadImage';
   import { auth } from '$lib/stores/auth.svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { getPref } from '$lib/prefs';
@@ -22,6 +23,7 @@
   let error = $state('');
   let ok = $state(false);
   let draftRestored = $state(false);
+  let uploadStatus = $state('');
   let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 
   function draftRef(): string {
@@ -143,10 +145,14 @@
 
         <dt class="arc-dt">Opening Post</dt>
         <dd class="arc-dd">
-          <textarea class="arc-textarea" bind:value={body} rows="8" maxlength="20000" placeholder={t('forum.topicBodyPlaceholder')} onblur={() => persistDraft()}></textarea>
+          <textarea class="arc-textarea" bind:value={body} rows="8" maxlength="20000" placeholder={t('forum.topicBodyPlaceholder')} onblur={() => persistDraft()}
+            onpaste={(e) => handleImageEvent(e, e.currentTarget, (m) => uploadStatus = m)}
+            ondrop={(e) => handleImageEvent(e, e.currentTarget, (m) => uploadStatus = m)}
+          ></textarea>
         </dd>
       </dl>
 
+      {#if uploadStatus}<p class="muted">{uploadStatus}</p>{/if}
       <p class="muted hint">{t('forum.mentionHint')}</p>
 
       {#if error}<div class="error-card"><strong>{error}</strong></div>{/if}
@@ -182,9 +188,13 @@
 
       <label>
         {t('forum.topicBody')}
-        <textarea bind:value={body} rows="8" maxlength="20000" placeholder={t('forum.topicBodyPlaceholder')} onblur={() => persistDraft()}></textarea>
+        <textarea bind:value={body} rows="8" maxlength="20000" placeholder={t('forum.topicBodyPlaceholder')} onblur={() => persistDraft()}
+          onpaste={(e) => handleImageEvent(e, e.currentTarget, (m) => uploadStatus = m)}
+          ondrop={(e) => handleImageEvent(e, e.currentTarget, (m) => uploadStatus = m)}
+        ></textarea>
       </label>
 
+      {#if uploadStatus}<p class="muted">{uploadStatus}</p>{/if}
       <p class="muted hint">{t('forum.mentionHint')}</p>
 
       {#if error}<div class="error-card"><strong>⚠️ {error}</strong></div>{/if}

@@ -37,6 +37,7 @@
     type ForumModStatus,
   } from '$lib/api/forum';
   import { saveDraft, deleteDraft, listDrafts } from '$lib/api/drafts';
+  import { handleImageEvent } from '$lib/api/uploadImage';
   import { auth } from '$lib/stores/auth.svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { getPref } from '$lib/prefs';
@@ -102,6 +103,7 @@
   // Draft autosave for reply composer
   let replyDraftTimer: ReturnType<typeof setInterval> | null = null;
   let replyDraftRestored = $state(false);
+  let replyUploadStatus = $state('');
 
   function replyDraftRef(): string {
     return String(topicId);
@@ -929,8 +931,12 @@
             {#if replyError}<div class="error-card"><strong>{replyError}</strong></div>{/if}
             {#if replyOk}<p class="ok">{t('forum.replyPosted')}</p>{/if}
             <label class="arc-label">Comment
-              <textarea class="arc-textarea" bind:value={replyBody} rows="4" placeholder={t('forum.replyPlaceholder')} onblur={() => persistReplyDraft()}></textarea>
+              <textarea class="arc-textarea" bind:value={replyBody} rows="4" placeholder={t('forum.replyPlaceholder')} onblur={() => persistReplyDraft()}
+                onpaste={(e) => handleImageEvent(e, e.currentTarget, (m) => replyUploadStatus = m)}
+                ondrop={(e) => handleImageEvent(e, e.currentTarget, (m) => replyUploadStatus = m)}
+              ></textarea>
             </label>
+            {#if replyUploadStatus}<p class="muted">{replyUploadStatus}</p>{/if}
             {#if replyBody.trim()}
               <button class="arc-btn" type="button" onclick={() => (showPreview = !showPreview)}>{showPreview ? 'Hide preview' : 'Show preview'}</button>
               {#if showPreview}
@@ -1104,7 +1110,11 @@
             <h2>{t('forum.reply')}</h2>
             {#if replyError}<div class="error-card"><strong>⚠️ {replyError}</strong></div>{/if}
             {#if replyOk}<p class="ok">{t('forum.replyPosted')}</p>{/if}
-            <textarea bind:value={replyBody} rows="4" placeholder={t('forum.replyPlaceholder')} onblur={() => persistReplyDraft()}></textarea>
+            <textarea bind:value={replyBody} rows="4" placeholder={t('forum.replyPlaceholder')} onblur={() => persistReplyDraft()}
+              onpaste={(e) => handleImageEvent(e, e.currentTarget, (m) => replyUploadStatus = m)}
+              ondrop={(e) => handleImageEvent(e, e.currentTarget, (m) => replyUploadStatus = m)}
+            ></textarea>
+            {#if replyUploadStatus}<p class="muted">{replyUploadStatus}</p>{/if}
             {#if replyBody.trim()}
               <button class="btn btn-secondary" type="button" onclick={() => (showPreview = !showPreview)}>{showPreview ? 'Hide preview' : 'Show preview'}</button>
               {#if showPreview}
