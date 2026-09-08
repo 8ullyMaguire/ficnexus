@@ -266,6 +266,47 @@
   </section>
 
   <!-- ── Import / Export / Reset ──────────────────────────────── -->
+  <!-- ── Forum Theme ────────────────────────────────────────── -->
+  <section class="section">
+    <h3>Forum Theme</h3>
+    <p class="muted" style="margin-bottom: 0.5rem; font-size: 0.85rem;">Customize forum post and category colors.</p>
+    <div class="field-row">
+      <label>
+        Post Background
+        <input type="color" value={current.forum?.postBg ?? "#161b22"}
+          oninput={(e) => {
+            if (!current.forum) current.forum = {};
+            current.forum.postBg = e.currentTarget.value;
+          }} />
+      </label>
+      <label>
+        Post Border
+        <input type="color" value={current.forum?.postBorder ?? "#21262d"}
+          oninput={(e) => {
+            if (!current.forum) current.forum = {};
+            current.forum.postBorder = e.currentTarget.value;
+          }} />
+      </label>
+    </div>
+    <div class="field-row">
+      <label>
+        Mod Highlight
+        <input type="color" value={current.forum?.modHighlight ?? "#1f6feb"}
+          oninput={(e) => {
+            if (!current.forum) current.forum = {};
+            current.forum.modHighlight = e.currentTarget.value;
+          }} />
+      </label>
+      <label>
+        OP Highlight
+        <input type="color" value={current.forum?.opHighlight ?? "#238636"}
+          oninput={(e) => {
+            if (!current.forum) current.forum = {};
+            current.forum.opHighlight = e.currentTarget.value;
+          }} />
+      </label>
+    </div>
+  </section>
   <section class="section actions-row">
     <button class="btn btn-secondary" type="button" onclick={exportTheme}>
       ⬇ Export JSON

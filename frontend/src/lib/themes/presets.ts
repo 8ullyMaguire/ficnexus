@@ -26,6 +26,19 @@ export interface ThemeTokens {
   readerWidth: string;
   /** Line height inside the reader. */
   readerLineHeight: string;
+  /** Forum-specific tokens. */
+  forum?: {
+    /** Category badge colors (keyed by slug). */
+    categoryColors?: Record<string, string>;
+    /** Post card background. */
+    postBg?: string;
+    /** Post card border color. */
+    postBorder?: string;
+    /** Moderator highlight color. */
+    modHighlight?: string;
+    /** OP (original poster) highlight color. */
+    opHighlight?: string;
+  };
 }
 
 export const defaultDark: ThemeTokens = {
