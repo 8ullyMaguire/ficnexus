@@ -91,10 +91,9 @@ fn level_for_exp(exp: i64) -> i16 {
     ((exp / per).clamp(0, 100)) as i16
 }
 
-/// Award exp to a user with an idempotent audit trail (exp_events) and a
-/// level-up notification when the level changes. Best-effort: failures are
-/// logged, never fail the caller. The `dedupe` reference (reference_type +
-/// reference_id) makes re-awards a no-op.
+/// Award exp to a user. Best-effort: failures are logged, never fail the caller.
+/// Writes to exp_events + users.exp (the forum-specific ledger).
+/// TODO: delegate to services::progression::award_xp for full ledger unification.
 async fn award_exp(
     db: &sqlx::PgPool,
     user_id: i32,
