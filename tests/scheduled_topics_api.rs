@@ -450,3 +450,91 @@ async fn scheduled_detail_404s_for_stranger_and_clears_via_update() {
 
     cleanup(&db, topic_id, &cat_slug, &[uid, oid]).await;
 }
+
+/// Verify that the publish-scheduled SQL (run by the bin) flips due topics,
+/// notifies authors, and makes them visible in listings.
+#[tokio::test]
+#[ignore = "DB-gated"]
+async fn publish_scheduled_flips_and_notifies() {
+    let _g = db_guard();
+    let app = app().await;
+    let db = pool().await;
+    let (uid, uname) = seed_user(&db, "sched_pub").await;
+    let (oid, oname) = seed_user(&db, "sched_observer").await;
+    let (_cat_id, cat_slug) = seed_category(&db, "sched_pub_cat").await;
+    let auth = auth_header(uid, &uname);
+    let o_auth = auth_header(oid, &oname);
+
+    // Seed a topic scheduled for the past (simulate due topic).
+    let topic_id: i64 = sqlx::query_scalar(
+        "INSERT INTO forum_topics (category_id, author_id, title, body, topic_slug, slug, scheduled_at)
+         VALUES ($1, $2, $3, $4, $5, $6, '2000-01-01T00:00:00Z'::timestamptz)
+         RETURNING id",
+    )
+    .bind(cat_slug.as_str())
+    .bind(uid)
+    .bind(format!("Publishable {}", uniq("pt")))
+    .bind(format!("publish body {}", uniq("pb")))
+    .bind(format!("pub-{}", uniq("slug")))
+    .bind(format!("pub-{}", uniq("slug")))
+    .fetch_one(&db)
+    .await
+    .expect("seed scheduled topic");
+
+    // Verify hidden from stranger listing before publish.
+    let (ls, lb) = req(
+        &app,
+        "GET",
+        &format!("/api/forum/topics?category={cat_slug}"),
+        None,
+        Some(&o_auth),
+    )
+    .await;
+    let before: Vec<i64> = lb["items"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|t| t["id"].as_i64()).collect())
+        .unwrap_or_default();
+    assert!(!before.contains(&topic_id), "must be hidden before publish");
+
+    // Run the same SQL the publish-scheduled binary executes.
+    let flipped: Vec<(i64, i32, String, Option<String>)> = sqlx::query_as(
+        "UPDATE forum_topics SET scheduled_at = NULL
+         WHERE scheduled_at IS NOT NULL AND scheduled_at <= NOW()
+           AND deleted_at IS NULL
+         RETURNING id, author_id, title, topic_slug",
+    )
+    .fetch_all(&db)
+    .await
+    .expect("publish query");
+    assert!(
+        flipped.iter().any(|(id, _, _, _)| *id == topic_id),
+        "topic must be in the flipped set"
+    );
+
+    // Verify visible in listing after publish.
+    let (ls2, lb2) = req(
+        &app,
+        "GET",
+        &format!("/api/forum/topics?category={cat_slug}"),
+        None,
+        Some(&o_auth),
+    )
+    .await;
+    let after: Vec<i64> = lb2["items"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|t| t["id"].as_i64()).collect())
+        .unwrap_or_default();
+    assert!(after.contains(&topic_id), "must be visible after publish");
+
+    // Verify author received a notification.
+    let notif_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND type = 'topic_published'",
+    )
+    .bind(uid)
+    .fetch_one(&db)
+    .await
+    .unwrap_or(0);
+    assert!(notif_count >= 1, "author should have a notification");
+
+    cleanup(&db, topic_id, &cat_slug, &[uid, oid]).await;
+}
