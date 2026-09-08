@@ -39,8 +39,9 @@
   import { auth } from '$lib/stores/auth.svelte';
   import { t } from '$lib/i18n/index.svelte';
   import { getPref } from '$lib/prefs';
-  import PassageContextCard from './PassageContextCard.svelte';
+    import PassageContextCard from './PassageContextCard.svelte';
   import ReactionPicker from './ReactionPicker.svelte';
+  import PollBar from './PollBar.svelte';
 
   const uiMode = $derived(getPref('uiMode'));
 
@@ -757,8 +758,12 @@
           </section>
         {/if}
 
-        {#if topic?.payload && typeof topic.payload === 'object' && (topic.payload as Record<string, unknown>).type === 'marginalia'}
+                {#if topic?.payload && typeof topic.payload === 'object' && (topic.payload as Record<string, unknown>).type === 'marginalia'}
           <PassageContextCard payload={topic.payload as Record<string, unknown>} ficTitle={topic.title} />
+        {/if}
+
+        {#if topic?.poll}
+          <PollBar poll={topic.poll} />
         {/if}
 
         {#if uiMode === 'archive'}

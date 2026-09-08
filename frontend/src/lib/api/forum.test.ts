@@ -294,7 +294,7 @@ describe('F5 moderation API client', () => {
     expect((mockFetch.mock.calls[0][1] as RequestInit).method).toBe('DELETE');
   });
 
-  it('reportForumPost POSTs /api/reports with forum_post target', async () => {
+    it('reportForumPost POSTs /api/reports with forum_post target', async () => {
     mockFetch.mockResolvedValue(okJson({ err: 0, report_id: 33 }));
     const { reportForumPost } = await import('./forum');
     const res = await reportForumPost(52, 'spam');
@@ -303,6 +303,40 @@ describe('F5 moderation API client', () => {
     expect(init.method).toBe('POST');
     expect(JSON.parse(String(init.body))).toEqual({ target_type: 'forum_post', target_id: 52, reason: 'spam' });
     expect(res.report_id).toBe(33);
+  });
+
+  it('reportForumTopic POSTs /api/reports with forum_topic target', async () => {
+    mockFetch.mockResolvedValue(okJson({ err: 0, report_id: 34 }));
+    const { reportForumTopic } = await import('./forum');
+    const res = await reportForumTopic(19, 'off-topic');
+    expect(String(mockFetch.mock.calls[0][0])).toBe('/api/reports');
+    const init = mockFetch.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ target_type: 'forum_topic', target_id: 19, reason: 'off-topic' });
+    expect(res.report_id).toBe(34);
+  });
+});
+
+describe('F4 polls API client', () => {
+  it('voteOnPoll POSTs /api/forum/polls/{id}/vote with option_id', async () => {
+    mockFetch.mockResolvedValue(okJson({ err: 0 }));
+    const { voteOnPoll } = await import('./forum');
+    const res = await voteOnPoll(7, 13);
+    expect(String(mockFetch.mock.calls[0][0])).toBe('/api/forum/polls/7/vote');
+    const init = mockFetch.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ option_id: 13 });
+    expect(res.err).toBe(0);
+  });
+
+  it('closePoll POSTs /api/forum/polls/{id}/close', async () => {
+    mockFetch.mockResolvedValue(okJson({ err: 0 }));
+    const { closePoll } = await import('./forum');
+    const res = await closePoll(7);
+    expect(String(mockFetch.mock.calls[0][0])).toBe('/api/forum/polls/7/close');
+    const init = mockFetch.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe('POST');
+    expect(res.err).toBe(0);
   });
 });
 

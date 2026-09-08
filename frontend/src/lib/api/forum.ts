@@ -83,9 +83,11 @@ export interface ForumTopicDetail extends ApiResponse {
   next_cursor: number | null;
   limit: number;
   view_count_before: number;
-  /** F4 read-state: set for auth users, absent for anon. */
+    /** F4 read-state: set for auth users, absent for anon. */
   unread?: boolean;
   last_read_post_id?: number | null;
+  /** Attached poll, if this topic has one. */
+  poll?: ForumPoll | null;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -475,6 +477,47 @@ export async function liftBan(banId: number): Promise<ApiResponse> {
 
 export interface ForumReportResponse extends ApiResponse {
   report_id?: number;
+}
+
+/** A poll attached to a forum topic. */
+export interface ForumPollOption {
+  id: number;
+  text: string;
+  position: number;
+  vote_count: number;
+  /** Vote count for the authenticated user's choice (closed polls only). */
+  votes: number;
+  /** Whether the current user voted for this option (closed polls only). */
+  voted_by_user: boolean;
+}
+
+export interface ForumPoll {
+  id: number;
+  topic_id: number;
+  question: string;
+  max_selections: number;
+  allow_change: boolean;
+  is_closed: boolean;
+  close_at: string | null;
+  options: ForumPollOption[];
+}
+
+/** Get a poll with vote state. */
+export async function getPoll(pollId: number): Promise<{ err: number; poll: ForumPoll }> {
+  return request(`/api/forum/polls/${pollId}`);
+}
+
+/** Vote on a poll (single option). */
+export async function voteOnPoll(pollId: number, optionId: number): Promise<ForumReportResponse> {
+  return request(`/api/forum/polls/${pollId}/vote`, {
+    method: 'POST',
+    body: JSON.stringify({ option_id: optionId }),
+  });
+}
+
+/** Close a poll (topic author or staff only). */
+export async function closePoll(pollId: number): Promise<ForumReportResponse> {
+  return request(`/api/forum/polls/${pollId}/close`, { method: 'POST' });
 }
 
 /** Report a post to the moderation team (any logged-in user). */

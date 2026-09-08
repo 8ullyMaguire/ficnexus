@@ -578,6 +578,12 @@ export const en = {
   'forum.reactionGestures': 'Gestures & symbols',
   'forum.reactionNone': 'No matching emoji.',
   'forum.loginToParticipate': 'Log in to reply or follow.',
+  // ── F4: Polls ────────────────────────────────────────────────────────
+  'forum.pollClosed': 'Closed',
+  'forum.totalVotes': 'votes',
+  'forum.pollCanChange': 'You may change your vote',
+  'forum.pollNoChange': 'You cannot change your vote',
+  'forum.pollMultiSelect': 'Select up to {n} option(s)',
   // ── F4: mark-read + search ──────────────────────────────────────────
   'forum.searchTitle': 'Forum search',
   'forum.searchSubtitle': 'Search topics and replies across the forum.',
