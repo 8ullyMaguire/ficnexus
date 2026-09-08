@@ -44,6 +44,7 @@
     import PassageContextCard from './PassageContextCard.svelte';
   import ReactionPicker from './ReactionPicker.svelte';
   import PollBar from './PollBar.svelte';
+  import AuthorCard from './AuthorCard.svelte';
 
   const uiMode = $derived(getPref('uiMode'));
 
@@ -810,7 +811,7 @@
             {#each posts as post (post.id)}
               <div class="arc-post-box">
                 <div class="arc-post-header">
-                  <span class="arc-post-author">{post.author_username ?? '—'}</span>
+                  {#if post.author_id}<AuthorCard userId={post.author_id} username={post.author_username ?? '—'} />{:else}<span class="arc-post-author">{post.author_username ?? '—'}</span>{/if}
                   {#if post.is_op}<span class="arc-chip">OP</span>{/if}
                   <span class="arc-score">{t('forum.moderated', { score: post.score ?? 0 })}</span>
                   <span class="arc-post-date">{post.created_at.slice(0, 10)}{#if post.edited_at} (edited {post.edited_at.slice(0, 10)}){/if}</span>
