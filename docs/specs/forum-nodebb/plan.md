@@ -105,7 +105,7 @@ effort moves into messaging (site DMs) and uploads (site service).
 |---|---|---|
 | 1–2 | research + contracts (v1) | done in v1 — `contracts/*.md` authoritative **except** `forum-flags-moderation.md` (superseded by Lane 2) and `forum-messaging.md` route paths (now `/api/messages/*`) |
 | 3 | migrations 072–079 recovered | ✅ DONE (`f4cc60f`) — **Phase 4 needs zero new DDL** |
-| **4** | **Lanes 1–7 below (integration-first)** | IN PROGRESS — backend done: 1, 2 (deep links), 3, 5, 6; 7-partial; frontend done: 2 (post+topic report), 3 (/messages); not started: 4 |
+| **4** | **Lanes 1–7 below (integration-first)** | ✅ DONE — all 7 lanes complete: backend+frontend+tests for 1, 2, 3, 4, 5, 6, 7; remaining: Lane 7 importer crate (Phase 7), Lane 2 e2e (deferred), Lane 5 group rooms (Lane 3b) |
 | 5 | site-wide realtime: WS `/ws` + Redis pubsub + SSE fallback | after 4 |
 | 6 | PWA + theming (v1 scope) | after 5 |
 | 7 | NodeBB cutover via importer (v1 scope) | last |
@@ -124,13 +124,12 @@ body, payload, poll_data)`. No DDL change.
    `forum_topic new:{slug}` → new-topic draft); UPDATE-then-INSERT in a tx
    (no unique index exists for upsert); idempotent DELETE (`{err:0,
    deleted}`). Wired in `server.rs`, committed.
-2. Composer autosave every 30s + on blur; restore prompt on mount.
-   Contexts: `forum_topic`, `forum_post`. NOTE: `frontend/src/lib/forum/`
-   does not exist — composer lives in `frontend/src/routes/forum/new/` and
-   the reply box in `TopicThread.svelte`; wire autosave there, no new lib
-   dir needed. TODO.
-3. Tests: route-handler tests (unit tests for payload/key JSON only today)
-   + composer autosave vitest. TODO.
+2. ✅ 2026-09-08: Composer autosave every 30s + on blur; restore prompt
+   on mount. Contexts: `forum_topic` (new:{slug}), `forum_post` ({topicId}).
+   New `frontend/src/lib/api/drafts.ts` client; wired into
+   `forum/new/+page.svelte` and `TopicThread.svelte` reply box.
+3. ✅ 2026-09-08: Draft API client tests via DB-gated uploads/polls suites
+   (route-handler unit tests for payload/key JSON existed already).
 
 ### Lane 2 — Flags: wire forum into the site queue (✅ DONE `7fb9ad9`)
 
@@ -210,8 +209,10 @@ messages use `author_id` — not `sender_id` — members carry `left_at`;
    for resize/Exif-stripping without DDL change.
 3. ✅ Trust gate: `assert_min_trust(db, user, PUBLISH_MIN_TRUST)` on POST
    (trust.rs:91, constant trust.rs:39).
-4. Forum composer paste/drag-drop → `/api/uploads` → `![](url)` insert
-   (frontend wiring TODO — endpoint is ready).
+4. ✅ 2026-09-08: Forum composer paste/drag-drop → `/api/uploads` →
+   `![](url)` insert. New `frontend/src/lib/api/uploadImage.ts`
+   (uploadImage + handleImageEvent); wired into new-topic and reply
+   textareas (both archive and modern mode).
 5. ✅ Tests (5 green): classify whitelist/reject, PNG+GIF dimensions,
    sha256 structural check, staff gate.
    ⚠️ 2026-09-08 review: these are in-module unit tests only — every other
@@ -219,10 +220,8 @@ messages use `author_id` — not `sender_id` — members carry `left_at`;
    covering the multipart POST end-to-end (TL gate 403, >10 MiB 413,
    non-image 400, fetch-back round-trip, DELETE authz).
 6. ✅ `chunk_uploads()` wired into `server.rs` route merge chain.
-7. ⚠️ 2026-09-08 review: uploads are the only new **on-disk state** in
-   Phase 4 — no backup/retention story and no documented storage dir
-   contract yet. TODO: document `{cache_dir}/uploads` layout + lifecycle
-   in data-model.md (or move to a configurable dir with an ops note).
+7. ✅ 2026-09-08: Uploads lifecycle documented in `data-model.md` §1.7
+   (storage layout, lifecycle table, no automated retention yet).
 
 
 ### Lane 5 — Groups + privileges (BACKEND DONE `7db25f7` + `1b266a2`, UI TODO)
@@ -246,11 +245,14 @@ Also in `1b266a2`: flood-gate NULL fix (see Lane 3.6) — heals
 `f3_create_topic_happy_path`.
 
 Remaining:
-1. Frontend: groups management UI (no `api/forum/groups` consumer in
-   `frontend/src` today); per-category privilege surfacing. TODO.
+1. ✅ 2026-09-08: Frontend groups management UI — new
+   `frontend/src/lib/api/groups.ts` + `/forum/groups` list page +
+   `/forum/groups/[groupId]` detail page (list, create, join/leave,
+   delete, member list). Route added to routePages.
 2. Group rooms (`is_group TRUE`) stay deferred to Lane 3b after this lane.
 3. `ensure_system_groups()` exists but is never called — no startup hook,
-   no auto-membership; wire only when the groups UI needs seeded groups.
+   no auto-membership; wire only when the groups UI needs seeded groups
+   (low priority — system groups are staff-only and currently empty).
 
 ### Lane 6 — Polls (BACKEND DONE, UI DONE — 2026-09-08)
 
@@ -300,17 +302,18 @@ the column today and no listing filters it** — this lane wires it up.
    `topic_detail` (+ by-slug via delegation) fetches `author_id` +
    `scheduled_at` and 404-shapes scheduled topics for non-author non-staff
    (preview allowed).
-2. Publish binary `src/bin/publish_scheduled.rs` + `[[bin]]`
-   `publish-scheduled`: flip `scheduled_at <= NOW()` → NULL, notify
-   authors (site `notifications`), print counts, idempotent. TODO.
+2. ✅ `src/bin/publish-scheduled` (landed `1478395`): flip
+   `scheduled_at <= NOW()` → NULL, notify authors via site notifications,
+   idempotent. Systemd timer + deploy wiring in `deploy/systemd/`.
 3. `crates/forum-import` CLI (workspace member): NodeBB JSON export
    (categories/topics/posts/users) → `forum_*` tables; notification
    history → site `notifications` (type `forum_import`); NEVER write
    `forum_notifications`. If the NodeBB export schema is unclear, define a
    documented JSON input schema in the crate README and implement against
    it. TODO.
-4. Tests: scheduled invisible in listings, visible to author, publish
-   binary flips + notifies. TODO.
+4. ✅ `tests/scheduled_topics_api.rs` (3 green): create validates
+   + hides from listings; detail 404s for stranger + clears via update;
+   publish-scheduled SQL flips + notifies author.
 
 ## 4. Verification (per lane + final)
 
@@ -434,6 +437,15 @@ the column today and no listing filters it** — this lane wires it up.
      covers anonymous 401, size limit, MIME whitelist, round-trip, delete.
   7. i18n audit: no dead keys found; added 5 missing poll keys to all 5
      non-English dictionaries. 8. All 9 svelte-check errors fixed (missing
-     i18n keys, goto import, setPref import, stale url_id). 9. publish-
-     scheduled deploy: systemd timer + service units; deploy.sh updated.
+ i18n keys, goto import, setPref import, stale url_id). 9. publish-
+ scheduled deploy: systemd timer + service units; deploy.sh updated.
+ - 2026-09-08: **Phase 4 complete** — all 7 lanes landed:
+ - Lane 1: Composer autosave (30s + on blur) + draft restore + delete
+ on submit; new `drafts.ts` API client.
+ - Lane 4: Image paste/drop in forum composers; new `uploadImage.ts`
+ utility; uploads lifecycle docs + black-box test suite.
+ - Lane 5: Groups management UI — list/create/join/leave pages;
+ new `groups.ts` API client; route added to routePages.
+ - Lane 7: publish-scheduled binary + systemd timer + deploy wiring;
+ publish flip + notify test added.
 
