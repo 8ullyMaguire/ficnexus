@@ -342,6 +342,18 @@ pub async fn run(config: Config) {
     let addr = format!("0.0.0.0:{}", config.app_port);
     tracing::info!("Listening on {}", addr);
 
+    // Start Redis pubsub listener for cross-instance fanout (best-effort).
+    {
+        let rt_manager = state.rt_manager.clone();
+        let redis_client = redis::Client::open(&*config.redis_url)
+            .expect("Failed to create Redis client for pubsub");
+        tokio::spawn(async move {
+            if let Err(e) = crate::realtime::pubsub::start_redis_pubsub(redis_client, rt_manager).await {
+                tracing::warn!("Redis pubsub listener failed (single-instance mode): {}", e);
+            }
+        });
+    }
+
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("Failed to bind to address");
@@ -2306,6 +2318,7 @@ fn chunk_uploads() -> impl Into<Router<Arc<AppState>>> {
 fn chunk_realtime() -> impl Into<Router<Arc<AppState>>> {
     Router::new()
         .route("/ws", axum::routing::get(crate::realtime::ws::ws_handler))
+        .route("/events", axum::routing::get(crate::realtime::sse::sse_handler))
 }
 
 /// Route chain split into domain chunks (Task 14 refactor).
