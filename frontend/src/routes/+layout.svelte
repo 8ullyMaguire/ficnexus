@@ -7,6 +7,8 @@
  import NotificationBell from '$lib/components/NotificationBell.svelte';
  import NavDropdown from '$lib/components/NavDropdown.svelte';
  import OfflineIndicator from '$lib/components/OfflineIndicator.svelte';
+import UpdatePrompt from '$lib/components/UpdatePrompt.svelte';
+import InstallPrompt from '$lib/components/InstallPrompt.svelte';
  import HelpModal from '$lib/components/HelpModal.svelte';
  import CommandPalette from '$lib/components/CommandPalette.svelte';
  import DocLink from '$lib/components/DocLink.svelte';
@@ -287,6 +289,8 @@
 </main>
 
 <OfflineIndicator />
+<UpdatePrompt />
+<InstallPrompt />
 
 <footer class="footer muted">
 <span>FicNexus — {t('footer.tagline')}</span>

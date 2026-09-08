@@ -13,8 +13,32 @@ export function registerServiceWorker(): void {
   if (import.meta.env.DEV) return;
 
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((err) => {
+    navigator.serviceWorker.register('/sw.js').then((reg) => {
+      // Check for updates periodically.
+      setInterval(() => reg.update(), 60 * 60 * 1000); // hourly
+
+      // Listen for a new service worker installing.
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            // New content is available — dispatch event for UI.
+            window.dispatchEvent(new CustomEvent('sw-update-available'));
+          }
+        });
+      });
+    }).catch((err) => {
       console.error('[pwa] service worker registration failed:', err);
+    });
+
+    // Reload once when a new SW takes control.
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
     });
   });
 }

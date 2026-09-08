@@ -1,20 +1,19 @@
 /* FicNexus offline reading service worker (plain JS, served from /sw.js). */
 'use strict';
 
-const VERSION = 'fichub-v6';
+const VERSION = 'fichub-v7';
 
 // Caches
 const PRECACHE = `${VERSION}-precache`;
 const RUNTIME_FIC = `${VERSION}-fic`;
 const RUNTIME_API = `${VERSION}-api`;
+const RUNTIME_NAV = `${VERSION}-nav`;
 
 // App-shell assets to precache. Hashed immutable files are fingerprinted,
 // so the list is discovered at install time and the cache is versioned.
 // NOTE: '/' is intentionally NOT precached — the navigation shell must be
-// network-first so users always get the latest build when online (a
-// precached '/' previously served a stale shell for the life of the SW
-// version, which looked exactly like a failed deploy).
-const PRECACHE_URLS = ['/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/favicon.png'];
+// network-first so users always get the latest build when online.
+const PRECACHE_URLS = ['/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/favicon.png', '/offline.html'];
 
 /** Decide the caching strategy for a request URL (mirrors src/lib/pwa/strategies.ts). */
 function decideStrategy(url) {
@@ -41,6 +40,12 @@ function decideStrategy(url) {
   return 'none';
 }
 
+/** Check if a request is a page navigation (HTML response expected). */
+function isNavigation(request) {
+  return request.mode === 'navigate' ||
+    (request.headers.get('accept') || '').includes('text/html');
+}
+
 // stale-while-revalidate: serve the cached copy immediately (offline reading),
 // then fetch a fresh copy in the background to keep the cache current.
 async function staleWhileRevalidate(request, cacheName) {
@@ -52,8 +57,6 @@ async function staleWhileRevalidate(request, cacheName) {
       return response;
     })
     .catch(() => cached); // offline — fall back to whatever we have
-  // Fresh responses go to the client; if the network fails, the cached copy
-  // (or undefined → browser error) is served.
   return cached || network;
 }
 
@@ -80,6 +83,25 @@ async function networkFirst(request) {
     return network;
   } catch {
     return (await cache.match(request)) || Response.error();
+  }
+}
+
+// Navigation-first: network-first for page navigations, cache the shell
+// for offline fallback. Returns offline.html when both network and cache miss.
+async function navigationFirst(request) {
+  const cache = await caches.open(RUNTIME_NAV);
+  try {
+    const network = await fetch(request);
+    if (network.ok) {
+      cache.put(request, network.clone());
+    }
+    return network;
+  } catch {
+    // Network failed — try cached shell, then offline fallback.
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    const offline = await caches.match('/offline.html');
+    return offline || Response.error();
   }
 }
 
@@ -120,9 +142,16 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate: take control of open clients immediately.
+// Activate: take control of open clients immediately + enable navigation preload.
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    self.clients.claim().then(() => {
+      // Enable navigation preload if available (faster navigations).
+      if (self.registration.navigationPreload) {
+        return self.registration.navigationPreload.enable();
+      }
+    }),
+  );
 });
 
 // Fetch: route by strategy.
@@ -133,11 +162,15 @@ self.addEventListener('fetch', (event) => {
   // Same-origin GETs only (skip cross-origin, skip non-GET like POST auth).
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
 
+  // Navigation requests (page loads) — network-first with offline fallback.
+  if (isNavigation(request)) {
+    event.respondWith(navigationFirst(request));
+    return;
+  }
+
   const strategy = decideStrategy(request.url);
 
   if (strategy === 'precache') {
-    // App-shell assets are immutable (hashed) → cache-first. Cache on first
-    // fetch too, so assets missed during install (e.g. lazy chunks) get stored.
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;

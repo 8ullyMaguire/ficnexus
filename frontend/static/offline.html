@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#171a23" />
+  <title>Offline — FicNexus</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f1117;
+      color: #e1e4e8;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      text-align: center;
+      padding: 2rem;
+      max-width: 480px;
+    }
+    .icon { font-size: 4rem; margin-bottom: 1rem; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    p { color: #8b949e; margin-bottom: 1.5rem; line-height: 1.5; }
+    .cached {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      text-align: left;
+    }
+    .cached h2 { font-size: 1rem; margin-bottom: 0.5rem; color: #58a6ff; }
+    .cached ul { list-style: none; padding: 0; }
+    .cached li { padding: 0.25rem 0; color: #8b949e; font-size: 0.9rem; }
+    .cached li::before { content: '📄 '; }
+    a {
+      display: inline-block;
+      background: #238636;
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    a:hover { background: #2ea043; }
+    .retry { background: #1f6feb; margin-left: 0.5rem; }
+    .retry:hover { background: #388bfd; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">📡</div>
+    <h1>You're offline</h1>
+    <p>FicNexus needs an internet connection for most features. Some cached content may still be available.</p>
+    <div class="cached">
+      <h2>Available offline:</h2>
+      <ul>
+        <li>Previously read stories (if cached)</li>
+        <li>App shell and navigation</li>
+      </ul>
+    </div>
+    <a href="/">Go Home</a>
+    <a href="javascript:location.reload()" class="retry">Retry</a>
+  </div>
+  <script>
+    // Auto-retry when back online
+    window.addEventListener('online', () => location.reload());
+  </script>
+</body>
+</html>

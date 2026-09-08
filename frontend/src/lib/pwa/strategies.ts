@@ -4,13 +4,12 @@
  * Cache strategy decision for a URL — a pure function so it can be unit
  * tested without a service worker environment.
  *
- * - 'precache':       app-shell assets (immutable build hashes, icons, manifest)
- * - 'network-first':  public fic-content API responses (fresh data preferred,
- *                     cached fallback offline). Only endpoints serving public
- *                     fic content are cached — auth, bookmarks, admin, votes,
- *                     ratings, comments etc. are never intercepted.
- * - 'cache-first':    fic reader content — the core offline-reading payload
- * - 'none':           everything else (POSTs, auth, search, cross-origin, …)
+ * - 'precache':              app-shell assets (immutable build hashes, icons, manifest)
+ * - 'network-first':         root navigation + public fic-content APIs
+ * - 'stale-while-revalidate': public fic-content API responses (serve cache immediately,
+ *                            update in background)
+ * - 'cache-first':           fic reader content — the core offline-reading payload
+ * - 'none':                  everything else (POSTs, auth, search, cross-origin, …)
  */
 
 // Public, cacheable fic-content API endpoints. Everything else under /api/
@@ -23,7 +22,7 @@ const FIC_API_PREFIXES = [
   '/api/search/similar/',
 ];
 
-export function decideStrategy(url: string): 'precache' | 'network-first' | 'cache-first' | 'none' {
+export function decideStrategy(url: string): 'precache' | 'network-first' | 'stale-while-revalidate' | 'cache-first' | 'none' {
   let pathname: string;
   try {
     pathname = new URL(url, 'http://fichub.local').pathname;
@@ -31,11 +30,11 @@ export function decideStrategy(url: string): 'precache' | 'network-first' | 'cac
     return 'none';
   }
 
-  // Public fic-content API: network-first (fresh data when online, cache
-  // fallback when offline). Private endpoints return 'none' below.
+  // Public fic-content API: stale-while-revalidate (serve cache immediately,
+  // update in background). Private endpoints return 'none' below.
   if (pathname.startsWith('/api/')) {
     return FIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))
-      ? 'network-first'
+      ? 'stale-while-revalidate'
       : 'none';
   }
 
