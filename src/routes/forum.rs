@@ -3826,3 +3826,117 @@ async fn load_reactions_batch(
     }
     Ok(result)
 }
+
+// ── Phase 8: User profile & XP history ───────────────────────────────────────
+
+/// GET /api/forum/users/{user_id}/profile
+/// Returns user profile with gamification data (level, rank, XP, trust, reputation).
+pub async fn user_profile(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::server::AppState>>,
+    axum::extract::Path(user_id): axum::extract::Path<i32>,
+) -> Result<axum::Json<serde_json::Value>, AppError> {
+    let row = sqlx::query_as::<_, (i32, String, Option<String>, i16, i64, i32, i32, i32, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>, i64, i32)>(
+        "SELECT id, username, email, level, exp, xp, rank, trust, created_at, last_active_at, total_words_read, total_works_read
+         FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
+
+    let (id, username, email, level, exp, xp, rank, trust, created_at, last_active_at, total_words_read, total_works_read) = row;
+
+    // Compute XP progress within current level
+    let next_level_exp = exp_per_level() * (level as i64 + 1);
+    let level_start_exp = exp_per_level() * (level as i64);
+    let progress = if next_level_exp > level_start_exp {
+        ((xp as f64) / (next_level_exp - level_start_exp) as f64 * 100.0).min(100.0) as i32
+    } else {
+        100
+    };
+
+    Ok(axum::Json(serde_json::json!({
+        "id": id,
+        "username": username,
+        "email": email,
+        "level": level,
+        "exp": exp,
+        "xp": xp,
+        "rank": rank,
+        "trust": trust,
+        "reputation": trust,
+        "created_at": created_at,
+        "last_active_at": last_active_at,
+        "total_words_read": total_words_read,
+        "total_works_read": total_works_read,
+        "next_level_exp": next_level_exp,
+        "level_start_exp": level_start_exp,
+        "progress_percent": progress,
+    })))
+}
+
+/// GET /api/forum/users/{user_id}/xp-history
+/// Returns XP progress info and recent XP events.
+pub async fn user_xp_history(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::server::AppState>>,
+    axum::extract::Path(user_id): axum::extract::Path<i32>,
+) -> Result<axum::Json<serde_json::Value>, AppError> {
+    // Get current XP info
+    let user = sqlx::query_as::<_, (i64, i16, i32)>(
+        "SELECT exp, level, xp FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
+
+    let (exp, level, xp) = user;
+    let next_level_exp = exp_per_level() * (level as i64 + 1);
+    let level_start_exp = exp_per_level() * (level as i64);
+    let progress = if next_level_exp > level_start_exp {
+        ((xp as f64) / (next_level_exp - level_start_exp) as f64 * 100.0).min(100.0) as i32
+    } else {
+        100
+    };
+
+    // Get recent XP events (last 20)
+    let events = sqlx::query_as::<_, (String, i64, chrono::DateTime<chrono::Utc>)>(
+        "SELECT event_type, amount, created_at FROM exp_events
+         WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20",
+    )
+    .bind(user_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    // Today's XP by type (for daily cap display)
+    let today_events = sqlx::query_as::<_, (String, i64)>(
+        "SELECT event_type, SUM(amount) as total FROM exp_events
+         WHERE user_id = $1 AND created_at >= CURRENT_DATE
+         GROUP BY event_type",
+    )
+    .bind(user_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(axum::Json(serde_json::json!({
+        "current_xp": exp,
+        "current_level": level,
+        "xp_in_level": xp,
+        "next_level_xp": next_level_exp,
+        "level_start_xp": level_start_exp,
+        "progress_percent": progress,
+        "recent_events": events.into_iter().map(|(event_type, amount, created_at)| {
+            serde_json::json!({
+                "event_type": event_type,
+                "xp": amount,
+                "created_at": created_at,
+            })
+        }).collect::<Vec<_>>(),
+        "today_by_type": today_events.into_iter().map(|(event_type, total)| {
+            serde_json::json!({
+                "event_type": event_type,
+                "total_xp": total,
+            })
+        }).collect::<Vec<_>>(),
+    })))
+}

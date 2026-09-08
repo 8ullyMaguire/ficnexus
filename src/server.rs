@@ -1346,6 +1346,15 @@ fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
             "/api/messages/rooms/{roomId}",
             axum::routing::patch(crate::routes::messages::update_room_prefs),
         )
+        // ── Phase 8: User profile & XP history ─────────────────────
+        .route(
+            "/api/forum/users/{userId}/profile",
+            get(crate::routes::forum::user_profile),
+        )
+        .route(
+            "/api/forum/users/{userId}/xp-history",
+            get(crate::routes::forum::user_xp_history),
+        )
         // ── ActivityPub federation (NodeBB parity, opt-in via ACTIVITYPUB_ENABLED) ─
         .route(
             "/.well-known/webfinger",
