@@ -109,6 +109,7 @@ effort moves into messaging (site DMs) and uploads (site service).
 | 5 | site-wide realtime: WS `/ws` + SSE + Redis pubsub | ✅ DONE — WS + SSE + Redis cross-instance pubsub (`e12fef6`) |
 | 6 | PWA + theming (v1 scope) | ✅ DONE — manifest, offline fallback, update/install prompts (`76dfe99`) |
 | 7 | NodeBB cutover via importer (v1 scope) | ✅ DONE — crates/forum-import CLI + JSON schema + tests (`5ac26d2`) |
+| **8** | **Forum reputation/gamification UI + widgets + theme parity** | **PLANNED — see §8 below** |
 
 ## 3. Phase 4 lanes (each = one PR-sized task)
 
@@ -357,6 +358,227 @@ Phase 4. Importer crate landed in Phase 7 (`5ac26d2`).
      schedules it; record the intended runner (cron/systemd timer) in the
      Lane 7 section or the ops docs before calling Lane 7 done.
 
+
+## 8. Phase 8 — Forum reputation/gamification UI + widgets + theme parity
+
+**Status:** PLANNED (2026-09-08)
+**Dependencies:** Phase 4 (all lanes), Phase 5 (realtime), Phase 7 (importer)
+**Estimated scope:** 4 sub-lanes, each one PR-sized task
+
+### 8.0 Existing infrastructure (what we're building on)
+
+| Component | Location | Status |
+|---|---|---|
+| XP system | `src/progression.rs` — XpEvent, XpSourceDef, Feature, UserFeature, UserPref, PageLayout models | ✅ Shipped |
+| User gamification fields | `users` table: `level`, `exp`, `xp`, `rank`, `trust`, `reputation` | ✅ DDL exists |
+| XP award definitions | `xp_source_defs` table (event_type, xp_amount, daily_cap) | ✅ DDL exists |
+| XP events log | `xp_events` table (user_id, event_type, xp, source_ref) | ✅ DDL exists |
+| Feature gating | `features` table + `user_features` (unlock/enable/pin) | ✅ DDL exists |
+| User preferences | `user_prefs` table (JSONB key-value) | ✅ DDL exists |
+| Page layouts | `page_layouts` table (JSONB grid config) | ✅ DDL exists |
+| Theme system | `frontend/src/lib/themes/` — presets, ThemeEditor, settings page, API client | ✅ Shipped |
+| Trust gates | `src/services/trust.rs` — assert_min_trust, flag_weight, PUBLISH_MIN_TRUST | ✅ Shipped |
+| Forum moderation | `src/routes/forum.rs` — mod actions, score tracking, post moderation | ✅ Shipped |
+
+### 8.1 Lane 8a — Forum post author card (reputation + level display)
+
+**Goal:** Display author reputation, level, rank, and XP progress in forum post headers.
+
+**Backend:**
+- No new DDL needed — all fields exist in `users` table
+- Add `GET /api/forum/users/{user_id}/profile` endpoint returning:
+  ```json
+  {
+    "id": 1,
+    "username": "alice",
+    "level": 12,
+    "rank": 3,
+    "xp": 15420,
+    "trust": 85,
+    "reputation": 42,
+    "bio": "...",
+    "created_at": "2023-01-01T00:00:00Z",
+    "total_words_read": 1250000,
+    "total_works_read": 87
+  }
+  ```
+- Add `GET /api/forum/users/{user_id}/xp-history` endpoint returning:
+  ```json
+  {
+    "current_xp": 15420,
+    "current_level": 12,
+    "next_level_xp": 18500,
+    "progress_percent": 67,
+    "recent_events": [
+      {"event_type": "post_created", "xp": 10, "created_at": "..."},
+      {"event_type": "post_upvoted", "xp": 5, "created_at": "..."}
+    ]
+  }
+  ```
+
+**Frontend:**
+- New component `AuthorCard.svelte` — shows avatar (initials), username, level badge, XP progress bar, rank icon, trust score
+- Wire into `TopicThread.svelte` post headers — replace plain username with AuthorCard
+- Wire into `topic_detail` page — show author info sidebar
+- Add XP progress bar component `XpProgressBar.svelte` — shows current/next level with fill animation
+
+**Tests:**
+- `tests/forum_users_api.rs` — test profile endpoint returns correct fields
+- `tests/forum_users_api.rs` — test XP history endpoint returns events
+- Unit test for XP progress calculation
+
+### 8.2 Lane 8b — Forum widgets (recent/popular/stats)
+
+**Goal:** Add configurable widgets to forum pages showing recent topics, popular posts, and user stats.
+
+**Backend:**
+- No new DDL needed — queries against existing tables
+- Add `GET /api/forum/widgets/recent` endpoint:
+  ```json
+  {
+    "topics": [
+      {"id": 100, "title": "...", "category": {"slug": "general"}, "author": {"username": "alice"}, "created_at": "...", "reply_count": 5}
+    ]
+  }
+  ```
+- Add `GET /api/forum/widgets/popular` endpoint:
+  ```json
+  {
+    "topics": [
+      {"id": 100, "title": "...", "view_count": 500, "score": 42, "reply_count": 25}
+    ]
+  }
+  ```
+- Add `GET /api/forum/widgets/stats` endpoint:
+  ```json
+  {
+    "total_topics": 1250,
+    "total_posts": 8900,
+    "total_users": 340,
+    "online_now": 12,
+    "newest_user": {"username": "bob", "created_at": "..."}
+  }
+  ```
+
+**Frontend:**
+- New component `ForumWidgets.svelte` — sidebar container for widget list
+- New component `RecentTopicsWidget.svelte` — shows last 5 topics with category badges
+- New component `PopularTopicsWidget.svelte` — shows top 5 by views/score
+- New component `ForumStatsWidget.svelte` — shows totals + online count
+- Wire into forum index page (`/forum`) — show widgets in sidebar
+- Wire into category pages — show category-specific recent/popular
+- Add widget preference to user_prefs (enable/disable, order)
+
+**Tests:**
+- `tests/forum_widgets_api.rs` — test recent/popular/stats endpoints
+- Unit test for widget data formatting
+
+### 8.3 Lane 8c — Forum theme tokens (category + post theming)
+
+**Goal:** Extend theme system with forum-specific tokens for category colors, post backgrounds, and moderation highlights.
+
+**Backend:**
+- No new DDL needed — theme tokens stored in `user_prefs` as JSONB
+- Extend `GET/PUT /api/me/theme` to accept forum-specific tokens:
+  ```json
+  {
+    "forum": {
+      "category_colors": {
+        "general": "#58a6ff",
+        "writing": "#f78166",
+        "meta": "#7ee787"
+      },
+      "post_bg_color": "#161b22",
+      "post_border_color": "#30363d",
+      "mod_highlight_color": "#1f6feb",
+      "op_highlight_color": "#238636"
+    }
+  }
+  ```
+- Add `GET /api/forum/categories` to include `color` field from theme or default
+
+**Frontend:**
+- Extend `ThemeTokens` type in `frontend/src/lib/themes/presets.ts` to include forum tokens
+- Extend `ThemeEditor.svelte` to show forum theme section (category color pickers, post styling)
+- Wire forum colors into `TopicThread.svelte` and `PollBar.svelte`
+- Add CSS custom properties for forum theming (`--forum-post-bg`, `--forum-post-border`, etc.)
+- Apply category colors as badges/pills in topic lists
+
+**Tests:**
+- Unit test for theme token validation
+- Unit test for forum color application
+
+### 8.4 Lane 8d — XP event wiring (forum actions award XP)
+
+**Goal:** Wire forum actions to the existing XP system so posting, voting, and moderation award experience points.
+
+**Backend:**
+- Add XP award triggers in `src/routes/forum.rs`:
+  - `post_created` → 10 XP (daily cap: 100)
+  - `post_upvoted` → 5 XP (daily cap: 50)
+  - `topic_created` → 15 XP (daily cap: 50)
+  - `poll_voted` → 3 XP (daily cap: 30)
+  - `post_moderated` → 2 XP (daily cap: 20)
+- Update `users.xp`, `users.level`, `users.rank` after each award
+- Add daily cap enforcement via `xp_events` table查询 (count today's events of type)
+- Add `GET /api/forum/users/{user_id}/achievements` endpoint:
+  ```json
+  {
+    "achievements": [
+      {"type": "first_post", "name": "First Post", "description": "Created your first forum post", "unlocked_at": "..."},
+      {"type": "popular_post", "name": "Popular Post", "description": "Post received 10+ upvotes", "unlocked_at": null}
+    ]
+  }
+  ```
+
+**Frontend:**
+- New component `AchievementBadge.svelte` — shows achievement icon + name
+- New component `AchievementToast.svelte` — shows unlock notification
+- Wire into `TopicThread.svelte` — show achievements on author cards
+- Wire into user profile page — show achievement grid
+- Add achievement notification via WebSocket (Phase 5) when unlocked
+
+**Tests:**
+- `tests/forum_xp_api.rs` — test XP award on post creation
+- `tests/forum_xp_api.rs` — test daily cap enforcement
+- `tests/forum_xp_api.rs` — test level/rank update after XP
+- Unit test for achievement unlock logic
+- Unit test for daily cap calculation
+
+### 8.5 DDL changes
+
+**None required.** All gamification fields already exist in `users` table:
+- `level` (smallint, default 0)
+- `exp` (bigint, default 0) — alias for total XP
+- `xp` (integer, default 0) — current XP in level
+- `rank` (integer, default 1)
+- `trust` (integer, default 0)
+- `reputation` (integer, default 0)
+
+XP events tracked via existing `xp_events` and `xp_source_defs` tables.
+Achievements stored in `user_features` table (feature_type = 'achievement').
+
+### 8.6 Verification
+
+1. Per lane: `cargo check -p fichub` while iterating
+2. `cargo test --test forum_users_api` — profile + XP history endpoints
+3. `cargo test --test forum_widgets_api` — recent/popular/stats endpoints
+4. `cargo test --test forum_xp_api` — XP awards + daily caps + achievements
+5. `cd frontend && npx svelte-check` — 0 errors
+6. Manual: forum post shows author card with level + XP bar
+7. Manual: forum sidebar shows widgets with real data
+8. Manual: theme editor shows forum section with category color pickers
+9. Manual: posting awards XP visible in user profile
+10. Manual: achievement unlocks show toast notification
+
+### 8.7 Changelog entry (for §7)
+
+Add when lanes land:
+- 2026-09-XX: **Phase 8 Lane 8a** — forum post author card with reputation, level, XP progress bar; new profile + XP history endpoints; AuthorCard + XpProgressBar components.
+- 2026-09-XX: **Phase 8 Lane 8b** — forum widgets (recent/popular/stats); new widget endpoints; ForumWidgets sidebar with RecentTopics, PopularTopics, ForumStats components.
+- 2026-09-XX: **Phase 8 Lane 8c** — forum theme tokens (category colors, post styling); extended ThemeTokens + ThemeEditor; CSS custom properties for forum theming.
+- 2026-09-XX: **Phase 8 Lane 8d** — XP event wiring (post/vote/moderate award XP); daily cap enforcement; achievement system with unlock notifications.
+
 ## 5. Out of scope (v1 §5 plus pivot additions)
 
 - No new migrations in Phase 4 (090+ reserved; Phase 5 WS may need one for
@@ -455,3 +677,13 @@ Phase 4. Importer crate landed in Phase 7 (`5ac26d2`).
  with navigation-first + RT-Nav cache, UpdatePrompt + InstallPrompt
  components wired into +layout.svelte. Deployed to production.
 
+- 2026-09-08: **Phase 7 complete** — crates/forum-import CLI + JSON schema
+  + 10 unit tests. NodeBB export → forum_* tables with duplicate detection,
+  import notifications in notifications table (never forum_notifications).
+- 2026-09-08: **Phase 8 planned** — 4 sub-lanes for forum reputation/
+  gamification UI + widgets + theme parity:
+  - Lane 8a: Forum post author card (reputation, level, XP progress bar)
+  - Lane 8b: Forum widgets (recent/popular/stats sidebar)
+  - Lane 8c: Forum theme tokens (category colors, post styling)
+  - Lane 8d: XP event wiring (post/vote/moderate award XP + achievements)
+  All leverage existing progression.rs + user gamification fields. No DDL.
