@@ -1,11 +1,13 @@
 # Forum NodeBB parity — implementation plan (integration-first rewrite)
 
-**Status:** Phase 4 IN PROGRESS (2026-09-08). Phase 3 DONE (migrations
+**Status:** Phases 4–8 LANDED (2026-09-08). Phase 3 DONE (migrations
 072–079 recovered from live DDL, commit `f4cc60f`). Moderation pivot landed
 (`708cfed`: trust ladder runs moderation, metamod answers 410). This rewrite
 changes the Phase 4 architecture: **notifications, the flag/report queue,
 blocks, uploads, and drafts are site-wide primitives — the forum consumes
 them instead of duplicating them.**
+**Phase 5–8 post-landing review:** §9 (open TODOs live there — realtime
+producers/authz/tests are the highest priority).
 **Landed since rewrite:**
 - Lane 1 backend (`9ebfd37`: `drafts.rs` rewritten to the LIVE 077 DDL —
   topic/category-keyed; the `d575752` version queried nonexistent
@@ -34,9 +36,8 @@ them instead of duplicating them.**
   fixed the same pattern in `messages.rs`). Heals `f3_create_topic`.
 - Lane 2 frontend (Report button in `TopicThread.svelte` → site
   `/api/reports`) — unchanged.
-**Remaining:** Lane 1 composer autosave + vitest, Lane 2 items 2–5
-(topic-level report, owner-notify match, mod-surface deep-link, e2e), Lane 5
-groups UI, Lane 7 importer crate, final §4 verification.
+**Remaining:** Lane 2 item 4 (e2e report test, deferred — needs live DB),
+final §4 verification.
 **Decisions since rewrite:** block checks unify on canonical site
 `blocked_users` (`forum_user_blocks` stays dead — §6.3 corrected below);
 `/forum/blocks` page stays (already consumes site `/api/blocks` — no
@@ -106,14 +107,14 @@ effort moves into messaging (site DMs) and uploads (site service).
 | 1–2 | research + contracts (v1) | done in v1 — `contracts/*.md` authoritative **except** `forum-flags-moderation.md` (superseded by Lane 2) and `forum-messaging.md` route paths (now `/api/messages/*`) |
 | 3 | migrations 072–079 recovered | ✅ DONE (`f4cc60f`) — **Phase 4 needs zero new DDL** |
 | **4** | **Lanes 1–7 below (integration-first)** | ✅ DONE — all 7 lanes complete: backend+frontend+tests for 1, 2, 3, 4, 5, 6, 7; remaining: Lane 7 importer crate (Phase 7), Lane 2 e2e (deferred), Lane 5 group rooms (Lane 3b) |
-| 5 | site-wide realtime: WS `/ws` + SSE + Redis pubsub | ✅ DONE — WS + SSE + Redis cross-instance pubsub (`e12fef6`) |
-| 6 | PWA + theming (v1 scope) | ✅ DONE — manifest, offline fallback, update/install prompts (`76dfe99`) |
-| 7 | NodeBB cutover via importer (v1 scope) | ✅ DONE — crates/forum-import CLI + JSON schema + tests (`5ac26d2`) |
-| **8** | **Forum reputation/gamification UI + widgets + theme parity** | ✅ DONE — 4 lanes: AuthorCard, widgets, theme tokens, XP wiring (`e88d268`) |
+| 5 | site-wide realtime: WS `/ws` + SSE + Redis pubsub | ✅ DONE — WS + SSE + Redis cross-instance pubsub (`e12fef6`). ⚠️ **review findings §9.1** |
+| 6 | PWA + theming (v1 scope) | ✅ DONE — manifest, offline fallback, update/install prompts (`76dfe99`). Minor notes §9.2 |
+| 7 | NodeBB cutover via importer (v1 scope) | ✅ DONE — crates/forum-import CLI + JSON schema + tests (`5ac26d2`). ⚠️ **review findings §9.3** |
+| **8** | **Forum reputation/gamification UI + widgets + theme parity** | ✅ DONE — 4 lanes: AuthorCard, widgets, theme tokens, XP wiring (`e88d268`). ⚠️ **review findings §9.4** |
 
 ## 3. Phase 4 lanes (each = one PR-sized task)
 
-### Lane 1 — Site-wide drafts + composer integration (BACKEND DONE `9ebfd37`)
+### Lane 1 — Site-wide drafts + composer integration (✅ DONE)
 
 `forum_drafts` live DDL (077, verified against prod — the `d575752`
 version queried nonexistent `context`/`ref`/`content` columns and is
@@ -225,7 +226,7 @@ messages use `author_id` — not `sender_id` — members carry `left_at`;
    (storage layout, lifecycle table, no automated retention yet).
 
 
-### Lane 5 — Groups + privileges (BACKEND DONE `7db25f7` + `1b266a2`, UI TODO)
+### Lane 5 — Groups + privileges (✅ DONE — backend `7db25f7`+`1b266a2`, frontend 2026-09-08)
 
 Forum-scoped; nothing site-wide here. Landed: `forum_groups.rs` (11
 handlers incl. join/leave/invite/roles), `forum_privileges.rs` (`can()` +
@@ -279,12 +280,11 @@ Remaining:
    `voteOnPoll`, `closePoll`; 35/35 forum API tests green).
 2. ✅ 2026-09-08 (second-opinion review): `topic_detail` now attaches the
    topic's poll inline (no second request for the OP's PollBar).
-3. TODO: **commit the Lane 6 UI** — `PollBar.svelte` is untracked and the
-   `topic_detail` attachment + TS types are still working-tree only (see
-   §7 changelog 2026-09-08 review entry).
-4. TODO: dedupe the poll serializer — extract `serialize_poll()` from
-   `forum_polls.rs::get_poll` and reuse it in `topic_detail`; drop the
-   placeholder `votes`/`voted_by_user` fields from the inline payload.
+3. ✅ 2026-09-08: Lane 6 UI committed (`18a6b64` — PollBar, topic_detail
+   attachment, i18n, vitest cases; no longer working-tree only).
+4. ✅ 2026-09-08: poll serializer deduped — `topic_detail` reuses
+   `forum_polls::serialize_poll` (`da63a11`); placeholder
+   `votes`/`voted_by_user` fields dropped.
 5. TODO: one assertion in `tests/polls_api.rs` that `topic_detail` returns
    the `poll` object with the shape PollBar reads (locks the contract).
 
@@ -361,7 +361,8 @@ Phase 4. Importer crate landed in Phase 7 (`5ac26d2`).
 
 ## 8. Phase 8 — Forum reputation/gamification UI + widgets + theme parity
 
-**Status:** PLANNED (2026-09-08)
+**Status:** LANDED (2026-09-08) — 8a `63e486c`+`f89203e`, 8b `d8e6a65`+`30818c7`,
+8c `b73ac30`, 8d `e88d268`. Review findings + follow-up TODOs: **§9**.
 **Dependencies:** Phase 4 (all lanes), Phase 5 (realtime), Phase 7 (importer)
 **Estimated scope:** 4 sub-lanes, each one PR-sized task
 
@@ -573,11 +574,9 @@ Achievements stored in `user_features` table (feature_type = 'achievement').
 
 ### 8.7 Changelog entry (for §7)
 
-Add when lanes land:
-- 2026-09-XX: **Phase 8 Lane 8a** — forum post author card with reputation, level, XP progress bar; new profile + XP history endpoints; AuthorCard + XpProgressBar components.
-- 2026-09-XX: **Phase 8 Lane 8b** — forum widgets (recent/popular/stats); new widget endpoints; ForumWidgets sidebar with RecentTopics, PopularTopics, ForumStats components.
-- 2026-09-XX: **Phase 8 Lane 8c** — forum theme tokens (category colors, post styling); extended ThemeTokens + ThemeEditor; CSS custom properties for forum theming.
-- 2026-09-XX: **Phase 8 Lane 8d** — XP event wiring (post/vote/moderate award XP); daily cap enforcement; achievement system with unlock notifications.
+Landed 2026-09-08 — see the Phase 8 entry in §7 (the `2026-09-XX`
+placeholders that lived here were superseded by the real commits
+`63e486c`…`e88d268`).
 
 ## 5. Out of scope (v1 §5 plus pivot additions)
 
@@ -585,7 +584,8 @@ Add when lanes land:
   site-level tables if any).
 - Email digests for messages/notifications (mailer.rs exists; wiring later).
 - Group rooms inside messaging (Lane 3b, after Lane 5).
-- NodeBB widget/theme parity; reputation/gamification UI (v1 §5).
+  (Widget/theme parity + reputation UI were pulled back IN as Phase 8
+  and landed 2026-09-08 — the old v1 §5 exclusion no longer applies.)
 
 ## 6. Legacy + decision log for the pivot
 
@@ -606,6 +606,128 @@ Add when lanes land:
    Contracts `forum-messaging.md` (route paths) and
    `forum-flags-moderation.md` (whole file) are superseded by §3 Lanes 3
    and 2 respectively; all other contracts remain authoritative.
+
+## 9. Second-opinion review of Phases 5–8 (2026-09-08, post-landing audit)
+
+Audit of `37f7d54`…`40ad652` against the §8 planning promises. Phases 5–7
+had no dedicated review before landing; findings below are the catch-up.
+
+### 9.1 Phase 5 — realtime (highest-priority findings)
+
+1. **No producers — the bus is silent.** Nothing in `src/routes/*` calls
+   `rt_manager.publish` or `publish_to_redis` (only `server.rs` constructs
+   the manager and starts the Redis listener). WS clients get `connected`
+   plus whatever other *clients* publish over the socket. The plan promised
+   "DMs, notifications, forum all fan out through it". **TODO:** publish
+   `notification:new` on the site notification producer path, reply events
+   on `topic:{id}` in `create_post`, message events on `user:{id}` in
+   `messages.rs`; wire `publish_to_redis` into the same paths for
+   multi-instance parity.
+2. **Unauthenticated channel access.** `ws_handler` authenticates
+   optionally; any client (including anon) can `subscribe` to any channel
+   and `publish` to any channel — including other users' `user:{id}`
+   channels. **TODO:** server-side authz (`user:{id}` only for the owning
+   session; `topic:{id}`/`room:{id}` gated on forum visibility; `publish`
+   reserved for server-side code). JWT-in-query-param also leaks tokens
+   into access logs — prefer a `Sec-WebSocket-Protocol` handshake.
+3. **No black-box tests.** No `tests/realtime_api.rs` although every other
+   surface got one. **TODO:** integration test asserting anon connect →
+   welcome frame; subscribe `user:{other}` → denied; server publish →
+   received on both WS and SSE.
+4. **SSE busy-wait.** `SseStream::poll_next` calls `try_recv` and on
+   `Empty` does `cx.waker().wake_by_ref()` then returns `Pending` — a
+   100%-CPU spin per connected SSE client. **TODO:** use
+   `tokio_stream::wrappers::BroadcastStream` instead of a manual
+   `poll_next`.
+5. **JWT secret drift.** `realtime/ws.rs` + `sse.rs` fall back to
+   `"fichub-dev-secret"`, `routes/auth.rs` has its own fallback, and
+   `config.rs` defines the real one — three sources. **TODO:** thread the
+   configured secret through `AppState` (it already holds state).
+6. **Minor:** WS send task polls subscriptions every 50 ms per connection
+   (fine at small scale); client `publish` is unthrottled (matters once
+   9.1.2 lands); SSE/WS `Last-Event-ID` replay is not implemented —
+   acceptable, but undocumented.
+
+### 9.2 Phase 6 — PWA (minor)
+
+- SW v7 strategy is sound (network-first nav shell, public-API-only
+  caching, per-user data never cached) — no findings there.
+- **Manifest icon audit TODO:** manifest lists icons/screenshots and the
+  files exist in `static/` today, but nothing keeps manifest ↔ files in
+  sync (404s surface only at install time).
+- **UpdatePrompt UX TODO:** the SW calls `skipWaiting()` immediately, so
+  the new SW takes control before the user accepts the prompt — the
+  "reload to update" toast can race the reload. Acceptable for v1;
+  document or move to skipWaiting-on-message.
+
+### 9.3 Phase 7 — NodeBB importer (medium)
+
+1. **Fresh-DB-only with no guard.** The importer inserts with explicit
+   NodeBB `id`s and `ON CONFLICT (id) DO NOTHING`, so on any non-empty
+   production DB collisions are silently skipped, leaving children (posts →
+   topics → categories, notifications) with dangling parents. The README
+   documents no precondition. **TODO:** refuse to run unless `users` and
+   `forum_topics` are empty unless `--force` (or an id-remap table); until
+   then README must say fresh-DB-only, loudly.
+2. **No transactional wrap.** Inserts are autocommit per statement; a crash
+   mid-import strands a partial import and the skip counters make a re-run
+   look idempotent when it is not. **TODO:** wrap in one transaction (or
+   batched transactions + resumable manifest).
+3. **`password_hash` imported as `''`** — imported users cannot log in
+   (intended), but nothing tells them so. **TODO:** README/ops note or a
+   `must_reset_password` flag.
+4. **No DB-backed test.** 10 unit tests cover parsing/stats only; the
+   INSERT path (`import.rs`, 419 lines) is untested. **TODO:** one
+   `#[sqlx::test]`-style test importing a tiny fixture export and asserting
+   rows land with expected ids.
+
+### 9.4 Phase 8 — reputation/gamification (medium)
+
+1. **Two XP ledgers.** Phase 8d writes `exp_events` + `users.exp`/`level`
+   (`forum.rs` `award_exp`), the pre-existing progression service writes
+   `xp_events` + `users.xp`/`level`/`rank` (`services/progression.rs:256`
+   and cooldowns at :41/:68/:85). Same conceptual event, two tables, two
+   balance columns; AuthorCard reads the exp ledger while the rest of the
+   site reads xp. **TODO:** unify on `xp_events`/`users.xp` (make
+   `award_exp` delegate to the progression service) or document why two
+   ledgers exist; migrate `exp_events` rows when unifying.
+2. **XP farming bug.** `award_reaction_exp` runs unconditionally after the
+   react **toggle** — un-react/re-react repeatedly and every toggle writes
+   an `exp_events` row (only the 10/day cap limits it). Cap should count
+   distinct reacted posts, or award only on the 0→1 transition. Same for
+   `award_poll_vote_exp` (re-votes with allow_change re-award). The
+   `award_exp` function logs `reference_type`/`reference_id` but has no
+   dedup check — callers (`award_reaction_exp`, `award_poll_vote_exp`)
+   don't pass them either. **TODO:** either gate on 0→1 transitions or
+   add a unique constraint + ON CONFLICT DO NOTHING on
+   `(user_id, event_type, reference_type, reference_id)` in `award_exp`.
+3. **`email` leaks in `GET /api/forum/users/{id}/profile`.** The handler
+   selects `email` and returns it in the JSON body to any client. **TODO:**
+   drop it from the SELECT + response (gate behind staff auth if needed).
+4. **`reputation` returns `trust` value.** The profile endpoint's SELECT
+   omits the `reputation` column and the JSON body maps
+   `"reputation": trust` — every user's reputation shows as their trust
+   score. **TODO:** add `reputation` to the SELECT and return it
+   independently (forum.rs:3841,3869).
+5. **Envelope deviation.** §8.1 spec'd `{err:0,…}` envelopes; the landed
+   profile/xp-history/widget endpoints return bare JSON. Also
+   §8.4's "achievement notification via WebSocket" never landed
+   (achievements are XP awards only). **TODO:** align the endpoints or
+   amend §8.1/§8.4; track achievements as an explicit deferred item.
+6. **Roadmap honesty.** §2 marked 5–8 ✅ DONE while §8's own status line
+   still read "PLANNED" until this audit — replaced with LANDED + commit
+   hashes; §8.7's `2026-09-XX` changelog placeholders replaced with a
+   pointer to §7.
+
+### 9.5 Cross-phase notes
+
+- **Rule adopted (matches §4 item 5):** a phase is DONE only when its tests are
+  green AND its plan section is updated in the same change — "PLANNED" §8
+  under a "✅ DONE" roadmap row violated this.
+- **Good calls worth keeping:** Redis pubsub best-effort (single instance
+  works without Redis); importer `dry_run` flag; PWA never caching
+  per-user API data; archive-only theme discipline carried into Phase 8
+  components; `set_ignore_missing(true)` migration tolerance.
 
 ## 7. Changelog
 
@@ -632,10 +754,10 @@ Add when lanes land:
   uploads lane lacks the black-box `tests/*_api.rs` every other lane has
   and its on-disk storage dir has no documented lifecycle; (5) migration
   renumber/repair leaves fresh-DB version order non-chronological — Phase 5
-  baseline squash planned in §4.6; (6) `plan.v1...md.bak` got re-added
+  baseline squash planned in §4 item 6; (6) `plan.v1...md.bak` got re-added
   inside a feature commit (`1478395`) — keep docs restores out of feature
   commits; (7) dead i18n keys from the moderation pivot and the
-  `publish-scheduled` deploy story recorded in §4.6.
+  `publish-scheduled` deploy story recorded in §4 item 6.
 - 2026-09-08: **Lane 4 site-wide uploads lands** (`56c563e`): new
   `src/routes/uploads.rs` with `POST/DELETE /api/uploads` + public
   `GET /uploads/forum/{yy}/{mm}/{name}`; trust-gated multipart (TL2+),
@@ -680,10 +802,13 @@ Add when lanes land:
 - 2026-09-08: **Phase 7 complete** — crates/forum-import CLI + JSON schema
   + 10 unit tests. NodeBB export → forum_* tables with duplicate detection,
   import notifications in notifications table (never forum_notifications).
-- 2026-09-08: **Phase 8 planned** — 4 sub-lanes for forum reputation/
-  gamification UI + widgets + theme parity:
-  - Lane 8a: Forum post author card (reputation, level, XP progress bar)
-  - Lane 8b: Forum widgets (recent/popular/stats sidebar)
-  - Lane 8c: Forum theme tokens (category colors, post styling)
-  - Lane 8d: XP event wiring (post/vote/moderate award XP + achievements)
-  All leverage existing progression.rs + user gamification fields. No DDL.
+- 2026-09-08: **Phase 8 complete** — 8a author card + profile/xp-history
+  endpoints (`63e486c`/`f89203e`), 8b widget endpoints + ForumWidgets
+  sidebar (`d8e6a65`/`30818c7`), 8c forum theme tokens in ThemeEditor
+  (`b73ac30`), 8d XP wiring for reactions + poll votes with daily caps
+  (`e88d268`). Deviations from §8.1/§8.4 recorded in §9.4.
+- 2026-09-08: **Phase 5–8 post-landing review (§9)** — realtime has no
+  producers + no channel authz + no tests (§9.1); importer is
+  fresh-DB-only with no guard and no transaction (§9.3); two XP ledgers
+  (`exp_events` vs `xp_events`) + reaction-toggle XP farm + `email` leak
+  in the profile endpoint (§9.4). Open TODOs are the Phase 9 backlog.

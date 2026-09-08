@@ -39,10 +39,11 @@ layouts, views). The
 `fanfic-scrapers` crate has
 **full one-to-one adapter parity with FanFicFare** (107/107 real sites as
 native Rust scrapers, login + `is_adult` support) and the Python CLI
-dependency has been removed. The site is close to small-cohort invite
-readiness; the remaining content-side gap is outbound reachability from the
-host (AO3 404+challenge / FFN 403 Cloudflare), tracked as P1 cookie
-ingestion.
+dependency has been removed. **Author batch download** now supports AO3 +
+XenForo (QQ, SpaceBattles, SV) with SSE progress streaming. The site is
+close to small-cohort invite readiness; the remaining content-side gap is
+outbound reachability from the host (AO3 404+challenge / FFN 403
+Cloudflare), tracked as P1 cookie ingestion.
 
 ---
 
@@ -51,6 +52,9 @@ ingestion.
 ### Core platform
 - Multi-format export: EPUB, HTML, MOBI, PDF, AZW3, TXT, MD (pure-Rust
   builder + Calibre sidecar for MOBI/PDF/AZW3).
+- **Author batch download** ✅ — AO3 + XenForo (QQ, SpaceBattles, SV)
+  author pages. SSE progress streaming at `/api/download/author/stream`.
+  Single file or ZIP based on work count × format count.
 - Web reader `/read/[urlId]`: typography prefs, chapter nav, scroll progress,
   position save, "Next Up" panel (next-in-series via real
   `/api/reader/{url_id}/sequel` → top community suggestion →
@@ -552,7 +556,7 @@ ingestion.
 
 | # | Feature | Status |
 |---|---|---|
-| 1 | Batch series/author download (one zip of EPUBs) | 📋 in IDEAS §1; **P8 backlog** — build: multi-select → zip |
+| 1 | Batch series/author download (one zip of EPUBs) | ✅ **SHIPPED** — AO3 + XenForo (QQ/SB/SV) author batch download; SSE progress streaming; single file or ZIP based on work count × format count |
 | 2 | Download queue with progress (cancel/resume) | 📋 in IDEAS §1; **P8 backlog** |
 | 3 | Customizable EPUB (cover, font, notes, chapter toggles) | 📋 in IDEAS §1; **P8 backlog** |
 | 4 | Cookie ingestion for AO3/FFN | ✅ already tracked — **P1#1** + USER-ACTIONS #4 |
@@ -561,6 +565,7 @@ ingestion.
 | 7 | Cover image API (`/api` covers for frontends/userscripts) | 📋 consensus seed #8; **P8 backlog** |
 | 8 | CORS on API (`Access-Control-Allow-Origin`) | 📋 consensus seed #7; **P8 backlog** |
 | 9 | Instance import tool (fichub.net / other FicHub) | 📋 in IDEAS §7; **P8 backlog** |
+| 10 | External fanwork aggregation & link-only works | 📋 in IDEAS §1; **P8 backlog** — link-only works + related fanworks (podfics, art, video) |
 
 **Search & discovery**
 
@@ -1379,11 +1384,12 @@ SOURCE: docs/IDEAS.md
 ## 1. The Core Promise: Downloading Stories
 
 - **⭐ Broader site support** 🚧 — the holy grail. Wattpad, Quotev, Tumblr fics, fanfiktion.de, Webnovel… every new site brings a flood of users who currently have no good download tool. (Only RoyalRoad/Quotev/Wattpad reachable from this host; AO3/FFN blocked — Wayback/relay fallback is the strategic gap.)
-- **⭐ Batch downloads** — select a whole series on AO3, an author's page, or tick boxes in your bookmarks and hit "download all as EPUB". One click, one zip file.
+- **⭐ Batch downloads** ✅ — select a whole series on AO3, an author's page, or tick boxes in your bookmarks and hit "download all as EPUB". One click, one zip file. Now supports AO3 + XenForo (QQ, SpaceBattles, SV) with SSE progress streaming.
 - **⭐ Send to e-reader** 🚧 — email-to-Kindle is implemented (`kindle.rs`) but gated on SMTP credentials. Kobo's Dropbox integration is a future option.
 - **⭐ Download queue + progress** — for big batches, show what's happening, allow cancelling, resume after network hiccups.
 - **Customisable EPUB** — choose cover style, font, include/exclude author notes, dedications, tags as chapter, etc.
 - **"Download again" instantly** — once a fic is cached, re-download in any format without scraping again, and notify if the source updated. (Refresh-fic re-scrape exists via follows.)
+- **External Fanwork Aggregation & Link-Only Works** — FicHub should act as a central hub for *all* fanworks, not just archived text. Two key gaps: (1) Related Fanworks — a single story often inspires podfics, fan videos, art, or derivative fics; users should discover and link these from the original fic's page. (2) Link-Only Works — some authors forbid archiving their text, and some fanworks are inherently non-text (audio dramas, YouTube videos, comics). FicHub should support adding these with *only* metadata (title, author, tags, external URL), enabling full community features (bookmarks, ratings, reviews, comments, recommendations) without storing the file/body. Implementation: extend `works` with `media_type`, `content_policy` (`archived` | `external_only`), `external_url`; new `work_relations` table for source→target links with `relation_type` (`has_podfic`, `video_adaptation`, `inspired_by`, etc.); backend endpoints `POST /api/works/external`, `GET/POST /api/works/{id}/relations`; frontend "Related Fanworks" section on fic detail page; metadata-only scrapers returning `ScrapeError::MetadataOnly`. Aligns with P8#71 (OTW External Works), Unified Works Model, and Recommendation Platform. Open questions: link rot detection, curator burden for user-submitted links, metadata scraping limits for YouTube/SoundCloud.
 
 ---
 

@@ -43,6 +43,27 @@ Set your preferred formats in **Settings → Download formats** (or
 bulk-downloads then bundle exactly those formats — one work × one format
 streams directly, anything bigger arrives as a ZIP with per-work folders.
 
+## Batch download: all works by an author
+
+Click the **Download all works** button on any author's page (or use
+`GET /api/download/author?url=<author_profile_url>`). Works for:
+
+- **AO3**: `https://archiveofourown.org/users/{name}`
+- **XenForo** (QQ, SpaceBattles, SV): `https://forum.questionablequesting.com/members/{name}.{id}/`
+
+The endpoint lists all works by that author, scrapes each one, exports in
+your configured formats, and returns either a single file (1 work × 1
+format) or a ZIP with per-work subdirectories.
+
+**Progress streaming:** For large batches (60+ works), the SSE endpoint
+`GET /api/download/author/stream?url=<url>` emits real-time progress
+events (`progress`, `complete`, `error`) so the UI can show a progress
+bar. The frontend `BatchAuthorDownload` component uses this automatically.
+
+**Note:** XenForo author discovery requires login credentials for
+NSFW-gated forums. Store your QQ/SB/SV credentials in **Settings →
+Site Credentials** and the batch download will use them automatically.
+
 ## Dual-mode input: URL *or* "Title by Author"
 
 The Download tab accepts two kinds of input: a story URL (the classic flow

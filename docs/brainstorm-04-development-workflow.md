@@ -70,6 +70,9 @@ SOURCE: docs/AGENTS.md
   `fanficfare` fallback is gated behind the crate's `fff-fallback` feature,
   off by default). Add new XenForo boards to `XENFORO_DOMAINS` in
   src/scrape/sites/xenforo.rs.
+- **Author batch download**: `GET /api/download/author?url=<profile_url>`
+  supports AO3 and XenForo (QQ, SB, SV) author pages. SSE streaming at
+  `/api/download/author/stream` for progress events.
 
 ## Current QA state
 - **0 open bugs** (`node qa/report.js` → "total: 0 open").

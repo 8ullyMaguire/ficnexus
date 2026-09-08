@@ -850,8 +850,19 @@ pub trait SiteScraper: Send + Sync {
         -> Result<(), ScrapeError>;
     async fn lookup(&self, client: &reqwest::Client, url: &str) -> Result<FicMetadata, ScrapeError>;
     async fn fetch_chapters(&self, client: &reqwest::Client, meta: &FicMetadata) -> Result<Vec<Chapter>, ScrapeError>;
+    async fn list_author_works(&self, client: &reqwest::Client, profile_url: &str, creds: &[SiteCredentials])
+        -> Result<Vec<String>, ScrapeError>;  // NEW: batch author download
 }
 ```
+
+**`list_author_works`** (new): Given an author profile URL (e.g.
+`archiveofourown.org/users/{name}` or
+`forum.questionablequesting.com/members/{name}.{id}/`), returns the URLs
+of all threads/works the author created. Used by the batch download
+endpoint (`/api/download/author`). Implemented for AO3 and XenForo;
+other sites return `ScrapeError::Unsupported`. XenForo implementation
+includes AJAX login, search session creation with node filters,
+pagination, and per-thread authorship verification.
 
 **Registered scrapers** (in `registry.rs` — native scrapers preferred;
 `find_specific_or_fallback` skips any catch-all registered at index 0):

@@ -376,8 +376,9 @@ Every response includes `"err": 0` on success. Error responses include `"err": <
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/download/author?<params>` | No | Download author fics |
-| GET | `/api/download/series?<params>` | No | Download series |
+| GET | `/api/download/author?<params>` | Yes | Download all works by an author (AO3 + XenForo). Returns single file or ZIP. |
+| GET | `/api/download/author/stream?<params>` | Yes | SSE stream of progress events during author batch download. |
+| GET | `/api/download/series?<params>` | No | Download all works in an AO3 series |
 | GET | `/cache/<type>/<url_id>` | No | Cached file download |
 
 ## Admin Endpoints
