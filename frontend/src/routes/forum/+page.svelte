@@ -5,6 +5,7 @@
   import { t } from '$lib/i18n/index.svelte';
   import { getPref } from '$lib/prefs';
   import ArchiveButton from '$lib/ui/archive/ArchiveButton.svelte';
+  import ForumWidgets from '$lib/components/forum/ForumWidgets.svelte';
 
   const uiMode = $derived(getPref('uiMode'));
 
@@ -82,6 +83,7 @@
 <svelte:head><title>Forum — FicNexus</title></svelte:head>
 
 <div class="forum-page">
+  <div class="forum-layout">
   <header class="page-head">
     <h1>{uiMode === 'archive' ? 'Forum' : t('forum.title')}</h1>
     {#if uiMode !== 'archive'}
@@ -172,9 +174,13 @@
     </ul>
   {/if}
 </div>
+  <ForumWidgets />
+</div>
 
 <style>
-  .forum-page { max-width: 820px; margin: 0 auto; padding: 1.5rem; }
+  .forum-page { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+  .forum-layout { display: flex; gap: 1.5rem; flex: 1; }
+  .forum-layout > :first-child { flex: 1; min-width: 0; }
   .page-head { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.25rem; }
   .subtitle { color: var(--color-text-muted, #888); }
   .btn-primary { align-self: flex-start; }
