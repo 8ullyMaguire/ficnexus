@@ -7,6 +7,7 @@
 //! * `POST /api/admin/reports/{id}/resolve` — admin resolves or dismisses a
 //!   report (`{action: "resolved"|"dismissed"}`).
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::Json;
@@ -324,6 +325,49 @@ pub async fn list_reports(
         .await?
     };
 
+    // Resolve deep links for forum targets so the mod surface can link straight
+    // to the content. forum_topic → /forum/board/{slug}.{id}; forum_post → its
+    // topic's /forum/board/{slug}.{id}. Other target types have no forum link.
+    let topic_ids: Vec<i32> = rows
+        .iter()
+        .filter(|r| r.3 == "forum_topic")
+        .map(|r| r.4)
+        .collect();
+    let post_ids: Vec<i32> = rows
+        .iter()
+        .filter(|r| r.3 == "forum_post")
+        .map(|r| r.4)
+        .collect();
+
+    let mut links: HashMap<String, String> = HashMap::new();
+    if !topic_ids.is_empty() {
+        if let Ok(rows) = sqlx::query_as::<_, (i32, String)>(
+            "SELECT id, topic_slug FROM forum_topics WHERE id = ANY($1)",
+        )
+        .bind(&topic_ids)
+        .fetch_all(&state.db)
+        .await
+        {
+            for (id, slug) in rows {
+                links.insert(format!("forum_topic:{id}"), format!("/forum/board/{slug}.{id}"));
+            }
+        }
+    }
+    if !post_ids.is_empty() {
+        if let Ok(rows) = sqlx::query_as::<_, (i32, i32, String)>(
+            "SELECT p.id, t.id, t.topic_slug FROM forum_posts p
+             JOIN forum_topics t ON t.id = p.topic_id WHERE p.id = ANY($1)",
+        )
+        .bind(&post_ids)
+        .fetch_all(&state.db)
+        .await
+        {
+            for (post_id, topic_id, slug) in rows {
+                links.insert(format!("forum_post:{post_id}"), format!("/forum/board/{slug}.{topic_id}"));
+            }
+        }
+    }
+
     let items: Vec<Value> = rows
         .into_iter()
         .map(
@@ -338,6 +382,7 @@ pub async fn list_reports(
                 status,
                 created,
             )| {
+                let link = links.get(&format!("{target_type}:{target_id}")).cloned();
                 json!({
                     "id": id,
                     "reporter_id": reporter_id,
@@ -348,6 +393,7 @@ pub async fn list_reports(
                     "details": details,
                     "status": status,
                     "created_at": created.to_rfc3339(),
+                    "link": link,
                 })
             },
         )

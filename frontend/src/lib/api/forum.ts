@@ -485,6 +485,14 @@ export async function reportForumPost(postId: number, reason: string): Promise<F
   });
 }
 
+/** Report a topic to the moderation team (any logged-in user). */
+export async function reportForumTopic(topicId: number, reason: string): Promise<ForumReportResponse> {
+  return request('/api/reports', {
+    method: 'POST',
+    body: JSON.stringify({ target_type: 'forum_topic', target_id: topicId, reason }),
+  });
+}
+
 export interface ForumReactionResponse {
   err: number;
   msg?: string;

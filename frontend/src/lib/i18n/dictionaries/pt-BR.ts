@@ -1007,7 +1007,9 @@ export const ptBR: Record<TranslationKey, string> = {
   'translate.showOriginal': "Ver o texto original",
   'translate.submit': "Enviar para revisão",
   'translate.submitFailed': "Falha no envio — tente novamente.",
-  'translate.submitted': "Enviado! Curadores vão revisar — você ganha pontos se aprovado.",
+  'translate.submitted': "Enviado! Curadores revisam — quando aprovado, você ganha pontos.",
   'translate.unchanged': "Sua versão coincide com a tradução atual.",
   'translate.yourVersion': "Sua tradução",
+  'forum.reportTopic': 'Report topic',
+  'forum.reportTopicPlaceholder': 'Why are you reporting this topic?',
 };

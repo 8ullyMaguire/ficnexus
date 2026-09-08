@@ -1008,4 +1008,6 @@ export const de: Record<TranslationKey, string> = {
   'translate.submitted': "Eingereicht! Kuratoren prüfen sie — bei Annahme gibt es Punkte.",
   'translate.unchanged': "Deine Version entspricht der aktuellen Übersetzung.",
   'translate.yourVersion': "Deine Übersetzung",
+  'forum.reportTopic': 'Report topic',
+  'forum.reportTopicPlaceholder': 'Why are you reporting this topic?',
 };

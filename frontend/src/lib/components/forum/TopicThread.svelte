@@ -27,6 +27,7 @@
     getModerationUserGrants,
     type ForumUserGrant,
     reportForumPost,
+    reportForumTopic,
     reactToPost,
     pinTopic,
     lockTopic,
@@ -65,6 +66,9 @@
   let reportReason = $state('');
   let reporting = $state(false);
   let reportMessage = $state<{ postId: number; ok: boolean; text: string } | null>(null);
+  // Topic-level report (reuses reportReason/reporting state)
+  let reportingTopic = $state(false);
+  let reportTopicMessage = $state<{ ok: boolean; text: string } | null>(null);
   let expandedPostIds = $state<Set<number>>(new Set());
 
   // T037: mod drawer — per-user recent grants
@@ -388,6 +392,38 @@
     reportReason = '';
   }
 
+  function openReportTopic() {
+    reportingTopic = true;
+    reportReason = '';
+    reportTopicMessage = null;
+  }
+
+  function closeReportTopic() {
+    reportingTopic = false;
+    reportReason = '';
+  }
+
+  async function submitReportTopic() {
+    const reason = reportReason.trim();
+    if (!reason) return;
+    reporting = true;
+    reportTopicMessage = null;
+    try {
+      const res = await reportForumTopic(topicId, reason);
+      if (res.err === 0) {
+        reportingTopic = false;
+        reportReason = '';
+        reportTopicMessage = { ok: true, text: t('forum.reportSent') };
+      } else {
+        reportTopicMessage = { ok: false, text: res.msg ?? t('forum.reportFailed') };
+      }
+    } catch {
+      reportTopicMessage = { ok: false, text: t('forum.reportFailed') };
+    } finally {
+      reporting = false;
+    }
+  }
+
   async function submitReport(post: ForumPost) {
     const reason = reportReason.trim();
     if (!reason) return;
@@ -668,10 +704,33 @@
             {following ? t('forum.following') : t('forum.follow')}
           </button>
           <span class="muted">{followersLabel(followerCount)}</span>
+          {#if auth.isLoggedIn}
+            <button class="btn-link" type="button" onclick={openReportTopic}>{t('forum.reportTopic')}</button>
+          {/if}
           <button class="btn-link" type="button" onclick={() => (showEditHistory = !showEditHistory)}>
             {showEditHistory ? 'Hide edit history' : 'Edit history'}
           </button>
         </div>
+        {#if reportingTopic}
+          <div class="report-box">
+            <textarea
+              bind:value={reportReason}
+              rows="2"
+              maxlength="500"
+              placeholder={t('forum.reportTopicPlaceholder')}
+              aria-label={t('forum.reportTopicPlaceholder')}
+            ></textarea>
+            <div class="row">
+              <button class="btn" type="button" onclick={submitReportTopic} disabled={reporting || !reportReason.trim()}>
+                {reporting ? t('forum.saving') : t('forum.reportSubmit')}
+              </button>
+              <button class="btn-link" type="button" onclick={closeReportTopic}>{t('forum.cancel')}</button>
+            </div>
+          </div>
+        {/if}
+        {#if reportTopicMessage}
+          <p class={reportTopicMessage.ok ? 'ok' : 'error-card'}>{reportTopicMessage.text}</p>
+        {/if}
         {#if showEditHistory}
           <section class="card edit-history" aria-label="Edit history">
             <h2>Edit history</h2>

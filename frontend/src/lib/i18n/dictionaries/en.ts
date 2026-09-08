@@ -619,6 +619,8 @@ export const en = {
   'forum.reportSent': 'Report sent',
   'forum.reportFailed': 'Could not send the report.',
   'forum.loginToReport': 'Log in to report a post.',
+  'forum.reportTopic': 'Report topic',
+  'forum.reportTopicPlaceholder': 'Why are you reporting this topic?',
   'forum.modPointsLeft': '{count} points left',
   'forum.reason.insightful': 'Insightful',
   'forum.reason.informative': 'Informative',

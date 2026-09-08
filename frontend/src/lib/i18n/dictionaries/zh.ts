@@ -1008,4 +1008,6 @@ export const zh: Record<TranslationKey, string> = {
   'translate.submitted': "已提交！管理员将审核——通过后获得积分。",
   'translate.unchanged': "你的版本与当前翻译相同。",
   'translate.yourVersion': "你的翻译",
+  'forum.reportTopic': 'Report topic',
+  'forum.reportTopicPlaceholder': 'Why are you reporting this topic?',
 };

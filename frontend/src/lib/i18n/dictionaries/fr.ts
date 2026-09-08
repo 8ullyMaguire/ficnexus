@@ -1008,4 +1008,6 @@ export const fr: Record<TranslationKey, string> = {
   'translate.submitted': "Envoyé ! Les curateurs examineront — des points si approuvé.",
   'translate.unchanged': "Votre version correspond à la traduction actuelle.",
   'translate.yourVersion': "Votre traduction",
+  'forum.reportTopic': 'Report topic',
+  'forum.reportTopicPlaceholder': 'Why are you reporting this topic?',
 };
