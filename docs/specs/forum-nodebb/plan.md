@@ -107,7 +107,7 @@ effort moves into messaging (site DMs) and uploads (site service).
 | 3 | migrations 072–079 recovered | ✅ DONE (`f4cc60f`) — **Phase 4 needs zero new DDL** |
 | **4** | **Lanes 1–7 below (integration-first)** | ✅ DONE — all 7 lanes complete: backend+frontend+tests for 1, 2, 3, 4, 5, 6, 7; remaining: Lane 7 importer crate (Phase 7), Lane 2 e2e (deferred), Lane 5 group rooms (Lane 3b) |
 | 5 | site-wide realtime: WS `/ws` + SSE + Redis pubsub | ✅ DONE — WS + SSE + Redis cross-instance pubsub (`e12fef6`) |
-| 6 | PWA + theming (v1 scope) | after 5 |
+| 6 | PWA + theming (v1 scope) | ✅ DONE — manifest, offline fallback, update/install prompts (`76dfe99`) |
 | 7 | NodeBB cutover via importer (v1 scope) | last |
 
 ## 3. Phase 4 lanes (each = one PR-sized task)
@@ -451,4 +451,8 @@ the column today and no listing filters it** — this lane wires it up.
  - 2026-09-08: **Phase 5 complete** — WebSocket at `/ws`, SSE fallback at
  `/events`, Redis cross-instance pubsub on `ficnexus:rt` channel.
  ConnectionManager with tokio::broadcast, auth via JWT query param.
+ - 2026-09-08: **Phase 6 complete** — PWA manifest (categories, shortcuts,
+ screenshots, apple-touch-icon), offline.html fallback page, sw.js v7
+ with navigation-first + RT-Nav cache, UpdatePrompt + InstallPrompt
+ components wired into +layout.svelte. Deployed to production.
 
