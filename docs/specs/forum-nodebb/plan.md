@@ -108,7 +108,7 @@ effort moves into messaging (site DMs) and uploads (site service).
 | **4** | **Lanes 1–7 below (integration-first)** | ✅ DONE — all 7 lanes complete: backend+frontend+tests for 1, 2, 3, 4, 5, 6, 7; remaining: Lane 7 importer crate (Phase 7), Lane 2 e2e (deferred), Lane 5 group rooms (Lane 3b) |
 | 5 | site-wide realtime: WS `/ws` + SSE + Redis pubsub | ✅ DONE — WS + SSE + Redis cross-instance pubsub (`e12fef6`) |
 | 6 | PWA + theming (v1 scope) | ✅ DONE — manifest, offline fallback, update/install prompts (`76dfe99`) |
-| 7 | NodeBB cutover via importer (v1 scope) | last |
+| 7 | NodeBB cutover via importer (v1 scope) | ✅ DONE — crates/forum-import CLI + JSON schema + tests (`5ac26d2`) |
 
 ## 3. Phase 4 lanes (each = one PR-sized task)
 
@@ -287,10 +287,10 @@ Remaining:
 5. TODO: one assertion in `tests/polls_api.rs` that `topic_detail` returns
    the `poll` object with the shape PollBar reads (locks the contract).
 
-### Lane 7 — Scheduled topics (BACKEND LANDED `1478395`) + importer (TODO)
+### Lane 7 — Scheduled topics + importer ✅ DONE
 
-`forum_topics.scheduled_at` + partial index exist (078); **nothing writes
-the column today and no listing filters it** — this lane wires it up.
+`forum_topics.scheduled_at` + partial index exist (078); wired up in
+Phase 4. Importer crate landed in Phase 7 (`5ac26d2`).
 
 1. ✅ (working tree, compiles clean — needs publish binary + tests +
    commit): `CreateTopicBody.scheduled_at` (future-only, else 400) written
@@ -305,12 +305,11 @@ the column today and no listing filters it** — this lane wires it up.
 2. ✅ `src/bin/publish-scheduled` (landed `1478395`): flip
    `scheduled_at <= NOW()` → NULL, notify authors via site notifications,
    idempotent. Systemd timer + deploy wiring in `deploy/systemd/`.
-3. `crates/forum-import` CLI (workspace member): NodeBB JSON export
+3. ✅ `crates/forum-import` CLI (workspace member): NodeBB JSON export
    (categories/topics/posts/users) → `forum_*` tables; notification
    history → site `notifications` (type `forum_import`); NEVER write
-   `forum_notifications`. If the NodeBB export schema is unclear, define a
-   documented JSON input schema in the crate README and implement against
-   it. TODO.
+   `forum_notifications`. JSON input schema documented in README.md.
+   10 unit tests pass. (`5ac26d2`)
 4. ✅ `tests/scheduled_topics_api.rs` (3 green): create validates
    + hides from listings; detail 404s for stranger + clears via update;
    publish-scheduled SQL flips + notifies author.
