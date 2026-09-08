@@ -239,6 +239,27 @@ CREATE INDEX IF NOT EXISTS idx_forum_uploads_message ON forum_uploads (message_i
 CREATE INDEX IF NOT EXISTS idx_forum_uploads_sha256 ON forum_uploads (sha256);
 ```
 
+**Storage layout & lifecycle:**
+
+```
+{cache_dir}/uploads/forum/{yyyy}/{mm}/{token}.{ext}
+```
+
+- `cache_dir` = `Config.cache_dir` (default: the repo's `cache/` dir on dev, `/opt/fichub/cache` on prod).
+- `yyyy/mm` = wall-clock year/month of upload (distributes files across directories).
+- `token` = 128-bit hex string from `upload_token()` (monotonically unique, no collisions).
+- `ext` = `png`, `jpg`, `webp`, or `gif` (determined by header sniffing in `classify_image`).
+
+**Lifecycle:**
+
+| Event | On-disk | In `forum_uploads` row |
+|---|---|---|
+| `POST /api/uploads` | File written to `{yy}/{mm}/{token}.{ext}` | Row inserted (user_id, original_name, stored_path, mime_type, size_bytes, width, height, sha256) |
+| `DELETE /api/uploads/{id}` (owner/staff) | `std::fs::remove_file` (best-effort; if it fails the row is still deleted) | Row deleted |
+| Rebuild / cache purge | Files orphaned if row deleted without cleanup | — |
+
+**No automated retention policy exists yet.** A future Phase 5+ task should add a periodic cleanup job (delete rows older than N days + their on-disk files) or a backup/retention cron. For now, storage growth is bounded by user upload volume (TL2+ gate, 10 MiB per file, image-only whitelist).
+
 ### 1.8 Notifications (Forum-specific types + scheduling)
 
 ```sql
