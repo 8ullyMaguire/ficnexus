@@ -562,6 +562,124 @@ export async function downloadAuthorWorks(authorUrl: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+// ── Streaming Author Download (SSE) ────────────────────────────────
+
+/**
+ * Check whether a social URL points to a supported author page
+ * (AO3 or XenForo) for which batch download is available.
+ */
+export function isSupportedAuthorPageUrl(url: string): boolean {
+  return isAo3AuthorUrl(url) || isXenForoAuthorUrl(url);
+}
+
+/** Extract a friendly site name from a supported author URL. */
+export function siteNameForAuthorUrl(url: string): string {
+  if (isAo3AuthorUrl(url)) return 'AO3';
+  if (isXenForoAuthorUrl(url)) {
+    if (url.includes('questionablequesting')) return 'QQ';
+    if (url.includes('spacebattles')) return 'SB';
+    if (url.includes('sufficientvelocity')) return 'SV';
+    return 'XenForo';
+  }
+  return '';
+}
+
+function isAo3AuthorUrl(url: string): boolean {
+  return /archiveofourown\.org\/users\/[^/]+\/?$/i.test(url);
+}
+
+function isXenForoAuthorUrl(url: string): boolean {
+  return /\/members\/[^/]+\.\d+\/?$/i.test(url);
+}
+
+interface DownloadProgress {
+  current: number;
+  total: number;
+  title: string;
+  completed: string[];
+}
+
+interface DownloadComplete {
+  filename: string;
+  size: number;
+  mime: string;
+  /** Base64-encoded file bytes — client decodes directly, no re-fetch. */
+  data: string;
+}
+
+interface DownloadError {
+  message: string;
+}
+
+/**
+ * Stream a batch author download via SSE, providing real-time progress.
+ * Returns an EventSource that the caller should close when done.
+ *
+ * Events emitted by the server:
+ * - `progress`: { current, total, title, completed }
+ * - `complete`: { filename, size }
+ * - `error`: { message }
+ * - `ping`: keepalive
+ */
+export function streamAuthorDownload(
+  authorUrl: string,
+  onProgress: (current: number, total: number, title: string) => void,
+  onComplete: (filename: string, blob: Blob) => void,
+  onError: (message: string) => void
+): EventSource {
+  const token = getToken();
+  const params = new URLSearchParams({ url: authorUrl });
+  if (token) params.set('token', token);
+
+  const url = `${BASE}/download/author/stream?${params}`;
+  const es = new EventSource(url);
+
+  es.addEventListener('progress', (e) => {
+    try {
+      const data: DownloadProgress = JSON.parse(e.data);
+      onProgress(data.current, data.total, data.title);
+    } catch { /* ignore malformed events */ }
+  });
+
+  es.addEventListener('complete', (e) => {
+    try {
+      const data: DownloadComplete = JSON.parse(e.data);
+      // Decode the inline base64 payload — no second fetch, no re-scrape.
+      const raw = atob(data.data);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      const blob = new Blob([bytes], { type: data.mime || 'application/octet-stream' });
+      onComplete(data.filename, blob);
+      es.close();
+    } catch { /* ignore */ }
+  });
+
+  es.addEventListener('error', (e) => {
+    try {
+      // EventSource auto-reconnects on network errors;
+      // only handle message events with error data
+      if (e instanceof MessageEvent) {
+        const data: DownloadError = JSON.parse(e.data);
+        onError(data.message);
+        es.close();
+      }
+    } catch {
+      // SSE connection error (not a message event)
+      // The EventSource will auto-reconnect
+    }
+  });
+
+  es.onerror = () => {
+    // If we get a real connection error (not just a message event),
+    // close after a brief delay to avoid rapid reconnect loops
+    if (es.readyState === EventSource.CLOSED) {
+      onError('Connection lost');
+    }
+  };
+
+  return es;
+}
+
 /**
  * Download all works in an AO3 series as a ZIP file.
  * Same mechanics as downloadAuthorWorks: GET /api/download/series?url=…,

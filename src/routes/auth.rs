@@ -225,6 +225,22 @@ impl Default for AuthUser {
     }
 }
 
+/// Attempt to build an `AuthUser` from a raw JWT string.
+///
+/// This is the shared verifier used by both the `Authorization` header path
+/// and the `?token=` query parameter (SSE EventSource). Returns `None` when
+/// the token is absent, malformed, or signed with the wrong secret.
+pub fn auth_user_from_token(token: &str) -> Option<AuthUser> {
+    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
+    let claims = verify_token(token, &secret).ok()?;
+    Some(AuthUser {
+        user_id: Some(claims.sub),
+        username: Some(claims.username),
+        role: claims.role,
+        level: claims.level,
+    })
+}
+
 impl<S> FromRequestParts<S> for AuthUser
 where
     S: Send + Sync,
@@ -240,16 +256,8 @@ where
 
         if let Some(header_val) = auth_header {
             if let Some(token) = header_val.strip_prefix("Bearer ") {
-                // We need the secret — read from env at request time (cheap, env is cached by OS)
-                let secret =
-                    std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
-                if let Ok(claims) = verify_token(token, &secret) {
-                    return Ok(AuthUser {
-                        user_id: Some(claims.sub),
-                        username: Some(claims.username),
-                        role: claims.role,
-                        level: claims.level,
-                    });
+                if let Some(user) = auth_user_from_token(token) {
+                    return Ok(user);
                 }
             }
         }

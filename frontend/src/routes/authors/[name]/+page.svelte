@@ -6,6 +6,8 @@
   import { formatWords, stripHtml } from '$lib/util';
   import { getPref } from '$lib/prefs';
   import WorkListFilters from '$lib/ui/archive/WorkListFilters.svelte';
+  import BatchAuthorDownload from '$lib/components/BatchAuthorDownload.svelte';
+  import { isSupportedAuthorPageUrl, siteNameForAuthorUrl } from '$lib/api/social';
 
   let { data } = $props();
   const authorName = $derived(decodeURIComponent(data.name));
@@ -31,6 +33,14 @@
   });
   const isArchive = $derived(uiMode === 'archive');
   const DEFAULT_AVATAR = 'https://archiveofourown.org/images/cons/avatar.gif';
+
+  /** Author's supported source URL for batch download (AO3/XenForo). */
+  const sourceUrl = $derived(
+    author?.socials?.find(
+      (s) => isSupportedAuthorPageUrl(s.url),
+    )?.url ?? null,
+  );
+  const sourceSite = $derived(sourceUrl ? siteNameForAuthorUrl(sourceUrl) : '');
 
   onMount(async () => {
     await auth.init();
@@ -261,6 +271,17 @@
           </ul>
         {/if}
       </fieldset>
+      <!-- Batch download (AO3/XenForo) -->
+      {#if sourceUrl}
+        <fieldset class="archive-fieldset">
+          <legend class="archive-legend">Batch Download</legend>
+          <BatchAuthorDownload
+            authorUrl={sourceUrl}
+            authorName={author.name}
+            siteName={sourceSite}
+          />
+        </fieldset>
+      {/if}
         </main>
       </div>
     {:else}
@@ -355,6 +376,18 @@
         </div>
       {/if}
     {/if}
+    <!-- Batch download (AO3/XenForo) -->
+    {#if sourceUrl}
+      <div class="card section">
+        <h3>Batch Download</h3>
+        <BatchAuthorDownload
+          authorUrl={sourceUrl}
+          authorName={author.name}
+          siteName={sourceSite}
+        />
+      </div>
+    {/if}
+
     <p class="muted back-link"><a href="/"> Back to home</a></p>
   </div>
 {/if}

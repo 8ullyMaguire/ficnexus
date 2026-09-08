@@ -11,6 +11,8 @@
     type SocialLink,
   } from '$lib/api/authors';
   import { auth } from '$lib/stores/auth.svelte';
+  import BatchAuthorDownload from '$lib/components/BatchAuthorDownload.svelte';
+  import { isSupportedAuthorPageUrl, siteNameForAuthorUrl } from '$lib/api/social';
 
   const uiMode = $derived(getPref('uiMode'));
 
@@ -22,6 +24,18 @@
   let error = $state('');
 
   const isCurator = $derived(auth.level >= 50);
+
+  /** Author's supported source URL for batch download (AO3/XenForo). */
+  const sourceUrl = $derived(
+    profile?.socials?.find(
+      (s) => s.platform === 'ao3' && isSupportedAuthorPageUrl(s.url),
+    )?.url
+    ?? profile?.socials?.find(
+      (s) => s.platform !== 'ao3' && isSupportedAuthorPageUrl(s.url),
+    )?.url
+    ?? null,
+  );
+  const sourceSite = $derived(sourceUrl ? siteNameForAuthorUrl(sourceUrl) : '');
 
   // Bio editing
   let bioDraft = $state('');
@@ -313,6 +327,18 @@
         </fieldset>
       {/if}
 
+      <!-- Batch download (AO3/XenForo) -->
+      {#if sourceUrl}
+        <fieldset class="archive-fieldset">
+          <legend class="archive-legend">Batch Download</legend>
+          <BatchAuthorDownload
+            authorUrl={sourceUrl}
+            authorName={profile.canonical_name}
+            siteName={sourceSite}
+          />
+        </fieldset>
+      {/if}
+
       <!-- Merge proposal (curator) -->
       {#if isCurator}
         <fieldset class="archive-fieldset">
@@ -456,6 +482,18 @@
             </li>
           {/each}
         </ul>
+      </div>
+    {/if}
+
+    <!-- Batch download (AO3/XenForo) -->
+    {#if sourceUrl}
+      <div class="card section">
+        <h3>Batch Download</h3>
+        <BatchAuthorDownload
+          authorUrl={sourceUrl}
+          authorName={profile.canonical_name}
+          siteName={sourceSite}
+        />
       </div>
     {/if}
 

@@ -58,3 +58,6 @@ cache/
 
 # Unison sync tmp
 .unison.*.tmp
+
+# Session summaries (local only)
+docs/sessions/
