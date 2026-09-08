@@ -2279,6 +2279,27 @@ fn chunk_customization_redirects() -> impl Into<Router<Arc<AppState>>> {
 
 
 /// Build the Axum router with all routes.
+/// Lane 4: site-wide uploads.
+///
+/// POST/DELETE under `/api/uploads` (JSON envelope, trust-gated); public
+/// `GET /uploads/forum/{yy}/{mm}/{name}` serves stored bytes for markdown
+/// embeds (no auth — validated against traversal).
+fn chunk_uploads() -> impl Into<Router<Arc<AppState>>> {
+    Router::new()
+        .route(
+            "/api/uploads",
+            axum::routing::post(crate::routes::uploads::upload_image),
+        )
+        .route(
+            "/api/uploads/{id}",
+            axum::routing::delete(crate::routes::uploads::delete_upload),
+        )
+        .route(
+            "/uploads/forum/{yy}/{mm}/{name}",
+            get(crate::routes::uploads::serve_upload),
+        )
+}
+
 /// Route chain split into domain chunks (Task 14 refactor).
 async fn build_router(state: Arc<AppState>) -> Router {
     let _frontend_dir = state.config.frontend_dir.clone();
@@ -2297,7 +2318,8 @@ async fn build_router(state: Arc<AppState>) -> Router {
         .merge(chunk_content_translation().into())
         .merge(chunk_comments_upload().into())
         .merge(chunk_feeds_admin().into())
-        .merge(chunk_customization_redirects().into());
+        .merge(chunk_customization_redirects().into())
+        .merge(chunk_uploads().into());
 
     merged.with_state(state.clone())
 
