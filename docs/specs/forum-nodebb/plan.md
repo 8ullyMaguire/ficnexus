@@ -106,7 +106,7 @@ effort moves into messaging (site DMs) and uploads (site service).
 | 1–2 | research + contracts (v1) | done in v1 — `contracts/*.md` authoritative **except** `forum-flags-moderation.md` (superseded by Lane 2) and `forum-messaging.md` route paths (now `/api/messages/*`) |
 | 3 | migrations 072–079 recovered | ✅ DONE (`f4cc60f`) — **Phase 4 needs zero new DDL** |
 | **4** | **Lanes 1–7 below (integration-first)** | ✅ DONE — all 7 lanes complete: backend+frontend+tests for 1, 2, 3, 4, 5, 6, 7; remaining: Lane 7 importer crate (Phase 7), Lane 2 e2e (deferred), Lane 5 group rooms (Lane 3b) |
-| 5 | site-wide realtime: WS `/ws` + Redis pubsub + SSE fallback | after 4 |
+| 5 | site-wide realtime: WS `/ws` + ConnectionManager | ✅ PARTIAL — WS endpoint + in-process pub/sub done (`37f7d54`); SSE fallback + Redis cross-instance pubsub deferred |
 | 6 | PWA + theming (v1 scope) | after 5 |
 | 7 | NodeBB cutover via importer (v1 scope) | last |
 
@@ -447,5 +447,9 @@ the column today and no listing filters it** — this lane wires it up.
  - Lane 5: Groups management UI — list/create/join/leave pages;
  new `groups.ts` API client; route added to routePages.
  - Lane 7: publish-scheduled binary + systemd timer + deploy wiring;
- publish flip + notify test added.
+   publish flip + notify test added.
+ - 2026-09-08: **Phase 5 partial** — WebSocket endpoint at `/ws` with
+ ConnectionManager (channel-based in-process pub/sub via tokio::broadcast).
+ Auth via JWT query param; auto-subscribes to personal channel.
+ SSE fallback + Redis cross-instance pubsub deferred to follow-up.
 
