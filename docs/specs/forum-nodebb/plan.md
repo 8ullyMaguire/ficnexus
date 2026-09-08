@@ -1,6 +1,6 @@
 # Forum NodeBB parity — implementation plan (integration-first rewrite)
 
-**Status:** Phase 4 IN PROGRESS (2026-09-07 night). Phase 3 DONE (migrations
+**Status:** Phase 4 IN PROGRESS (2026-09-08). Phase 3 DONE (migrations
 072–079 recovered from live DDL, commit `f4cc60f`). Moderation pivot landed
 (`708cfed`: trust ladder runs moderation, metamod answers 410). This rewrite
 changes the Phase 4 architecture: **notifications, the flag/report queue,
@@ -14,24 +14,34 @@ them instead of duplicating them.**
 - Lane 3 backend+UI+tests (`596bf5d`: `messages.rs` rewritten, all 5 gaps
   fixed, `/api/messages/*` wired, `/messages` page + API client + i18n ×6 +
   vitest; `tests/messages_api.rs` 4 green).
+- Lane 4 backend+tests (`56c563e`: `uploads.rs` NEW — `POST/DELETE /api/uploads`
+  + public `GET /uploads/forum/{yy}/{mm}/{name}`; trust-gated multipart,
+  10 MiB cap, PNG/JPEG/WebP/GIF whitelist, sha256 + header-parsed
+  dimensions to `forum_uploads` (077); `chunk_uploads()` wired; 5 unit tests
+  green. No resize in this lane — `image` crate absent).
 - Lane 5 backend (`7db25f7` groups/privileges + `1b266a2`: `can()`
   enforcement open-by-default on create_topic/create_post).
 - Lane 6 backend (`9ede502` fixed to compile + `9ebfd37` create endpoint +
   close-notify + inverted-vote-gate fix in `596bf5d`;
   `tests/polls_api.rs` 2 green).
+- Lane 7 backend (`1478395`: scheduled_at on create/update + listing
+  exclusion ×5 sorts + unread/recent/popular/rss/search + detail preview
+  gate; `publish-scheduled` bin; `tests/scheduled_topics_api.rs`).
 - Flood-gate NULL bug fixed (`1b266a2`: `check_flood` used
   `fetch_optional` on `SELECT MAX` — 500'd every first-time poster; also
   fixed the same pattern in `messages.rs`). Heals `f3_create_topic`.
 - Lane 2 frontend (Report button in `TopicThread.svelte` → site
   `/api/reports`) — unchanged.
-**Uncommitted (working tree):** Lane 7 scheduled-topics backend in
-`src/routes/forum.rs` (create/update accept + listing exclusion + detail
-gate) — compiles clean, needs publish binary + tests + commit.
+**Remaining:** Lane 1 composer autosave + vitest, Lane 2 items 2–5
+(topic-level report, owner-notify match, mod-surface deep-link, e2e), Lane 5
+groups UI, Lane 6 PollBar UI, Lane 7 importer crate, final §4 verification.
 **Decisions since rewrite:** block checks unify on canonical site
 `blocked_users` (`forum_user_blocks` stays dead — §6.3 corrected below);
 `/forum/blocks` page stays (already consumes site `/api/blocks` — no
 relocation); profile Message button skipped (no public profile pages
-exist; `/messages?to=` supported for future use).
+exist; `/messages?to=` supported for future use); Lane 4 stores originals
+byte-for-byte (no `image` crate on the tree) — resize/Exif-stripping
+deferred to a follow-up that adds the dep without DDL change.
 **Supersedes:** `plan.v1-2026-09-07.md.bak` (kept for reference).
 **Spec dir:** `/home/alvaro/code/rust/ficnexus/docs/specs/forum-nodebb/`
 **Read order:** this file → §1 principles → §3 lanes → `data-model.md` → `contracts/`
@@ -178,21 +188,27 @@ messages use `author_id` — not `sender_id` — members carry `left_at`;
    (no rows) — use `fetch_one` with `Option<T>` scalar. Fixed in both
    `messages.rs` and `forum.rs::check_flood` (`1b266a2`).
 
-### Lane 4 — Site-wide uploads (generalizes v1 Lane F)
+### Lane 4 — Site-wide uploads (BACKEND+TESTS DONE `56c563e`)
 
 `forum_uploads` (077:20) becomes the generic table (name kept, §6.2).
 
-1. `src/routes/uploads.rs` (NEW): `POST /api/uploads` (multipart; PNG/
-   JPEG/WebP/GIF; 10 MiB cap), static `GET /uploads/{id}`, `DELETE
-   /api/uploads/{id}` (owner or staff). Files under
-   `{config.cache_dir}/uploads/{yy}/{mm}/{id}.{ext}` (cache_dir pattern:
-   upload.rs:213).
-2. Processing: `image` crate — cap 2000px, strip metadata, 400px thumb.
-   Verify `image` is already in `Cargo.toml` before adding.
-3. Trust gate: `assert_min_trust(db, user, PUBLISH_MIN_TRUST)` on POST
+1. ✅ `src/routes/uploads.rs` (NEW): `POST /api/uploads` (multipart; PNG/
+   JPEG/WebP/GIF; 10 MiB cap), public `GET /uploads/forum/{yy}/{mm}/{name}`
+   (no auth — validated against traversal), `DELETE /api/uploads/{id}`
+   (owner or staff). Files under `{cache_dir}/uploads/forum/{yy}/{mm}/{token}.{ext}`
+   (nanos-based unique token).
+2. ⚠️ No `image` crate on the tree → originals stored byte-for-byte
+   (no resize/metadata-strip in this lane). `width`/`height` parsed from
+   image headers (PNG/GIF/WebP/JPEG) so the nullable columns stay
+   populated; sha256 always written. A follow-up adds the `image` crate
+   for resize/Exif-stripping without DDL change.
+3. ✅ Trust gate: `assert_min_trust(db, user, PUBLISH_MIN_TRUST)` on POST
    (trust.rs:91, constant trust.rs:39).
-4. Forum composer: paste/drag-drop → `/api/uploads` → `![](url)` insert.
-5. Tests: multipart round-trip, size/type rejection, ownership on DELETE.
+4. Forum composer paste/drag-drop → `/api/uploads` → `![](url)` insert
+   (frontend wiring TODO — endpoint is ready).
+5. ✅ Tests (5 green): classify whitelist/reject, PNG+GIF dimensions,
+   sha256 structural check, staff gate.
+6. ✅ `chunk_uploads()` wired into `server.rs` route merge chain.
 
 
 ### Lane 5 — Groups + privileges (BACKEND DONE `7db25f7` + `1b266a2`, UI TODO)
@@ -333,16 +349,16 @@ the column today and no listing filters it** — this lane wires it up.
   + `/messages` (Lane 3); drafts/uploads generalized over the 077 tables
   (Lanes 1, 4). Phase 4 requires zero new DDL. v1 plan archived at
   `plan.v1-2026-09-07.md.bak`; lane-letter map in §6.4.
-- 2026-09-07 (night): **Phase 4 execution.** `9ebfd37` (Lane 1 drafts
-  rewrite to live DDL + Lane 6 poll create/close-notify), `596bf5d`
-  (Lane 3 DMs backend+UI + vote-gate fix + 6 green tests),
-  `19c5c40` (frontend test fix), `1b266a2` (Lane 5 `can()` enforcement
-  + flood-gate NULL fix healing `f3_create_topic`). Lane 7
-  scheduled-topics backend in working tree (uncommitted, compiles clean:
-  create/update accept, `scheduled_at IS NULL` in all listing paths,
-  detail preview gate). Still TODO: Lane 1 composer autosave + tests,
-  Lane 2 items 1(partial)/2–5, Lane 4 uploads, Lane 5 groups UI, Lane 6
-  PollBar UI, Lane 7 publish binary + importer + tests, final
-  verification (§4). Test seeds cleaned from prod after each lane
-  (`prv_*`, `poll_*`, `msg_*` removed).
+- 2026-09-08: **Lane 4 site-wide uploads lands** (`56c563e`): new
+  `src/routes/uploads.rs` with `POST/DELETE /api/uploads` + public
+  `GET /uploads/forum/{yy}/{mm}/{name}`; trust-gated multipart (TL2+),
+  10 MiB cap, PNG/JPEG/WebP/GIF whitelist, sha256 + header-parsed
+  dimensions to `forum_uploads` (077); `chunk_uploads()` wired; 5 unit
+  tests green. No `image` crate on the tree, so originals are stored
+  byte-for-byte (resize/Exif-stripping deferred). Also records the
+  earlier Lane 7 backend commit (`1478395`: scheduled_at on create/update,
+  listing exclusion ×5 sorts + unread/recent/popular/rss/search, detail
+  preview gate, `publish-scheduled` bin, `tests/scheduled_topics_api.rs`).
+  Remaining: Lane 1 composer autosave, Lane 2 items 2–5, Lane 5 groups UI,
+  Lane 6 PollBar UI, Lane 7 importer, final §4 verification.
 
