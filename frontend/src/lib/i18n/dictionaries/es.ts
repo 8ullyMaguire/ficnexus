@@ -1010,4 +1010,9 @@ export const es: Record<TranslationKey, string> = {
   'translate.yourVersion': "Tu traducción",
   'forum.reportTopic': 'Report topic',
   'forum.reportTopicPlaceholder': 'Why are you reporting this topic?',
+  'forum.pollClosed': 'Cerrada',
+  'forum.totalVotes': 'votos',
+  'forum.pollCanChange': 'Puedes cambiar tu voto',
+  'forum.pollNoChange': 'No puedes cambiar tu voto',
+  'forum.pollMultiSelect': 'Selecciona hasta {n} opción(es)',
 };

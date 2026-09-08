@@ -1010,4 +1010,9 @@ export const zh: Record<TranslationKey, string> = {
   'translate.yourVersion': "你的翻译",
   'forum.reportTopic': 'Report topic',
   'forum.reportTopicPlaceholder': 'Why are you reporting this topic?',
+  'forum.pollClosed': '已结束',
+  'forum.totalVotes': '票',
+  'forum.pollCanChange': '您可以更改您的投票',
+  'forum.pollNoChange': '您无法更改您的投票',
+  'forum.pollMultiSelect': '最多选择 {n} 个选项',
 };

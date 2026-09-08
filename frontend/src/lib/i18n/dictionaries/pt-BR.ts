@@ -1012,4 +1012,9 @@ export const ptBR: Record<TranslationKey, string> = {
   'translate.yourVersion': "Sua tradução",
   'forum.reportTopic': 'Report topic',
   'forum.reportTopicPlaceholder': 'Why are you reporting this topic?',
+  'forum.pollClosed': 'Encerrada',
+  'forum.totalVotes': 'votos',
+  'forum.pollCanChange': 'Você pode mudar seu voto',
+  'forum.pollNoChange': 'Você não pode mudar seu voto',
+  'forum.pollMultiSelect': 'Selecione até {n} opção(ões)',
 };
