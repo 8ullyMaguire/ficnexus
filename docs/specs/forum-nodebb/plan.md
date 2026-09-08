@@ -23,7 +23,9 @@ them instead of duplicating them.**
   enforcement open-by-default on create_topic/create_post).
 - Lane 6 backend (`9ede502` fixed to compile + `9ebfd37` create endpoint +
   close-notify + inverted-vote-gate fix in `596bf5d`;
-  `tests/polls_api.rs` 2 green).
+  `tests/polls_api.rs` 2 green) + Lane 6 frontend (PollBar UI — archive-only
+  rewrite removing modern-mode branches; `voteOnPoll`/`closePoll` API
+  helpers + vitest; 35/35 forum API tests green).
 - Lane 7 backend (`1478395`: scheduled_at on create/update + listing
   exclusion ×5 sorts + unread/recent/popular/rss/search + detail preview
   gate; `publish-scheduled` bin; `tests/scheduled_topics_api.rs`).
@@ -34,7 +36,7 @@ them instead of duplicating them.**
   `/api/reports`) — unchanged.
 **Remaining:** Lane 1 composer autosave + vitest, Lane 2 items 2–5
 (topic-level report, owner-notify match, mod-surface deep-link, e2e), Lane 5
-groups UI, Lane 6 PollBar UI, Lane 7 importer crate, final §4 verification.
+groups UI, Lane 7 importer crate, final §4 verification.
 **Decisions since rewrite:** block checks unify on canonical site
 `blocked_users` (`forum_user_blocks` stays dead — §6.3 corrected below);
 `/forum/blocks` page stays (already consumes site `/api/blocks` — no
@@ -212,7 +214,15 @@ messages use `author_id` — not `sender_id` — members carry `left_at`;
    (frontend wiring TODO — endpoint is ready).
 5. ✅ Tests (5 green): classify whitelist/reject, PNG+GIF dimensions,
    sha256 structural check, staff gate.
+   ⚠️ 2026-09-08 review: these are in-module unit tests only — every other
+   lane shipped a black-box `tests/*_api.rs`. TODO: `tests/uploads_api.rs`
+   covering the multipart POST end-to-end (TL gate 403, >10 MiB 413,
+   non-image 400, fetch-back round-trip, DELETE authz).
 6. ✅ `chunk_uploads()` wired into `server.rs` route merge chain.
+7. ⚠️ 2026-09-08 review: uploads are the only new **on-disk state** in
+   Phase 4 — no backup/retention story and no documented storage dir
+   contract yet. TODO: document `{cache_dir}/uploads` layout + lifecycle
+   in data-model.md (or move to a configurable dir with an ops note).
 
 
 ### Lane 5 — Groups + privileges (BACKEND DONE `7db25f7` + `1b266a2`, UI TODO)
@@ -242,7 +252,7 @@ Remaining:
 3. `ensure_system_groups()` exists but is never called — no startup hook,
    no auto-membership; wire only when the groups UI needs seeded groups.
 
-### Lane 6 — Polls (BACKEND DONE, UI TODO)
+### Lane 6 — Polls (BACKEND DONE, UI DONE — 2026-09-08)
 
 Forum-scoped. Landed across `9ede502` → `9ebfd37` → `596bf5d`:
 `forum_polls.rs` get/vote/close/results + **`POST
@@ -260,11 +270,22 @@ derefs — plus an **inverted vote gate** (open polls 409'd, closed polls
 accepted votes), rewritten as a `close_at` fetch.
 
 Remaining:
-1. Reusable PollBar component + vote UI (only "poll" string match in
-   frontend today is `ForumBottomNav.svelte` — no poll UI). TODO.
-   (Create endpoint exists, so UI work is unblocked.)
+1. ✅ 2026-09-08: PollBar component + vote UI — archive-only rewrite
+   (`PollBar.svelte` no modern-mode branches; `voteOnPoll`/`closePoll` API
+   helpers in `forum.ts`; ×6 i18n keys; vitest cases for `reportForumTopic`,
+   `voteOnPoll`, `closePoll`; 35/35 forum API tests green).
+2. ✅ 2026-09-08 (second-opinion review): `topic_detail` now attaches the
+   topic's poll inline (no second request for the OP's PollBar).
+3. TODO: **commit the Lane 6 UI** — `PollBar.svelte` is untracked and the
+   `topic_detail` attachment + TS types are still working-tree only (see
+   §7 changelog 2026-09-08 review entry).
+4. TODO: dedupe the poll serializer — extract `serialize_poll()` from
+   `forum_polls.rs::get_poll` and reuse it in `topic_detail`; drop the
+   placeholder `votes`/`voted_by_user` fields from the inline payload.
+5. TODO: one assertion in `tests/polls_api.rs` that `topic_detail` returns
+   the `poll` object with the shape PollBar reads (locks the contract).
 
-### Lane 7 — Scheduled topics (BACKEND UNCOMMITTED) + importer (TODO)
+### Lane 7 — Scheduled topics (BACKEND LANDED `1478395`) + importer (TODO)
 
 `forum_topics.scheduled_at` + partial index exist (078); **nothing writes
 the column today and no listing filters it** — this lane wires it up.
@@ -309,6 +330,30 @@ the column today and no listing filters it** — this lane wires it up.
    - paste an image in the composer → `/api/uploads` stores it → renders
      in markdown preview.
 5. Tick lanes off in §2/§3 and update the status line as they land.
+6. 2026-09-08 review additions (second opinion on the last 20 commits):
+   - **Frontend debt sweep:** the 9 pre-existing `svelte-check` errors
+     (`DownloadTab`, `ReportsTable`, `NewWork`, `WorksTable`) have been
+     inherited across 20+ commits — own them as an explicit task here
+     instead of carrying them forever.
+   - **Commit hygiene:** one concern per commit. `1478395` bundled the
+     Lane 7 feature + tests + Cargo.toml + a 387-line doc restore in one
+     commit; Lane 6 UI risked the same fate (untracked file at review
+     time). Rule: feature, tests, and docs land as separate commits, or
+     at minimum never mix a doc restore into a feature commit.
+   - **Migration-history repair:** the renumber/restore dance
+     (`717a008` → `f4cc60f` → `27b49ef`/`f0515b0`) means fresh databases
+     apply forum migrations 072–079 *before* the older 081–088 set and
+     version order no longer encodes chronology (`set_ignore_missing(true)`
+     keeps pre-consolidation DBs booting). Phase 5 TODO: **baseline squash**
+     to a single `001_initial.sql` + forward-only migrations (the codebase
+     has done this consolidation before — 72 files → baseline), so version
+     order regains meaning before more DDL lands.
+   - **i18n dead-key audit:** the moderation pivot (`708cfed`) retired
+     points/metamod but `forum.modPointsLeft` and friends remain in all 6
+     dictionaries — sweep dead `forum.*` keys on the next i18n touch.
+   - **`publish-scheduled` deploy story:** the binary exists but nothing
+     schedules it; record the intended runner (cron/systemd timer) in the
+     Lane 7 section or the ops docs before calling Lane 7 done.
 
 ## 5. Out of scope (v1 §5 plus pivot additions)
 
@@ -353,6 +398,20 @@ the column today and no listing filters it** — this lane wires it up.
   + `/messages` (Lane 3); drafts/uploads generalized over the 077 tables
   (Lanes 1, 4). Phase 4 requires zero new DDL. v1 plan archived at
   `plan.v1-2026-09-07.md.bak`; lane-letter map in §6.4.
+- 2026-09-08: **Second-opinion review of the last 20 commits** — findings
+  folded into §3/§4: (1) Lane 6 UI (`PollBar.svelte` + `topic_detail`
+  poll attachment + TS types) was uncommitted at review time — commit it
+  before any further lane work; (2) `topic_detail` hand-rolls poll JSON
+  with placeholder `votes`/`voted_by_user` fields while `get_poll` has the
+  real serializer — dedupe (Lane 6 remaining item 4); (3) the inline poll
+  attachment needs one contract assertion in `tests/polls_api.rs`; (4)
+  uploads lane lacks the black-box `tests/*_api.rs` every other lane has
+  and its on-disk storage dir has no documented lifecycle; (5) migration
+  renumber/repair leaves fresh-DB version order non-chronological — Phase 5
+  baseline squash planned in §4.6; (6) `plan.v1...md.bak` got re-added
+  inside a feature commit (`1478395`) — keep docs restores out of feature
+  commits; (7) dead i18n keys from the moderation pivot and the
+  `publish-scheduled` deploy story recorded in §4.6.
 - 2026-09-08: **Lane 4 site-wide uploads lands** (`56c563e`): new
   `src/routes/uploads.rs` with `POST/DELETE /api/uploads` + public
   `GET /uploads/forum/{yy}/{mm}/{name}`; trust-gated multipart (TL2+),
@@ -363,6 +422,7 @@ the column today and no listing filters it** — this lane wires it up.
   earlier Lane 7 backend commit (`1478395`: scheduled_at on create/update,
   listing exclusion ×5 sorts + unread/recent/popular/rss/search, detail
   preview gate, `publish-scheduled` bin, `tests/scheduled_topics_api.rs`).
-  Remaining: Lane 1 composer autosave, Lane 2 items 2–5, Lane 5 groups UI,
-  Lane 6 PollBar UI, Lane 7 importer, final §4 verification.
+    Remaining: Lane 1 composer autosave + vitest, Lane 2 items 2–5
+  (topic-level report, owner-notify match, mod-surface deep-link, e2e),
+  Lane 5 groups UI, Lane 7 importer crate, final §4 verification.
 
