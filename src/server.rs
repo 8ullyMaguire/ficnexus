@@ -67,6 +67,11 @@ pub struct AppState {
     pub mailer: Box<dyn crate::services::mailer::Mailer>,
     /// Realtime connection manager for WebSocket / SSE pubsub.
     pub rt_manager: crate::realtime::ConnectionManager,
+    /// JWT secret for token verification. Centralized here so all handlers
+    /// read from one source (previously duplicated across 8 files).
+    pub jwt_secret: String,
+    /// Optional Redis client for cross-instance realtime pubsub.
+    pub redis_client: Option<redis::Client>,
 }
 
 /// Redirect to root — used by legacy redirect routes.
@@ -120,10 +125,11 @@ pub async fn run(config: Config) {
         .await
         .expect("Failed to connect to Redis for health checks");
 
-    // Build HTTP client
+    // Build HTTP client (no cookie store — batch downloads use isolated
+    // clients with private jars via isolated_scrape_client()). Remaining
+    // callers (oembed, health, etc.) make single stateless requests.
     let http_client = reqwest::Client::builder()
         .user_agent("fichub.net/0.1.0")
-        .cookie_store(true)
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .expect("Failed to build HTTP client");
@@ -206,6 +212,8 @@ pub async fn run(config: Config) {
             },
         }),
         rt_manager: crate::realtime::ConnectionManager::new(),
+        jwt_secret: std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into()),
+        redis_client: Some(redis_client),
     });
 
     // Spawn the batch training pipeline for the pluggable recommendation
@@ -455,6 +463,10 @@ fn chunk_device_download() -> impl Into<Router<Arc<AppState>>> {
         .route(
             "/api/download/author",
             get(routes::download::download_author_handler),
+        )
+        .route(
+            "/api/download/author/stream",
+            get(routes::download::download_author_stream_handler),
         )
         .route(
             "/api/download/series",

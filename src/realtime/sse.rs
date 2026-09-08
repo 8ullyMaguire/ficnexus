@@ -5,9 +5,7 @@ use axum::{
 use futures::stream::Stream;
 use serde::Deserialize;
 use std::convert::Infallible;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 use tokio::sync::broadcast;
 
 use super::{ConnectionManager, RealtimeMessage};
@@ -26,8 +24,7 @@ pub async fn sse_handler(
     State(state): State<Arc<AppState>>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let user_id = if let Some(token) = query.token {
-        let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
-        if let Ok(claims) = verify_token(&token, &secret) {
+        if let Ok(claims) = verify_token(&token, &state.jwt_secret) {
             Some(claims.sub)
         } else {
             None
@@ -74,47 +71,30 @@ pub async fn sse_handler(
         }
     });
 
-    Sse::new(SseStream {
-        rx: merged_rx,
-        _tx: merged_tx,
-    })
-    .keep_alive(
+    // Replace the old manual Stream impl (which called cx.waker().wake_by_ref()
+    // on every Empty try_recv — a 100%-CPU busy-wait per SSE client) with a
+    // proper async stream built on unfold. The closure awaits recv() without
+    // spinning, so the task yields to the executor between messages.
+    let stream = futures::stream::unfold(merged_rx, |mut rx| async {
+        match rx.recv().await {
+            Ok(msg) => Some((
+                Ok(Event::default()
+                    .event(&msg.event)
+                    .id(&msg.channel)
+                    .data(serde_json::to_string(&msg.data).unwrap_or_default())),
+                rx,
+            )),
+            Err(broadcast::error::RecvError::Lagged(_)) => {
+                // Skip lagged messages — yield a keepalive and continue.
+                Some((Ok(Event::default().event("keepalive").data("")), rx))
+            }
+            Err(broadcast::error::RecvError::Closed) => None,
+        }
+    });
+
+    Sse::new(stream).keep_alive(
         KeepAlive::new()
             .interval(std::time::Duration::from_secs(30))
             .text("ping"),
     )
-}
-
-/// A simple SSE stream backed by a broadcast receiver.
-struct SseStream {
-    rx: broadcast::Receiver<RealtimeMessage>,
-    // Keep tx alive so the channel doesn't close.
-    _tx: broadcast::Sender<RealtimeMessage>,
-}
-
-impl Stream for SseStream {
-    type Item = Result<Event, Infallible>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match self.rx.try_recv() {
-            Ok(msg) => {
-                let event = Event::default()
-                    .event(&msg.event)
-                    .id(&msg.channel)
-                    .data(serde_json::to_string(&msg.data).unwrap_or_default());
-                Poll::Ready(Some(Ok(event)))
-            }
-            Err(broadcast::error::TryRecvError::Empty) => {
-                // Register waker for when a message arrives.
-                cx.waker().wake_by_ref();
-                Poll::Pending
-            }
-            Err(broadcast::error::TryRecvError::Lagged(_)) => {
-                // Skip lagged messages, try again next poll.
-                cx.waker().wake_by_ref();
-                Poll::Pending
-            }
-            Err(broadcast::error::TryRecvError::Closed) => Poll::Ready(None),
-        }
-    }
 }

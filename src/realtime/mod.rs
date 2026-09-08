@@ -63,3 +63,25 @@ impl Default for ConnectionManager {
         Self::new()
     }
 }
+
+/// Publish a realtime message to the local bus + Redis (cross-instance).
+/// Local delivery is immediate; Redis fanout is best-effort.
+pub async fn publish_event(
+    manager: &ConnectionManager,
+    redis: Option<&redis::Client>,
+    channel: &str,
+    event: &str,
+    data: serde_json::Value,
+) {
+    let msg = RealtimeMessage {
+        channel: channel.to_string(),
+        event: event.to_string(),
+        data,
+    };
+    // Local in-process delivery
+    manager.publish(&msg).await;
+    // Cross-instance fanout (best-effort)
+    if let Some(r) = redis {
+        let _ = crate::realtime::pubsub::publish_to_redis(r, &msg).await;
+    }
+}

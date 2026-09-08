@@ -472,6 +472,16 @@ pub async fn send_message(
             Some(&room_id.to_string()),
         )
         .await;
+
+        // Publish a realtime event to the recipient's personal channel.
+        let _ = crate::realtime::publish_event(
+            &state.rt_manager,
+            state.redis_client.as_ref(),
+            &format!("user:{}", member_id),
+            "message_new",
+            json!({ "room_id": room_id, "message_id": msg_id, "author_id": sender_id }),
+        )
+        .await;
     }
 
     Ok(Json(json!({ "err": 0, "message_id": msg_id })))

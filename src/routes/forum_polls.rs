@@ -407,6 +407,16 @@ pub async fn close_poll(
             )
             .await;
         }
+
+        // Publish a realtime event to the topic channel.
+        let _ = crate::realtime::publish_event(
+            &state.rt_manager,
+            state.redis_client.as_ref(),
+            &format!("topic:{}", topic_id),
+            "poll_closed",
+            json!({ "poll_id": poll_id, "topic_id": topic_id }),
+        )
+        .await;
     }
 
     Ok(Json(json!({ "err": 0, "closed": true })))

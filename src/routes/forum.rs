@@ -3004,6 +3004,17 @@ pub async fn create_post(
 
     award_post_exp(&state.db, user_id, post_id).await;
 
+    // Publish a realtime event to the topic channel so connected clients
+    // (WS/SSE) receive the new reply immediately.
+    let _ = crate::realtime::publish_event(
+        &state.rt_manager,
+        state.redis_client.as_ref(),
+        &format!("topic:{}", topic_id),
+        "topic_reply",
+        json!({ "topic_id": topic_id, "post_id": post_id, "author_id": user_id }),
+    )
+    .await;
+
     Ok(Json(
         json!({ "err": 0, "id": post_id, "msg": "Post created" }),
     ))
@@ -3680,6 +3691,8 @@ pub async fn react_to_post(
     .execute(&state.db)
     .await?
     .rows_affected();
+
+    let is_new_reaction = deleted == 0;
     if deleted == 0 {
         sqlx::query(
             "INSERT INTO forum_post_reactions (post_id, user_id, emoji) VALUES ($1, $2, $3) \
@@ -3691,8 +3704,13 @@ pub async fn react_to_post(
         .execute(&state.db)
         .await?;
     }
-        // Award XP for reaction (upvote equivalent)
+
+    // Award XP for reaction (upvote equivalent) only on 0→1 transitions,
+    // not on toggle cycles (un-react/re-react). This prevents XP farming.
+    if is_new_reaction {
         award_reaction_exp(&state.db, user_id, post_id).await;
+    }
+
     // Return updated reactions for this post
     let reactions = load_reactions(&state.db, post_id, Some(user_id)).await?;
     Ok(Json(json!({ "err": 0, "reactions": reactions })))
@@ -3837,8 +3855,8 @@ pub async fn user_profile(
     axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::server::AppState>>,
     axum::extract::Path(user_id): axum::extract::Path<i32>,
 ) -> Result<axum::Json<serde_json::Value>, AppError> {
-    let row = sqlx::query_as::<_, (i32, String, Option<String>, i16, i64, i32, i32, i32, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>, i64, i32)>(
-        "SELECT id, username, email, level, exp, xp, rank, trust, created_at, last_active_at, total_words_read, total_works_read
+    let row = sqlx::query_as::<_, (i32, String, i16, i64, i32, i32, i32, i32, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>, i64, i32)>(
+        "SELECT id, username, level, exp, xp, rank, trust, reputation, created_at, last_active_at, total_words_read, total_works_read
          FROM users WHERE id = $1",
     )
     .bind(user_id)
@@ -3846,7 +3864,7 @@ pub async fn user_profile(
     .await?
     .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
 
-    let (id, username, email, level, exp, xp, rank, trust, created_at, last_active_at, total_words_read, total_works_read) = row;
+    let (id, username, level, exp, xp, rank, trust, reputation, created_at, last_active_at, total_words_read, total_works_read) = row;
 
     // Compute XP progress within current level
     let next_level_exp = exp_per_level() * (level as i64 + 1);
@@ -3858,22 +3876,24 @@ pub async fn user_profile(
     };
 
     Ok(axum::Json(serde_json::json!({
-        "id": id,
-        "username": username,
-        "email": email,
-        "level": level,
-        "exp": exp,
-        "xp": xp,
-        "rank": rank,
-        "trust": trust,
-        "reputation": trust,
-        "created_at": created_at,
-        "last_active_at": last_active_at,
-        "total_words_read": total_words_read,
-        "total_works_read": total_works_read,
-        "next_level_exp": next_level_exp,
-        "level_start_exp": level_start_exp,
-        "progress_percent": progress,
+        "err": 0,
+        "data": {
+            "id": id,
+            "username": username,
+            "level": level,
+            "exp": exp,
+            "xp": xp,
+            "rank": rank,
+            "trust": trust,
+            "reputation": reputation,
+            "created_at": created_at,
+            "last_active_at": last_active_at,
+            "total_words_read": total_words_read,
+            "total_works_read": total_works_read,
+            "next_level_exp": next_level_exp,
+            "level_start_exp": level_start_exp,
+            "progress_percent": progress,
+        }
     })))
 }
 

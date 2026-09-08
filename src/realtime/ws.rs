@@ -26,8 +26,7 @@ pub async fn ws_handler(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let user_id = if let Some(token) = query.token {
-        let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
-        if let Ok(claims) = verify_token(&token, &secret) {
+        if let Ok(claims) = verify_token(&token, &state.jwt_secret) {
             Some(claims.sub)
         } else {
             None
@@ -36,12 +35,60 @@ pub async fn ws_handler(
         None
     };
 
-    ws.on_upgrade(move |socket| handle_socket(socket, state.rt_manager.clone(), user_id))
+    let manager = state.rt_manager.clone();
+    let db = state.db.clone();
+    ws.on_upgrade(move |socket| handle_socket(socket, manager, db, user_id))
+}
+
+/// Authorize a channel subscription request.
+/// Returns true if the user is allowed to subscribe to this channel.
+async fn authorize_channel(channel: &str, user_id: Option<i32>, db: &sqlx::PgPool) -> bool {
+    if channel == "global" {
+        return true;
+    }
+
+    if let Some((prefix, id_str)) = channel.split_once(':') {
+        if let Ok(id) = id_str.parse::<i64>() {
+            return match prefix {
+                "user" => user_id == Some(id as i32),
+                "topic" => {
+                    // Topic is visible if it's not hidden/deleted, or user is staff.
+                    // Simple check: public topics are visible to all.
+                    let visible: Option<bool> = sqlx::query_scalar(
+                        "SELECT (is_hidden = false AND deleted_at IS NULL) FROM forum_topics WHERE id = $1"
+                    )
+                    .bind(id)
+                    .fetch_optional(db)
+                    .await
+                    .ok()
+                    .flatten();
+                    visible.unwrap_or(false)
+                }
+                "room" => {
+                    // User must be an active member of the room.
+                    let member: Option<bool> = sqlx::query_scalar(
+                        "SELECT true FROM forum_room_members WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL"
+                    )
+                    .bind(id)
+                    .bind(user_id)
+                    .fetch_optional(db)
+                    .await
+                    .ok()
+                    .flatten();
+                    member.unwrap_or(false)
+                }
+                _ => false,
+            };
+        }
+    }
+
+    false
 }
 
 async fn handle_socket(
     socket: WebSocket,
     manager: ConnectionManager,
+    db: sqlx::PgPool,
     user_id: Option<i32>,
 ) {
     let (mut sender, mut receiver) = socket.split();
@@ -92,9 +139,14 @@ async fn handle_socket(
                         match event {
                             "subscribe" => {
                                 if let Some(channel) = cmd.get("channel").and_then(|c| c.as_str()) {
-                                    let ch = channel.to_string();
-                                    let rx = manager2.subscribe(&ch).await;
-                                    subs_recv.write().await.push((ch, rx));
+                                    if authorize_channel(channel, user_id, &db).await {
+                                        let ch = channel.to_string();
+                                        let rx = manager2.subscribe(&ch).await;
+                                        subs_recv.write().await.push((ch, rx));
+                                    }
+                                    // If authorization fails, the subscription is silently
+                                    // denied — no message is added, so the client receives
+                                    // no events from this channel.
                                 }
                             }
                             "unsubscribe" => {
@@ -102,19 +154,8 @@ async fn handle_socket(
                                     subs_recv.write().await.retain(|(ch, _)| ch != channel);
                                 }
                             }
-                            "publish" => {
-                                if let (Some(channel), Some(data)) = (
-                                    cmd.get("channel").and_then(|c| c.as_str()),
-                                    cmd.get("data"),
-                                ) {
-                                    let msg = RealtimeMessage {
-                                        channel: channel.to_string(),
-                                        event: "message".to_string(),
-                                        data: data.clone(),
-                                    };
-                                    manager2.publish(&msg).await;
-                                }
-                            }
+                            // Client publish is intentionally not supported — only
+                            // server-side code publishes to channels.
                             _ => {}
                         }
                     }
