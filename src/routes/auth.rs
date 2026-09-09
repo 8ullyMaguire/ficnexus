@@ -11,7 +11,9 @@ use crate::error::AppError;
 pub struct Claims {
     pub sub: i32, // user id
     pub username: String,
-    pub role: i16, // legacy: 0=regular, 1=trusted, 5=curator, 10=admin (read-only after F7)
+    /// F7 trust level (0-6). Replaces legacy `role` for access control.
+    /// 0=New, 1=Basic, 2=Member, 3=Regular, 4=Elder, 5=Community Mod, 6=Near-admin
+    pub trust_level: i16,
     /// F7 site-wide level (0-100). The active gate for forum mod/admin.
     pub level: i16,
     pub exp: usize,
@@ -22,7 +24,8 @@ pub struct Claims {
 pub struct User {
     pub id: i32,
     pub username: String,
-    pub role: i16,
+    /// F7 trust level (0-6). Replaces legacy `role`.
+    pub trust_level: i16,
     pub reputation: i32,
     pub email: Option<String>,
     /// F7 site-wide level (0-100).
@@ -74,7 +77,7 @@ pub fn create_token(user: &User, secret: &str) -> Result<String, AppError> {
     let claims = Claims {
         sub: user.id,
         username: user.username.clone(),
-        role: user.role,
+        trust_level: user.trust_level,
         level: user.level,
         exp: (now + Duration::days(30)).timestamp() as usize,
         iat: now.timestamp() as usize,
@@ -93,7 +96,7 @@ pub fn create_refresh_token(user_id: i32, secret: &str) -> Result<String, AppErr
     let claims = Claims {
         sub: user_id,
         username: String::new(),
-        role: 0,
+        trust_level: 0,
         level: 0,
         exp: (now + Duration::days(365)).timestamp() as usize,
         iat: now.timestamp() as usize,
@@ -139,7 +142,7 @@ pub async fn register_user(
 
     let row = sqlx::query_as::<_, (i32, String, i16, i32, Option<String>, i16, i64)>(
         "INSERT INTO users (username, password_hash, email) VALUES ($1, $2, COALESCE($3, ''))
-         RETURNING id, username, role, reputation, email, level, exp",
+         RETURNING id, username, trust_level, reputation, email, level, exp",
     )
     .bind(&req.username)
     .bind(&hash)
@@ -156,7 +159,7 @@ pub async fn register_user(
     let user = User {
         id: row.0,
         username: row.1.clone(),
-        role: row.2,
+        trust_level: row.2,
         reputation: row.3,
         email: row.4,
         level: row.5,
@@ -173,17 +176,17 @@ pub async fn login_user(
     secret: &str,
 ) -> Result<AuthResponse, AppError> {
     let row = sqlx::query_as::<_, (i32, String, String, i16, i32, Option<String>, i16, i64)>(
-        "SELECT id, username, password_hash, role, reputation, email, level, exp FROM users WHERE username = $1",
+        "SELECT id, username, password_hash, trust_level, reputation, email, level, exp FROM users WHERE username = $1",
     )
     .bind(&req.username)
     .fetch_optional(db)
     .await?
     .ok_or_else(|| AppError::Unauthorized("Invalid username or password".to_string()))?;
 
-    let (id, username, hash, role, reputation, email, level, exp) = row;
+    let (id, username, hash, trust_level, reputation, email, level, exp) = row;
 
     let valid = bcrypt::verify(&req.password, &hash)
-        .map_err(|e| AppError::Internal(format!("Verify error: {}", e)))?;
+        .map_err(|e| AppError::Internal(format!("Verify error: {e}")))?;
     if !valid {
         return Err(AppError::Unauthorized(
             "Invalid username or password".to_string(),
@@ -193,7 +196,7 @@ pub async fn login_user(
     let user = User {
         id,
         username,
-        role,
+        trust_level,
         reputation,
         email,
         level,
@@ -209,7 +212,8 @@ pub async fn login_user(
 pub struct AuthUser {
     pub user_id: Option<i32>,
     pub username: Option<String>,
-    pub role: i16,
+    /// F7 trust level (0-6). Replaces legacy `role`.
+    pub trust_level: i16,
     /// F7 site-wide level (0-100); 0 for anonymous.
     pub level: i16,
 }
@@ -219,7 +223,7 @@ impl Default for AuthUser {
         Self {
             user_id: None,
             username: None,
-            role: 0,
+            trust_level: 0,
             level: 0,
         }
     }
@@ -234,7 +238,7 @@ pub fn auth_user_from_token_with_secret(token: &str, secret: &str) -> Option<Aut
     Some(AuthUser {
         user_id: Some(claims.sub),
         username: Some(claims.username),
-        role: claims.role,
+        trust_level: claims.trust_level,
         level: claims.level,
     })
 }
@@ -281,7 +285,7 @@ mod tests {
         let user = User {
             id: 1,
             username: "testuser".into(),
-            role: 0,
+            trust_level: 0,
             reputation: 0,
             email: None,
             level: 0,
@@ -292,7 +296,7 @@ mod tests {
         let claims = verify_token(&token, secret).unwrap();
         assert_eq!(claims.sub, 1);
         assert_eq!(claims.username, "testuser");
-        assert_eq!(claims.role, 0);
+        assert_eq!(claims.trust_level, 0);
         assert_eq!(claims.level, 0);
     }
 
@@ -307,7 +311,7 @@ mod tests {
         let user = User {
             id: 1,
             username: "testuser".into(),
-            role: 0,
+            trust_level: 0,
             reputation: 0,
             email: None,
             level: 0,

@@ -1,5 +1,5 @@
 //! Trust system — a Discourse-inspired 7-level axis separate from
-//! rank/reputation/role.
+//! rank/reputation.
 //!
 //! Trust measures *participation safety*: what a member may do and how much
 //! their moderation actions weigh. Levels 0-4 are earned automatically from
@@ -11,9 +11,14 @@
 //! - Trust is monotonic up to TL4 (once earned, never lost) matching
 //!   Discourse, EXCEPT a revocation at TL3+ if a member accrues confirmed
 //!   spam reports (the only automatic demotion).
-//! - Admin/curator authority (`role`) is unchanged; trust never grants
-//!   moderation — it only shapes how much weight a member's reports carry
-//!   and what write surfaces are open to them.
+//! - Trust level replaces legacy `role` for all access control.
+//!   Mapping: role 0→TL0, role 1→TL1, role 5→TL3, role 10→TL5.
+//!   Admin tools require TL5+ (Community Moderator), curator tools TL3+.
+//!
+//! Migration from `role`:
+//! - `role < 5` (reader) → `trust_level < 3`
+//! - `role >= 5` (curator) → `trust_level >= 3`
+//! - `role >= 10` (admin) → `trust_level >= 5`
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -41,6 +46,12 @@ pub const PUBLISH_MIN_TRUST: i16 = 2;
 /// Minimum trust to resolve other users' reports (the Community Moderator
 /// human layer).
 pub const RESOLVE_MIN_TRUST: i16 = 5;
+
+/// Minimum trust for admin tools (replaces legacy role >= 10).
+pub const ADMIN_MIN_TRUST: i16 = 5;
+
+/// Minimum trust for curator tools (replaces legacy role >= 5).
+pub const CURATOR_MIN_TRUST: i16 = 3;
 
 /// Flag weight granted per trust level (reporter trust → effective weight):
 /// TL1=1, TL2=1, TL3=2, TL4=3, TL5=5, TL6=5. TL0 may not flag.
@@ -106,18 +117,18 @@ pub async fn assert_min_trust(
     Ok(level)
 }
 
-/// Trust gate that never blocks staff: `role >= 10` (curator/admin) is
-/// inherently trusted and always passes. Regular users must reach `min`.
+/// Trust gate that never blocks staff: `trust_level >= 5` (Community Mod+)
+/// is inherently trusted and always passes. Regular users must reach `min`.
 /// Used by trust-gated write surfaces so a TL0 admin isn't locked out of
 /// publishing/moderation they're authorised for.
 pub async fn assert_staff_or_min_trust(
     db: &PgPool,
     user_id: Option<i32>,
-    role: i16,
+    trust_level: i16,
     min: i16,
     what: &str,
 ) -> Result<i16, AppError> {
-    if role >= 10 {
+    if trust_level >= 5 {
         return Ok(fetch_trust_level(db, user_id).await.max(min));
     }
     assert_min_trust(db, user_id, min, what).await
