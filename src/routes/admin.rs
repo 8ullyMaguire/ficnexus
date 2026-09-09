@@ -143,37 +143,15 @@ pub async fn approve_upload(
     .await?;
     if w >= 5000 {
         if let Some(ref uid) = url_id {
-            let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 1, "xp_event").await; // TODO: fix amount 
-                &state.db,
-                uploader_id,
-                "work_publish",
-                Some(uid),
-            )
-            .await;
+            let _ = crate::db::queries::update_reputation_and_promote(&state.db, uploader_id, 10, "work_publish").await;
         } else {
-            let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 1, "xp_event").await; // TODO: fix amount 
-                &state.db,
-                uploader_id,
-                "work_publish",
-                None,
-            )
-            .await;
+            let _ = crate::db::queries::update_reputation_and_promote(&state.db, uploader_id, 10, "work_publish").await;
         }
-        // Completion bonus: status == 'complete' → scaled XP = 100 + 2*(words/1000).
-        if status.as_deref() == Some("complete") {
-            let scaled = 100 + 2 * (w / 1000);
-            // Override the def's base xp with the scaled amount via a one-off insert.
-            // award_xp enforces caps/streak on the def row (work_complete_qualified), but
-            // the XP *amount* is scaled here before recording. We call a dedicated path:
-            let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 1, "xp_event").await; // TODO: fix amount 
-                &state.db,
-                uploader_id,
-                "work_complete_qualified",
-                url_id.as_deref(),
-                scaled as i32,
-            )
-            .await;
-        }
+        // Completion bonus for long works
+    if status.as_deref() == Some("complete") && w >= 10000 {
+        let bonus = 25 + (w / 1000);
+        let _ = crate::db::queries::update_reputation_and_promote(&state.db, uploader_id, bonus as i32, "work_complete_bonus").await;
+    }
     }
     // Retain legacy reputation path for a single transitional sprint.
     let _ = crate::db::queries::update_reputation_and_promote(
@@ -487,7 +465,7 @@ pub async fn rep_award_handler(
         ],
     )
     .await;
-    Ok(Json(json!({ "err": 0, "ok": true, "xp_awarded": awarded })))
+    Ok(Json(json!({ "err": 0, "ok": true, "reputation_awarded": true })))
 }
 
 // ═══════════════════════════════════════════════════════════════════

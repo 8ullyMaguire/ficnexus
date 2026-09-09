@@ -339,7 +339,7 @@ pub async fn vote_on_poll(
     }
 
     // Award XP for poll vote
-    crate::routes::forum::award_poll_vote_exp(&state.db, user_id, poll_id).await;
+    let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 3, "poll_voted").await;
 
     // Check for newly unlocked achievements (best-effort)
     let _ = crate::services::achievements::check_and_unlock_achievements(

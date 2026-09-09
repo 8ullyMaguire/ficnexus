@@ -1,52 +1,71 @@
-# TODO — XP/Level System Removal (Remaining Tasks)
+# TODO — XP/Level System Removal
 
-## High Priority (Compilation Blockers)
+## Status: PARTIAL — Compilation errors remain
 
-- [ ] **Fix `admin.rs`**: Remove `crate::services::progression::award_xp` and `award_scaled_xp` calls (lines 146, 154, 168, 462, 453, 430)
-- [ ] **Fix `proposals.rs`**: Remove `crate::services::progression::award_xp` calls (line 380)
-- [ ] **Fix `services/proposals.rs`**: Remove `crate::services::progression::award_xp` calls (lines 199, 476, 513)
-- [ ] **Fix `config.rs`**: Remove `forum_exp_per_level` field and env var parsing
-- [ ] **Remove `xp_events`, `xp_source_defs`, `exp_events` tables from `migrations/000_baseline.sql`**
-- [ ] **Remove XP columns from users table in baseline: `xp`, `level`, `exp`, `rank`, `exp_per_level`**
+**Completed commits:**
+- ✅ `dd39d47` — Deleted progression modules, created achievements.rs, user_preferences.rs
+- ✅ `10cf8b5` — Cleaned up forum.rs XP functions
+- ✅ `f36f122` — Added this TODO list
 
-## Medium Priority (Clean Code)
+## Remaining Work (Compilation Blockers)
 
-- [ ] **Remove `modlog.rs` XP test data (lines 142, 153)**
-- [ ] **Remove `authors.rs` XP test data (lines 736, 744, 752, 764, 772, 783)**
-- [ ] **Remove `social.rs` XP test data (lines 240, 241, 348, 1090, 1091, 1108)**
-- [ ] **Remove `forum_groups.rs` XP level checks (lines 68, 153, 308, 506, 627, 663, 699)**
-- [ ] **Remove `forum_polls.rs` XP level checks (lines 162, 372)**
-- [ ] **Remove `uploads.rs` XP level check (line 186)**
-- [ ] **Remove `roadmap.rs` XP level references (lines 58, 296, 297, 565, 782)**
-- [ ] **Remove `backfill.rs` XP level check (line 35)**
-- [ ] **Remove `leaderboard.rs` XP rank reference (line 144)**
+### `src/routes/forum.rs`
+- [ ] Remove `award_exp` function (lines ~97-165)
+- [ ] Remove `level_for_exp` function (lines ~89-91)
+- [ ] Remove `exp_per_level` function (lines ~80-87)
+- [ ] Remove `award_post_exp` function (lines ~169-175)
+- [ ] Remove `award_mod_received_exp` function (lines ~182-205)
+- [ ] Remove `my_level` function (lines ~207-240)
+- [ ] Remove `user_xp_history` function (lines ~3950-4010)
+- [ ] Remove `award_reaction_exp` function (lines ~4268-4290)
+- [ ] Remove `award_poll_vote_exp` function (lines ~4293-4315)
+- [ ] Replace all `award_exp(...)` calls with `update_reputation_and_promote(...)`
+- [ ] Remove XP fields from user profile query (line ~3890)
+- [ ] Remove XP history query (line ~3951)
+- [ ] Remove today's XP by type query (line ~3960)
 
-## Low Priority (Tests & Frontend)
+### `src/routes/admin.rs`
+- [ ] Replace `crate::services::progression::award_xp` (line 146, 154, 462)
+- [ ] Replace `crate::services::progression::award_scaled_xp` (line 168)
+- [ ] Remove `xp_source_defs` query (line 453)
 
-- [ ] **Update tests in `tests/` directory**
-- [ ] **Update tests in `src/routes/api_contract_tests.rs`**
-- [ ] **Remove XP from frontend types/API calls**
-- [ ] **Remove XP from `src/bin/` binaries**
-- [ ] **Remove XP from `src/routes/analytics.rs`**
-- [ ] **Remove XP from `src/routes/badges.rs`**
-- [ ] **Remove XP from `src/routes/quests.rs`**
+### `src/services/proposals.rs`
+- [ ] Replace `crate::services::progression::award_xp` (lines 199, 476, 513)
+
+### `src/config.rs`
+- [ ] Remove `forum_exp_per_level` field (line 349)
+- [ ] Remove `forum_exp_topic_create` field (line 351)
+- [ ] Remove `forum_exp_post_create` field (line 353)
+- [ ] Remove `forum_exp_mod_received` field (line 355)
+- [ ] Remove `forum_exp_mod_daily_cap` field (line 357)
+- [ ] Remove env var parsing (lines 1211-1230)
+- [ ] Remove test assertions (lines 1745-1749)
+
+### `src/main.rs`
+- [ ] Remove `pub mod progression;` (line 17)
+
+### Database
+- [ ] Remove `xp_events` table from `migrations/000_baseline.sql`
+- [ ] Remove `xp_source_defs` table from `migrations/000_baseline.sql`
+- [ ] Remove `xp_sources_streaks` table from `migrations/000_baseline.sql`
+- [ ] Remove `exp_events` table from `migrations/000_baseline.sql`
+- [ ] Remove `xp`, `level`, `exp`, `rank` columns from users table in baseline
+
+### Tests & Frontend
+- [ ] Update tests in `tests/` directory
+- [ ] Update tests in `src/routes/api_contract_tests.rs`
+- [ ] Remove XP from frontend types/API calls
+- [ ] Remove XP from `src/bin/` binaries
 
 ## Deployment
 
-- [ ] **Deploy to ThinkCentre: `ssh thinkcentre 'cd /home/alvaro/code/rust/ficnexus && git pull && cargo build --release && sudo systemctl restart fichub'`**
+**BLOCKED** — Cannot deploy until compilation errors are fixed.
 
----
+```bash
+# Deploy command (run after fixes):
+ssh thinkcentre 'cd /home/alvaro/code/rust/ficnexus && git pull && cargo build --release && sudo systemctl restart fichub'
+```
 
 ## Summary
 
-**Completed:**
-- ✅ Deleted `src/progression.rs`, `src/services/progression.rs`, `src/routes/progression.rs`
-- ✅ Created `src/services/achievements.rs` with achievement/feature/notification logic
-- ✅ Created `src/routes/user_preferences.rs` with prefs/layouts/views handlers
-- ✅ Moved Feature/UserFeature/UserPref/UserLayout/UserView to `src/db/models.rs`
-- ✅ Updated module declarations in `lib.rs`, `services/mod.rs`, `routes/mod.rs`
-- ✅ Updated `server.rs` routes
-- ✅ Cleaned up `forum.rs` (removed all XP functions and calls)
-- ✅ Cleaned up `bounties.rs`
-
-**Remaining:** ~20 files with XP references, mostly test data and level checks that need to be replaced with trust_level checks.
+~20 files need XP references removed. Most are mechanical replacements of `award_exp`/`award_xp` with `update_reputation_and_promote`. The main risk is breaking compilation if function signatures don't match.

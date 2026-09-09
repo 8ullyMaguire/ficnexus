@@ -785,7 +785,7 @@ fn chunk_discovery() -> impl Into<Router<Arc<AppState>>> {
             axum::routing::post(crate::routes::social::refresh_handler),
         )
         .route("/api/auth/me", get(crate::routes::social::me_handler))
-        .route("/api/users/me/level", get(crate::routes::forum::my_level))
+        
         // Bounty routes (reputation spend for demand-side requests; XP untouched)
         .route("/api/bounties", get(crate::routes::bounties::list_bounties))
         .route(

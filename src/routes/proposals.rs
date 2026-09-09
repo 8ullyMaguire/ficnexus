@@ -377,13 +377,7 @@ pub async fn flag_translation(
     )
     .await?;
     // small rep for flagging (capped in xp_source_defs)
-    let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 1, "xp_event").await; // TODO: fix amount 
-        &state.db,
-        user_id,
-        "translation_flagged",
-        Some(&format!("{}:{}", body.target_type, body.target_id)),
-    )
-    .await;
+    let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 5, "translation_flagged").await;
     // re-queue machine translation for a fresh attempt
     if state.config.translate_llm_enabled {
         let mut conn = state.redis.clone();

@@ -54,17 +54,7 @@ const DEFAULT_LIMIT: i64 = 25;
 const MAX_LIMIT: i64 = 100;
 
 /// FicNexus roles (migration 007): 0 reader, 5 curator, 10 admin.
-/// Legacy read-only after F7 — the ACTIVE gate is site-wide level:
-/// curator = level ≥ 50, admin = level ≥ 100 (config, env-overridable).
 const MOD_ROLE: i16 = 5;
-
-/// Curator level threshold (F7). Env-overridable via FORUM_CURATOR_LEVEL.
-fn curator_level() -> i16 {
-    std::env::var("FORUM_CURATOR_LEVEL")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(50)
-}
 
 /// Admin level threshold (F7). Env-overridable via FORUM_ADMIN_LEVEL.
 /// `pub(crate)` so other lane modules (groups, privileges) can gate on
@@ -75,23 +65,6 @@ pub(crate) fn admin_level() -> i16 {
         .and_then(|s| s.parse().ok())
         .unwrap_or(100)
 }
-
-/// Exp needed per level (F7). Env-overridable via FORUM_EXP_PER_LEVEL.
-
-/// Compute the site-wide level from experience (level = exp / per_level,
-/// capped at 100). Never decreases below 0.
-
-/// Award XP to a user. Best-effort: failures are logged, never fail the caller.
-/// Delegates to `services::progression::award_xp` which writes to the unified
-/// `xp_events` / `users.xp` ledger, respects daily caps, and handles cooldowns.
-
-/// XP awarded for creating a forum post or topic (SPEC §10): +2.
-/// Amount is read from xp_source_defs by award_exp.
-
-/// Exp awarded to a post author when a moderator action is positive (SPEC
-/// §10): +1, capped at +3/day (mod-received).
-
-/// GET /api/users/me/level — leveling progress (F7). Requires login.
 
 // ── Request bodies ─────────────────────────────────────────────────────────
 
@@ -243,11 +216,9 @@ fn public_reader_id(auth: &AuthUser, state: &AppState) -> Result<i32, AppError> 
     Ok(auth.user_id.unwrap_or(0))
 }
 
-/// Require admin (level ≥ FORUM_ADMIN_LEVEL, default 100); 403 otherwise.
-/// Legacy role is ignored here — level is the active gate after F7.
 fn require_admin(auth: &AuthUser) -> Result<i32, AppError> {
     let uid = require_user(auth)?;
-    if auth.level < admin_level() {
+    if auth.trust_level < admin_level() {
         return Err(AppError::Forbidden("Admin access required".to_string()));
     }
     Ok(uid)
@@ -401,17 +372,14 @@ pub fn is_topic_unread(last_post_id: Option<i64>, last_read_post_id: Option<i64>
 /// T004: ordering helper — pinned topics first. Use as ORDER BY prefix.
 pub const PINNED_FIRST_ORDER: &str = "t.status = 'pinned' DESC";
 
-/// Mod-level check: level ≥ FORUM_CURATOR_LEVEL (50) counts as mod for the
-/// forum (F7 leveling replaces the legacy role gate).
 /// `pub(crate)` so Lane A (groups, privileges) can re-use the same gate.
 pub(crate) fn is_mod(auth: &AuthUser) -> bool {
-    auth.level >= curator_level()
+    auth.trust_level >= curator_level()
 }
 
-/// Require curator (level ≥ 50); 403 otherwise (also requires login → 401).
 fn require_mod(auth: &AuthUser) -> Result<i32, AppError> {
     let uid = require_user(auth)?;
-    if auth.level < curator_level() {
+    if auth.trust_level < curator_level() {
         return Err(AppError::Forbidden("Moderator access required".to_string()));
     }
     Ok(uid)
@@ -493,7 +461,7 @@ pub(crate) async fn check_category_priv(
     let allowed = crate::routes::forum_privileges::can(
         db,
         Some(user_id),
-        auth.level,
+        auth.trust_level,
         auth.trust_level,
         category_id,
         privilege,
@@ -791,7 +759,7 @@ pub async fn moderate_post(
 
     // F7: positive mod received → the post author gains +1 exp (capped +3/day).
     if delta > 0 {
-        let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, author_id, 1, "mod_received").await;
+        let _ = crate::db::queries::update_reputation_and_promote(&state.db, author_id, 1, "mod_received").await;
     }
 
     Ok(Json(json!({
@@ -921,7 +889,7 @@ pub async fn moderate_batch(
         .await;
 
         if delta > 0 {
-            award_mod_received_exp(&state.db, author_id, *post_id).await;
+            let _ = crate::db::queries::update_reputation_and_promote(&state.db, author_id, 1, "mod_received").await;
         }
 
         results.push(json!({ "post_id": post_id, "score_after": score_after }));
@@ -1023,7 +991,7 @@ pub async fn metamod_grant_detail(
     State(state): State<Arc<AppState>>,
     Path(grant_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.level < curator_level() {
+    if auth.trust_level < curator_level() {
         return Err(AppError::Forbidden("Moderator access required".to_string()));
     }
     require_user(&auth)?;
@@ -1236,7 +1204,7 @@ pub async fn admin_create_ban(
             "scope must be 'forum' or 'category'".to_string(),
         ));
     }
-    if scope == "forum" && auth.level < admin_level() {
+    if scope == "forum" && auth.trust_level < admin_level() {
         return Err(AppError::Forbidden(
             "Forum-scope bans require admin (level 100)".to_string(),
         ));
@@ -2024,7 +1992,7 @@ pub async fn set_topic_tags(
             .await?;
     let (author_id,) = topic.ok_or_else(|| AppError::NotFound("topic not found".to_string()))?;
     let is_author = author_id == user_id;
-    let is_mod = auth.level >= 50;
+    let is_mod = auth.trust_level >= 50;
     if !is_author && !is_mod {
         return Err(AppError::Forbidden("not allowed".to_string()));
     }
@@ -2267,7 +2235,7 @@ pub async fn topic_detail(
     // and staff (who need to preview). 404-shape to avoid leaking existence.
     if topic_scheduled_at.is_some() {
         let viewer = auth.user_id.unwrap_or(0);
-        let staff = auth.level >= 50 || auth.trust_level >= 5;
+        let staff = auth.trust_level >= 50 || auth.trust_level >= 5;
         if !staff && viewer != topic_author_id {
             return Err(AppError::BadRequest("topic not found".to_string()));
         }
@@ -2592,7 +2560,7 @@ pub async fn create_topic(
 
     // Marginalia gate: Level 5+ required
     let is_marginalia = payload.get("type").and_then(|v| v.as_str()) == Some("marginalia");
-    if is_marginalia && auth.level < 5 {
+    if is_marginalia && auth.trust_level < 5 {
         return Err(AppError::Forbidden(
             "Level 5 required for marginalia".to_string(),
         ));
@@ -2751,7 +2719,7 @@ pub async fn create_topic(
         }
     }
 
-    let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 2, "forum_post_create").await;
+    let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 2, "forum_post_create").await;
 
     Ok(Json(json!({
         "err": 0,
@@ -3012,7 +2980,7 @@ pub async fn create_post(
     )
     .await;
 
-    let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 2, "forum_post_create").await;
+    let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 2, "forum_post_create").await;
 
     // Check for newly unlocked achievements (best-effort)
     let _ = crate::services::achievements::check_and_unlock_achievements(
@@ -3726,7 +3694,7 @@ pub async fn react_to_post(
     // Award XP for reaction (upvote equivalent) only on 0→1 transitions,
     // not on toggle cycles (un-react/re-react). This prevents XP farming.
     if is_new_reaction {
-        let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 5, "post_reacted").await;
+        let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 5, "post_reacted").await;
 
         // Check for newly unlocked achievements (best-effort)
         let _ = crate::services::achievements::check_and_unlock_achievements(
@@ -3882,7 +3850,7 @@ pub async fn user_profile(
     axum::extract::Path(user_id): axum::extract::Path<i32>,
 ) -> Result<axum::Json<serde_json::Value>, AppError> {
     let row = sqlx::query_as::<_, (i32, String, i16, i64, i32, i32, i32, i32, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>, i64, i32)>(
-        "SELECT id, username, level, exp, xp, rank, trust, reputation, created_at, last_active_at, total_words_read, total_works_read
+        "SELECT id, username, trust, reputation, created_at, last_active_at, total_words_read, total_works_read
          FROM users WHERE id = $1",
     )
     .bind(user_id)
@@ -3890,35 +3858,24 @@ pub async fn user_profile(
     .await?
     .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
 
-    let (id, username, level, _exp, xp, rank, trust, reputation, created_at, last_active_at, total_words_read, total_works_read) = row;
+    let (id, username, trust, reputation, created_at, last_active_at, total_words_read, total_works_read) = row;
 
     // Compute XP progress within current level (using unified xp column)
-    let next_level_xp = exp_per_level() * (level as i64 + 1);
-    let level_start_xp = exp_per_level() * (level as i64);
-    let progress = if next_level_xp > level_start_xp {
-        ((xp as f64) / (next_level_xp - level_start_xp) as f64 * 100.0).min(100.0) as i32
-    } else {
-        100
-    };
+            let progress = 0;
 
     Ok(axum::Json(serde_json::json!({
         "err": 0,
         "data": {
             "id": id,
             "username": username,
-            "level": level,
-            "xp": xp,
-            "rank": rank,
+            
             "trust": trust,
             "reputation": reputation,
             "created_at": created_at,
             "last_active_at": last_active_at,
             "total_words_read": total_words_read,
             "total_works_read": total_works_read,
-            "next_level_xp": next_level_xp,
-            "level_start_xp": level_start_xp,
-            "progress_percent": progress,
-        }
+                    }
     })))
 }
 
@@ -3930,21 +3887,15 @@ pub async fn user_xp_history(
 ) -> Result<axum::Json<serde_json::Value>, AppError> {
     // Get current XP info
     let user = sqlx::query_as::<_, (i64, i16, i32)>(
-        "SELECT xp, level, rank FROM users WHERE id = $1",
+        "SELECT trust, reputation FROM users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
 
-    let (xp, level, rank) = user;
-    let next_level_xp = exp_per_level() * (level as i64 + 1);
-    let level_start_xp = exp_per_level() * (level as i64);
-    let progress = if next_level_xp > level_start_xp {
-        ((xp as f64) / (next_level_xp - level_start_xp) as f64 * 100.0).min(100.0) as i32
-    } else {
-        100
-    };
+    let (trust, reputation) = user;
+            let progress = 0;
 
     // Get recent XP events (last 20)
     let events = sqlx::query_as::<_, (String, i32, chrono::DateTime<chrono::Utc>)>(
@@ -3971,10 +3922,7 @@ pub async fn user_xp_history(
             "current_xp": xp,
             "current_level": level,
             "rank": rank,
-            "next_level_xp": next_level_xp,
-            "level_start_xp": level_start_xp,
-            "progress_percent": progress,
-            "recent_events": events.into_iter().map(|(event_type, xp, created_at)| {
+                        "recent_events": events.into_iter().map(|(event_type, xp, created_at)| {
                 serde_json::json!({
                     "event_type": event_type,
                     "xp": xp,
@@ -4125,6 +4073,3 @@ pub async fn widget_stats(
 
 // ── Phase 8d: Additional XP awards ─────────────────────────────────────────
 
-/// Exp awarded when a post receives a reaction (upvote equivalent): +5.
-
-/// XP awarded when a user votes on a poll: +3.
