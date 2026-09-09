@@ -1,6 +1,6 @@
 # Prompt: Build the Ultimate Fanfiction Platform
 
-You are building a complete, polished fanfiction archive and community platform from scratch. You have ONE day of access to a frontier LLM and want to produce:
+You are building a complete, polished fanfiction archive and community platform from scratch. You are a frontier LLM and want to produce:
 
 1. **A complete design document** detailed enough for a junior developer to implement the entire site from scratch
 2. **A clickable prototype specification** (detailed text descriptions of every page, every interaction, every state)
@@ -11,15 +11,81 @@ This is NOT a brainstorming exercise. You are producing a blueprint that a small
 
 Build a platform that **maximizes the amount of fanfiction written and shared** while maintaining quality and community health. Secondary goals:
 
-1. **Steer users' tastes toward your own curatorial vision over time** — without making the site feel mono-thematic or niche
+1. **Steer users' tastes toward admins own tastes over time** — without making the site feel mono-thematic or niche
 2. **Self-must be mostly self-governing via trust levels**
-3. **Maximize fic creation** — every feature should ultimately serve getting more stories written and read
+3. **Maximize fic creation** — every feature should ultimately serve getting more stories written/shared and read
 4. **Preserve creative freedom for pseudonymous authors** — multiple pseuds, privacy controls, compartmentalization
-5. **Be more configurable than any existing platform** — users should be able to make it theirs
+5. **Be more configurable than any existing platform** — users should be able to make it theirs (marketplace for themes, plugins, recommendation algorithms, etc)
+
+## Technical Architecture
+
+### Programming Language Requirements
+
+The platform MUST be built with a language that is:
+
+- **Easy to vibecode in**: Concise syntax, great LLM support, fast iteration cycles, minimal boilerplate
+- **Type-safe**: Strong static typing with good inference, sum types/ADTs, null safety, expressive type system
+- **Compiled**: Native compilation, no runtime interpreter, fast startup, small binaries
+- **Low resource**: Runs comfortably on Raspberry Pi 4 (4GB RAM), small VPS (1 CPU, 1GB RAM), ARM64 compatible
+- **Great for PWA**: Good WASM support if needed, excellent async/await, strong ecosystem for web backends
+
+**Recommended languages** (choose one and justify your choice):
+- **Rust**: Best performance, type safety, WASM support, but steeper learning curve
+- **Go**: Simple, fast, great concurrency, easy to learn, but less expressive types
+- **Zig**: C-level control, comptime, growing ecosystem, but smaller community
+- **Nim**: Python-like syntax, compiles to C/JS, metaprogramming, but smaller ecosystem
+- **Crystal**: Ruby-like syntax, type inference, compiled, but slower compilation
+- **TypeScript/Deno**: Most vibecoding-friendly, huge ecosystem, but runtime overhead
+
+**Justify your language choice** in the deliverables.
+
+### Progressive Web App (PWA)
+
+The frontend MUST be a full Progressive Web App:
+
+- **Installable**: Can be added to home screen on mobile, desktop shortcuts on desktop
+- **Offline-capable**: Service worker caches core pages, reader works offline for downloaded fics
+- **Responsive**: Works on phones, tablets, desktops (mobile-first design)
+- **Fast**: < 1s first contentful paint, < 3s time to interactive
+- **Push notifications**: Works through service worker even when app is closed
+- **Background sync**: Queue actions when offline, sync when back online
+- **Web Share API**: Share links, fics, and quotes to other apps
+- **Manifest**: Full web app manifest with icons, theme colors, display modes
+
+**PWA Architecture**:
+- Service worker for offline caching and push notifications
+- App shell architecture (cached UI shell, dynamic content)
+- IndexedDB for offline fic storage
+- Cache-first for static assets, network-first for dynamic content
+- Background sync for reading progress, bookmarks, new fics
+
+### Deployment Targets
+
+The platform must run on:
+
+- **Raspberry Pi 4** (4GB RAM, ARM64) — primary development target
+- **Low-end VPS** (1 vCPU, 1GB RAM, x86_64) — typical production deployment
+- **Old laptop** (dual-core, 4GB RAM) — community self-hosting
+- **Oracle Cloud Free Tier** (ARM64, 4GB RAM) — free cloud hosting
+
+**Resource constraints**:
+- Idle RAM usage: < 200MB
+- RAM under load (100 concurrent users): < 1GB
+- Binary size: < 50MB compiled
+- Database: PostgreSQL (can run on same machine or external)
+- Optional: Redis (can be replaced with in-memory cache if unavailable)
+
+### Infrastructure
+
+- **Self-hosted**: Single binary deployment, no cloud dependencies
+- **Single binary**: Backend compiles to one executable (embeds frontend assets)
+- **Embedded database option**: SQLite for small deployments, PostgreSQL for production
+- **Reverse proxy**: Can run behind nginx/caddy or standalone with built-in TLS
+- **Automatic updates**: Single command upgrade, database migrations run automatically
 
 ## What to Retain from the Existing Platform
 
-The following features are battle-tested and should appear in your design:
+I've made a similar site and it includes the following features, I would like to preserve most functionality but this isn't a constraint, just make the best site you can:
 
 ### Core Content & Download
 - Multi-site downloader (107+ fanfiction sites) — EPUB, MOBI, PDF, HTML, plain text
@@ -63,6 +129,10 @@ The following features are battle-tested and should appear in your design:
 - API with OpenAPI docs
 
 ## Critical Issues to Solve (Better Than AO3)
+
+### AO3 tagging
+
+I want in-depth tagging but users usually complain about not being able to find what they want using tags because the tags can apply to anything not just the main character. figure out a better tagging system that is still in-depth and allows advanced search. would prefer tags to be approved/rejected through curator quorum, like every other curator/moderator action
 
 ### Advanced Search System
 
@@ -110,23 +180,14 @@ The site must be as configurable as possible:
 **1. WASM Sandbox Limits Per Trust Level**
 - Users can install extensions/widgets that run in a WASM sandbox
 - Trust levels determine resource limits:
-  - TL0: Minimal sandbox (basic widgets only)
-  - TL2: Medium sandbox (custom CSS, simple scripts)
-  - TL4: Full sandbox (complex widgets, API access)
-  - TL6: Unrestricted (server-side mods)
+  - TL0: Minimal sandbox
+  - TL2: Medium sandbox
+  - TL4: Full sandbox
+  - TL6: Unrestricted
 - Each trust level has configurable CPU, memory, and API call limits
 - Marketplace shows which trust level is required for each extension
 
 **2. Trust/Reputation Perks (Without Limiting Free Users)**
-- Free users get full functionality — perks are EXTRA, not restrictions
-- Examples:
-  - TL0: Basic profile, 5 reading lists, standard search
-  - TL1: Custom CSS on profile, 10 reading lists
-  - TL2: Custom CSS site-wide, 25 reading lists, priority support
-  - TL3: Beta features, 50 reading lists, custom domains
-  - TL4: Unlimited reading lists, API access, marketplace selling
-  - TL5: Moderation tools, unlimited everything, revenue share
-  - TL6: Admin tools, site configuration, profit sharing
 
 **3. Marketplace Features**
 - Extensions: New widgets, themes, search filters, reader modes
@@ -135,11 +196,11 @@ The site must be as configurable as possible:
 - Challenges: Premium challenge types with advanced features
 - Writers' tools: Grammar checkers, plot generators, co-authoring tools
 
-### Credit/Subscription System
+### Credit or Subscription System
 
-For resource-intensive tasks when many users are active:
+For resource-intensive tasks when many users are active there should be a credit system or subscription tiers. Credit system would probably have to replace reputation system to not have two things that achieve pretty much the same objective.
 
-**1. Credit System**
+**Credit System would probably replace reputation if this is implemented**
 - Users earn credits through participation (writing, reviewing, moderating)
 - Credits can be spent on:
   - Priority scraping (download fics faster)
@@ -148,13 +209,13 @@ For resource-intensive tasks when many users are active:
   - Extended storage (more works, larger files)
   - Compute resources (complex searches, custom reports)
 
-**2. Subscription Tiers**
+**Subscription Tiers**
 - **Free**: Full functionality, standard queue
 - **Supporter ($3/month)**: Priority queue, 2x credits, custom CSS
 - **Creator ($8/month)**: Full marketplace, 5x credits, custom domain
 - **Patron ($15/month)**: Maximum priority, unlimited credits, revenue share
 
-**3. Credit Economy**
+**Credit Economy**
 - Credits regenerate over time (e.g., 10 credits/day for free users)
 - Bonus credits for high-trust users
 - Credits can be gifted/transferred between users
@@ -162,6 +223,7 @@ For resource-intensive tasks when many users are active:
 
 ## What You Have Freedom to Change
 
+You have to make decisions on what to keep from the features you implemented and write a document reasoning why or why not did you keep or discard something.
 Everything else is up for redesign. Consider:
 
 ### Taste Steering Mechanism
@@ -209,7 +271,14 @@ Produce a document with these sections:
 - Feature priority levels (P0 = must have, P1 = should have, P2 = nice to have)
 - Success metrics for each feature
 
-### 2. Information Architecture
+### 2. Technical Architecture
+- **Language choice**: Which language did you choose and why?
+- **PWA architecture**: Service worker strategy, offline caching, push notifications
+- **Deployment architecture**: Single binary, embedded assets, database options
+- **Resource budget**: Expected RAM/CPU usage at different scales
+- **Scaling path**: How to scale beyond single-server
+
+### 3. Information Architecture
 - Complete site map (every page, every route)
 - Navigation structure (primary, secondary, footer)
 - User flows for key tasks:
@@ -220,20 +289,20 @@ Produce a document with these sections:
   - Installing an extension
   - Earning and spending credits
 
-### 3. Trust Level Specification
+### 4. Trust Level Specification
 - Detailed mechanics: how to earn, lose, and use trust levels
 - Complete list of gates (what each TL unlocks)
 - Moderation capabilities at each level
 - Anti-farming measures
 - Decay mechanics (if any)
 
-### 4. Taste Steering Specification
+### 5. Taste Steering Specification
 - Algorithm details for recommendations
 - How curator picks work
 - How "taste match" scoring works
 - How users can opt out of steering
 
-### 5. Search System Specification
+### 6. Search System Specification
 - Complete tag taxonomy
 - All search filters and their interactions
 - How main/side character distinction works
@@ -242,16 +311,16 @@ Produce a document with these sections:
 - How tag canonicalization works
 - Search result ranking algorithm
 
-### 6. Database Schema
+### 7. Database Schema
 - ALL tables with columns, types, indexes, relationships
 - Especially: users, works, tags, bookmarks, trust_levels, credits, extensions
 
-### 7. API Design
+### 8. API Design
 - ALL endpoints with method, path, request body, response body
 - Authentication and rate limiting
 - Error codes and messages
 
-### 8. UI Mockup Descriptions
+### 9. UI Mockup Descriptions
 For EACH of these pages, describe:
 - Layout (header, sidebar, main content, footer)
 - All interactive elements and their states
@@ -277,33 +346,37 @@ Pages to describe:
 - Trust level dashboard
 - Admin dashboard
 
-### 9. Credit/Subscription Specification
+### 10. Credit/Subscription Specification
 - How credits are earned (complete list of actions and credit values)
 - How credits are spent (complete list of services and costs)
 - Subscription tier features and pricing
 - Credit economy balance (inflation/deflation prevention)
 
-### 10. Marketplace Specification
+### 11. Marketplace Specification
 - Extension API surface
 - WASM sandbox limits per trust level
 - Extension review/approval process
 - Revenue share model
 
-### 11. Differentiation Section
+### 12. Differentiation Section
 - What you did differently from the existing platform and why
 - What you did better than AO3 and why
 - What tradeoffs you made and why
 
 ## Constraints
 
-- Must be self-hostable (single server, no cloud dependencies)
-- Must be implementable by a junior developer (or small team) in 6 months
-- Must respect user privacy and pseudonymity
-- Must be GDPR-compliant
-- Must not require users to log in to read (reading is public)
-- Must support at least 10,000 works and 1,000 users on modest hardware
-- Must be mobile-responsive
-- Must be accessible (WCAG 2.1 AA)
+- **Must be a Progressive Web App** (installable, offline-capable, push notifications)
+- **Must run on Raspberry Pi 4** (4GB RAM, ARM64) as primary development target
+- **Must run on low-end VPS** (1 vCPU, 1GB RAM, x86_64) for production
+- **Must be self-hostable** (single server, no cloud dependencies)
+- **Must be implementable by a junior developer** (or small team) in 6 months
+- **Must respect user privacy and pseudonymity**
+- **Must be GDPR-compliant**
+- **Must not require users to log in to read** (reading is public)
+- **Must support at least 10,000 works and 1,000 users** on modest hardware
+- **Must be mobile-responsive** (mobile-first)
+- **Must be accessible** (WCAG 2.1 AA)
+- **Must be type-safe, compiled language** (see Technical Architecture)
 
 ## Tone
 
