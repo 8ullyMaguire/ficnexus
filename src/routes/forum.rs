@@ -343,6 +343,12 @@ pub struct ModeratePostBody {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BatchModerateBody {
+    pub post_ids: Vec<i64>,
+    pub reason: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateBanBody {
     pub user_id: i32,
     /// "forum" (global, role ≥ 10) or "category" (role ≥ 5).
@@ -932,6 +938,141 @@ pub async fn moderate_post(
         "delta": delta,
         "score_after": score_after,
         "hidden_until": hidden_until,
+    })))
+}
+
+/// POST /api/forum/moderation/batch — batch moderate multiple posts.
+/// Body: { "post_ids": [1,2,3], "reason": "approved" }
+/// Requires trust queue access (TL4+) and daily action cap per post.
+pub async fn moderate_batch(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<BatchModerateBody>,
+) -> Result<Json<Value>, AppError> {
+    let user_id = require_user(&auth)?;
+    let reason = body.reason.trim().to_string();
+    let Some(delta) = mod_delta(&reason) else {
+        return Err(AppError::BadRequest(
+            "invalid moderation reason".to_string(),
+        ));
+    };
+    require_trust_queue(&state, &auth).await?;
+
+    let post_ids = &body.post_ids;
+    if post_ids.is_empty() {
+        return Err(AppError::BadRequest("post_ids must not be empty".to_string()));
+    }
+    if post_ids.len() > 50 {
+        return Err(AppError::BadRequest("cannot moderate more than 50 posts at once".to_string()));
+    }
+
+    let mut results = Vec::new();
+    let mut errors = Vec::new();
+
+    for post_id in post_ids {
+        // Check daily cap for each post
+        if let Err(e) = check_daily_cap(&state, user_id).await {
+            errors.push(json!({ "post_id": post_id, "error": e.to_string() }));
+            continue;
+        }
+
+        // Load and validate post
+        let (author_id, _score, mod_count) = match load_moddable_post(&state.db, *post_id).await {
+            Ok(r) => r,
+            Err(e) => {
+                errors.push(json!({ "post_id": post_id, "error": e.to_string() }));
+                continue;
+            }
+        };
+
+        if author_id == user_id {
+            errors.push(json!({ "post_id": post_id, "error": "Cannot moderate your own post" }));
+            continue;
+        }
+        if mod_count >= 5 {
+            errors.push(json!({ "post_id": post_id, "error": "post has reached the moderation limit" }));
+            continue;
+        }
+        if already_modded(&state.db, *post_id, user_id).await? {
+            errors.push(json!({ "post_id": post_id, "error": "You already moderated this post" }));
+            continue;
+        }
+
+        let mut tx = match state.db.begin().await {
+            Ok(tx) => tx,
+            Err(e) => {
+                errors.push(json!({ "post_id": post_id, "error": e.to_string() }));
+                continue;
+            }
+        };
+
+        let score_after: i32 = match sqlx::query_scalar(
+            "UPDATE forum_posts SET score = score + $2, mod_count = mod_count + 1
+             WHERE id = $1 RETURNING score",
+        )
+        .bind(post_id)
+        .bind(i32::from(delta))
+        .fetch_one(&mut *tx)
+        .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                errors.push(json!({ "post_id": post_id, "error": e.to_string() }));
+                continue;
+            }
+        };
+
+        if let Err(e) = sqlx::query(
+            "INSERT INTO forum_mod_actions (post_id, moderator_id, reason, delta, score_after)
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(post_id)
+        .bind(user_id)
+        .bind(&reason)
+        .bind(delta)
+        .bind(score_after)
+        .execute(&mut *tx)
+        .await
+        {
+            errors.push(json!({ "post_id": post_id, "error": e.to_string() }));
+            continue;
+        }
+
+        if let Err(e) = tx.commit().await {
+            errors.push(json!({ "post_id": post_id, "error": e.to_string() }));
+            continue;
+        }
+
+        crate::modlog::record_json(
+            &state.db,
+            Some(user_id),
+            auth.username.clone(),
+            "forum_moderate_batch",
+            "forum_post",
+            &post_id.to_string(),
+            vec![
+                ("post_id", json!(post_id)),
+                ("reason", json!(reason)),
+                ("delta", json!(delta)),
+                ("score_after", json!(score_after)),
+            ],
+        )
+        .await;
+
+        if delta > 0 {
+            award_mod_received_exp(&state.db, author_id, *post_id).await;
+        }
+
+        results.push(json!({ "post_id": post_id, "score_after": score_after }));
+    }
+
+    Ok(Json(json!({
+        "err": 0,
+        "moderated": results,
+        "errors": errors,
+        "total_requested": post_ids.len(),
+        "total_moderated": results.len(),
+        "total_errors": errors.len(),
     })))
 }
 

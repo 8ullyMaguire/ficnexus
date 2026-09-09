@@ -1172,6 +1172,10 @@ fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
             axum::routing::post(crate::routes::forum::moderate_post),
         )
         .route(
+            "/api/forum/moderation/batch",
+            axum::routing::post(crate::routes::forum::moderate_batch),
+        )
+        .route(
             "/api/forum/posts/{postId}/moderations",
             get(crate::routes::forum::post_moderations),
         )
