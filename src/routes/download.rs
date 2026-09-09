@@ -390,12 +390,12 @@ fn isolated_scrape_client() -> reqwest::Client {
 /// header (via `AuthUser`) wins; `?token=` is the fallback for EventSource
 /// clients that cannot set headers. Returns `AuthUser::default()` (anonymous)
 /// when neither yields a valid token.
-fn resolve_batch_user(auth: &AuthUser, token: Option<&str>) -> AuthUser {
+fn resolve_batch_user(auth: &AuthUser, token: Option<&str>, jwt_secret: &str) -> AuthUser {
     if auth.user_id.is_some() {
         return auth.clone();
     }
     if let Some(tok) = token {
-        if let Some(user) = crate::routes::auth::auth_user_from_token(tok) {
+        if let Some(user) = crate::routes::auth::auth_user_from_token_with_secret(tok, jwt_secret) {
             return user;
         }
     }
@@ -421,7 +421,7 @@ pub async fn download_author_stream_handler(
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let url = params.url.trim().to_string();
     // FIX 1 (?token= auth): EventSource sends ?token=, never a header.
-    let effective = resolve_batch_user(&auth, params.token.as_deref());
+    let effective = resolve_batch_user(&auth, params.token.as_deref(), &state.jwt_secret);
     let user_id = effective.user_id;
 
     // FIX 5 (shared cookie jar): per-request client with a private jar, so a
@@ -888,7 +888,7 @@ mod tests {
             role: 1,
             level: 10,
         };
-        let resolved = resolve_batch_user(&header_user, Some("bogus-token"));
+        let resolved = resolve_batch_user(&header_user, Some("bogus-token"), "test-secret");
         assert_eq!(resolved.user_id, Some(7));
     }
 
@@ -896,9 +896,9 @@ mod tests {
     fn batch_user_falls_back_to_anonymous_on_bad_token() {
         // Anonymous header + invalid token → anonymous (never an error: the
         // endpoint serves public content anonymously by design).
-        let resolved = resolve_batch_user(&AuthUser::default(), Some("not-a-jwt"));
+        let resolved = resolve_batch_user(&AuthUser::default(), Some("not-a-jwt"), "test-secret");
         assert_eq!(resolved.user_id, None);
-        let resolved = resolve_batch_user(&AuthUser::default(), None);
+        let resolved = resolve_batch_user(&AuthUser::default(), None, "test-secret");
         assert_eq!(resolved.user_id, None);
     }
 
