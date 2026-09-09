@@ -402,8 +402,52 @@ pub async fn list_reports(
     Ok(Json(json!({"err": 0, "status": status, "items": items})))
 }
 
-/// POST /api/admin/reports/{id}/resolve — resolve or dismiss a report
-/// (role >= 10).
+/// GET /api/reports/{id}/status — reporter can check the status of their own report.
+/// Returns the current status, resolution details, and any admin notes.
+pub async fn report_status(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+    Path(report_id): Path<i64>,
+) -> Result<Json<Value>, AppError> {
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+
+    let row: Option<(
+        i32,
+        String,
+        i32,
+        String,
+        String,
+        Option<chrono::DateTime<Utc>>,
+        Option<i32>,
+    )> = sqlx::query_as(
+        "SELECT reporter_id, target_type, target_id, status, auto_status,
+                resolved_at, resolved_by
+         FROM user_reports WHERE id = $1",
+    )
+    .bind(report_id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    let Some(row) = row else {
+        return Err(AppError::NotFound("Report not found".into()));
+    };
+
+    // Only the reporter or staff can view status
+    if row.0 != user_id && auth.trust_level < 5 {
+        return Err(AppError::Forbidden("Not allowed".into()));
+    }
+
+    Ok(Json(json!({
+        "err": 0,
+        "report_id": report_id,
+        "status": row.3,
+        "auto_status": row.4,
+        "resolved_at": row.5.map(|d| d.to_rfc3339()),
+        "resolved_by": row.6,
+    })))
+}
 pub async fn resolve_report(
     State(state): State<Arc<AppState>>,
     user: AuthUser,

@@ -2215,6 +2215,10 @@ fn chunk_customization_redirects() -> impl Into<Router<Arc<AppState>>> {
             get(crate::routes::reports::list_reports),
         )
         .route(
+            "/api/reports/{id}/status",
+            get(crate::routes::reports::report_status),
+        )
+        .route(
             "/api/admin/reports/{id}/resolve",
             axum::routing::post(crate::routes::reports::resolve_report),
         )
