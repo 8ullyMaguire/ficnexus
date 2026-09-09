@@ -46,7 +46,7 @@ pub async fn register_handler(
             "user": {
                 "id": 0,
                 "username": body.username,
-                "role": 0,
+                "trust_level": 0,
                 "reputation": 0,
                 "email": null,
             },
@@ -201,7 +201,7 @@ pub async fn me_handler(auth: AuthUser) -> Result<Json<Value>, AppError> {
             "user": {
                 "id": id,
                 "username": auth.username,
-                "role": auth.trust_level,
+                "trust_level": auth.trust_level,
             }
         }))),
         None => Ok(Json(json!({ "err": 401, "msg": "Not authenticated" }))),

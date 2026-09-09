@@ -403,14 +403,14 @@ pub async fn delete_request(
     let user_id = auth
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
-    let role = auth.trust_level;
+    let trust_level = auth.trust_level;
     let req_row: Option<(i32,)> =
         sqlx::query_as("SELECT user_id FROM fic_requests WHERE id = $1 AND deleted_at IS NULL")
             .bind(id)
             .fetch_optional(&state.db)
             .await?;
     let owner = req_row.ok_or_else(|| AppError::BadRequest("request not found".to_string()))?;
-    if owner.0 != user_id && role < 5 {
+    if owner.0 != user_id && trust_level < 3 {
         return Err(AppError::Forbidden("Not allowed".to_string()));
     }
     sqlx::query("UPDATE fic_requests SET deleted_at = NOW() WHERE id = $1")
@@ -604,7 +604,7 @@ pub async fn delete_answer(
     let user_id = auth
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
-    let role = auth.trust_level;
+    let trust_level = auth.trust_level;
     let row: Option<(i32,)> = sqlx::query_as(
         "SELECT user_id FROM fic_request_answers WHERE id = $1 AND request_id = $2 AND deleted_at IS NULL",
     )
@@ -613,7 +613,7 @@ pub async fn delete_answer(
     .fetch_optional(&state.db)
     .await?;
     let owner = row.ok_or_else(|| AppError::BadRequest("answer not found".to_string()))?;
-    if owner.0 != user_id && role < 5 {
+    if owner.0 != user_id && trust_level < 3 {
         return Err(AppError::Forbidden("Not allowed".to_string()));
     }
     sqlx::query("UPDATE fic_request_answers SET deleted_at = NOW() WHERE id = $1")

@@ -202,7 +202,7 @@ pub async fn delete_review_handler(
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     let row: Option<(Option<i32>, i16)> = sqlx::query_as(
-        "SELECT r.user_id, u.role FROM reviews r
+        "SELECT r.user_id, u.trust_level FROM reviews r
          LEFT JOIN users u ON u.id = $2
          WHERE r.id = $1",
     )

@@ -39,7 +39,7 @@ pub async fn create_proposal_handler(
     // Validate user is at least a curator (role >= 1)
     let user_role = get_user_role(&state.db, user_id).await?;
     if user_role < 1 {
-        return Err(AppError::Forbidden("Curator role required".to_string()));
+        return Err(AppError::Forbidden("Curator trust level required".to_string()));
     }
 
     // Validate action type
@@ -166,7 +166,7 @@ pub async fn vote_proposal_handler(
     // Validate user is at least a curator
     let user_role = get_user_role(&state.db, user_id).await?;
     if user_role < 1 {
-        return Err(AppError::Forbidden("Curator role required".to_string()));
+        return Err(AppError::Forbidden("Curator trust level required".to_string()));
     }
 
     // Validate vote value
@@ -276,7 +276,7 @@ pub async fn vote_proposal_handler(
 async fn get_user_role(pool: &sqlx::PgPool, user_id: i32) -> Result<i32, AppError> {
     // Decode the raw role as text and classify: numeric smallint values pass
     // through; legacy string roles map to their numeric equivalent.
-    let row: Option<(String,)> = sqlx::query_as("SELECT role::text FROM users WHERE id = $1")
+    let row: Option<(String,)> = sqlx::query_as("SELECT trust_level::text FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(pool)
         .await?;
@@ -287,7 +287,7 @@ async fn get_user_role(pool: &sqlx::PgPool, user_id: i32) -> Result<i32, AppErro
         Some("curator") => Ok(1),
         Some(other) => other
             .parse::<i32>()
-            .map_err(|_| AppError::Internal(format!("unexpected role value {other:?}"))),
+            .map_err(|_| AppError::Internal(format!("unexpected trust_level value {other:?}"))),
         None => Ok(0),
     }
 }

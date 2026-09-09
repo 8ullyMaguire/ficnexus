@@ -360,12 +360,12 @@ pub async fn set_user_role(
     }
 
     let new_role: i16 = payload
-        .get("role")
+        .get("trust_level")
         .and_then(|v| v.as_i64())
         .map(|v| v as i16)
-        .ok_or_else(|| AppError::BadRequest("role field required (0,1,5,10)".to_string()))?;
+        .ok_or_else(|| AppError::BadRequest("trust_level field required (0-6)".to_string()))?;
 
-    sqlx::query("UPDATE users SET role = $1 WHERE id = $2")
+    sqlx::query("UPDATE users SET trust_level = $1 WHERE id = $2")
         .bind(new_role)
         .bind(user_id)
         .execute(&state.db)
@@ -378,7 +378,7 @@ pub async fn set_user_role(
         "set_user_role",
         "user",
         &user_id.to_string(),
-        vec![("role", json!(new_role))],
+        vec![("trust_level", json!(new_role))],
     )
     .await;
 

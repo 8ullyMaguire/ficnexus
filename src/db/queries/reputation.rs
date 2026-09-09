@@ -29,17 +29,17 @@ pub async fn update_reputation_and_promote(
     .execute(pool)
     .await?;
 
-    // Check for auto-promotion to curator (reputation >= 100, role = user)
-    let row: Option<(i32, String)> =
-        sqlx::query_as("SELECT reputation, role FROM users WHERE id = $1")
+    // Check for auto-promotion to curator (reputation >= 100, trust_level < 3)
+    let row: Option<(i32, i16)> =
+        sqlx::query_as("SELECT reputation, trust_level FROM users WHERE id = $1")
             .bind(user_id)
             .fetch_optional(pool)
             .await?;
 
-    if let Some((reputation, role)) = row {
-        if reputation >= 100 && role == "user" {
+    if let Some((reputation, trust_level)) = row {
+        if reputation >= 100 && trust_level < 3 {
             // Promote to curator
-            sqlx::query("UPDATE users SET role = 'curator', curator_since = NOW() WHERE id = $1")
+            sqlx::query("UPDATE users SET trust_level = 3, curator_since = NOW() WHERE id = $1")
                 .bind(user_id)
                 .execute(pool)
                 .await?;

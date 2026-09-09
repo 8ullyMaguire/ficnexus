@@ -563,7 +563,7 @@ pub async fn feature_move_handler(
 ) -> Result<Json<Value>, AppError> {
     // Require curator level (>= 50).
     if auth.level < 50 {
-        return Err(AppError::Forbidden("curator role required".to_string()));
+        return Err(AppError::Forbidden("curator trust level required".to_string()));
     }
 
     if !is_valid_status(&req.status) {
@@ -780,7 +780,7 @@ pub async fn changelog_create_handler(
     Json(req): Json<ChangelogCreateRequest>,
 ) -> Result<Json<Value>, AppError> {
     if auth.level < 50 {
-        return Err(AppError::Forbidden("curator role required".to_string()));
+        return Err(AppError::Forbidden("curator trust level required".to_string()));
     }
     if !is_valid_changelog_kind(&req.kind) {
         return Err(AppError::BadRequest(format!(

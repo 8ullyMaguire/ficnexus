@@ -95,7 +95,7 @@ pub async fn run(config: Config) {
     if config.rec_curator_prior.is_none() {
         let admin_id: Option<i32> = sqlx::query_scalar(
             "SELECT id FROM users
-             ORDER BY trust_level DESC, role DESC, id ASC
+             ORDER BY trust_level DESC, id ASC
              LIMIT 1",
         )
         .fetch_optional(&db_pool)

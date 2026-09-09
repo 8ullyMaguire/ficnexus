@@ -331,7 +331,7 @@ mod api_contract_tests {
             "user": {
                 "id": 1,
                 "username": "existinguser",
-                "role": 0,
+                "trust_level": 0,
                 "reputation": 0
             }
         });
@@ -340,7 +340,7 @@ mod api_contract_tests {
         let user = &resp["user"];
         assert!(user.get("id").is_some());
         assert!(user.get("username").is_some());
-        assert!(user.get("role").is_some());
+        assert!(user.get("trust_level").is_some());
     }
 
     // ── Bookmarks API Contract ───────────────────────────────────────────
