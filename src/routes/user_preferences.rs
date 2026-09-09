@@ -201,3 +201,34 @@ pub async fn create_user_view(
         "pinned": pinned
     })))
 }
+
+/// GET /api/me/format-preferences — Return user format preferences.
+pub async fn get_format_preferences(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, AppError> {
+    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
+    let row = sqlx::query_as::<_, (Value,)>("SELECT value FROM user_prefs WHERE user_id = $1 AND key = 'format'")
+        .bind(user_id)
+        .fetch_optional(&state.db)
+        .await?;
+    match row {
+        Some((value,)) => Ok(Json(value)),
+        None => Ok(Json(json!({}))),
+    }
+}
+
+/// PUT /api/me/format-preferences — Update user format preferences.
+pub async fn update_format_preferences(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let user_id = auth.user_id.ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
+    sqlx::query("INSERT INTO user_prefs (user_id, key, value) VALUES ($1, 'format', $3) ON CONFLICT (user_id, key) DO UPDATE SET value = $3")
+        .bind(user_id)
+        .bind(&body)
+        .execute(&state.db)
+        .await?;
+    Ok(Json(json!({"ok": true})))
+}
