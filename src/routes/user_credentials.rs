@@ -58,7 +58,7 @@ pub async fn set_site_credentials_handler(
         .unwrap_or_else(|| chrono::Utc::now() + chrono::Duration::days(365));
 
     // Simple encryption (in production, use proper key management)
-    let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "dev-secret-change-me".into());
+    let jwt_secret = state.jwt_secret.clone();
     let password_enc = encrypt(&req.password, &jwt_secret);
 
     let cred = sqlx::query_as::<_, UserSiteCredential>(

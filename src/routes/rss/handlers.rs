@@ -20,17 +20,16 @@ use super::build::{
 /// Feed readers can't send `Authorization` headers, so the JWT may arrive
 /// as a `token` query param (same token the web frontend stores in
 /// `localStorage['fichub_token']`). Falls back to the Bearer header.
-fn authed_user_id(headers: &HeaderMap, token: Option<&str>) -> Option<i32> {
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
+fn authed_user_id(headers: &HeaderMap, token: Option<&str>, secret: &str) -> Option<i32> {
     if let Some(t) = token {
-        if let Ok(claims) = crate::routes::auth::verify_token(t, &secret) {
+        if let Ok(claims) = crate::routes::auth::verify_token(t, secret) {
             return Some(claims.sub);
         }
     }
     if let Some(header_val) = headers.get(axum::http::header::AUTHORIZATION) {
         if let Ok(val) = header_val.to_str() {
             if let Some(t) = val.strip_prefix("Bearer ") {
-                if let Ok(claims) = crate::routes::auth::verify_token(t, &secret) {
+                if let Ok(claims) = crate::routes::auth::verify_token(t, secret) {
                     return Some(claims.sub);
                 }
             }
@@ -77,7 +76,7 @@ pub async fn follows_feed(
     headers: HeaderMap,
     Query(query): Query<FollowsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let user_id = authed_user_id(&headers, query.token.as_deref())
+    let user_id = authed_user_id(&headers, query.token.as_deref(), &state.jwt_secret)
         .ok_or_else(|| AppError::Unauthorized("Feed token required (login)".to_string()))?;
 
     let limit = query

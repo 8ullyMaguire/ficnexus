@@ -98,13 +98,12 @@ fn verify_cookie(signed: &str, secret: &str) -> Option<DeviceLibrary> {
 }
 
 /// Read the `fh_dev` cookie from request headers.
-fn read_device_cookie(headers: &HeaderMap) -> Option<DeviceLibrary> {
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
+fn read_device_cookie(headers: &HeaderMap, secret: &str) -> Option<DeviceLibrary> {
     let cookie_header = headers.get("cookie")?.to_str().ok()?;
     for part in cookie_header.split(';') {
         let part = part.trim();
         if let Some(value) = part.strip_prefix(&format!("{COOKIE_NAME}=")) {
-            return verify_cookie(value.trim(), &secret);
+            return verify_cookie(value.trim(), secret);
         }
     }
     None
@@ -123,10 +122,9 @@ fn read_device_cookie(headers: &HeaderMap) -> Option<DeviceLibrary> {
 // signature is the right threat model here.
 
 /// Build a `Set-Cookie` header value carrying the signed `fh_dev` cookie.
-fn make_set_cookie(library: &DeviceLibrary) -> Result<HeaderValue, AppError> {
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
+fn make_set_cookie(library: &DeviceLibrary, secret: &str) -> Result<HeaderValue, AppError> {
     let value = serde_json::to_value(library).map_err(|e| AppError::Internal(e.to_string()))?;
-    let signed = sign_json(&value, &secret)?;
+    let signed = sign_json(&value, secret)?;
     // urlencoded to be safe for `;` and other reserved chars
     let header =
         format!("{COOKIE_NAME}={signed}; Max-Age={COOKIE_MAX_AGE_SECS}; Path=/; SameSite=Lax");
@@ -134,16 +132,19 @@ fn make_set_cookie(library: &DeviceLibrary) -> Result<HeaderValue, AppError> {
 }
 
 /// Helper: read the existing library from the cookie, or initialise a new one.
-fn read_or_init(headers: &HeaderMap) -> DeviceLibrary {
-    read_device_cookie(headers).unwrap_or_else(|| DeviceLibrary {
+fn read_or_init(headers: &HeaderMap, secret: &str) -> DeviceLibrary {
+    read_device_cookie(headers, secret).unwrap_or_else(|| DeviceLibrary {
         device_id: uuid::Uuid::new_v4().to_string(),
         ..Default::default()
     })
 }
 
 /// `GET /api/v1/device/library` — return the anonymous library from the cookie.
-pub async fn get_device_library(headers: HeaderMap) -> Result<Json<Value>, AppError> {
-    let library = read_device_cookie(&headers).unwrap_or_default();
+pub async fn get_device_library(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, AppError> {
+    let library = read_device_cookie(&headers, &state.jwt_secret).unwrap_or_default();
     Ok(Json(json!({ "err": 0, "library": library })))
 }
 
@@ -166,13 +167,13 @@ pub async fn add_device_bookmark(
         )));
     }
 
-    let mut library = read_or_init(&headers);
+    let mut library = read_or_init(&headers, &state.jwt_secret);
     if !library.bookmarks.contains(&body.work_id) {
         library.bookmarks.push(body.work_id);
         library.updated_at = Some(chrono::Utc::now().to_rfc3339());
     }
 
-    let set_cookie = make_set_cookie(&library)?;
+    let set_cookie = make_set_cookie(&library, &state.jwt_secret)?;
     let mut out_headers = HeaderMap::new();
     out_headers.insert(SET_COOKIE, set_cookie);
     let body = Json(json!({ "err": 0, "msg": "Bookmarked", "library": &library }));
@@ -181,17 +182,18 @@ pub async fn add_device_bookmark(
 
 /// `DELETE /api/v1/device/bookmark/{work_id}` — remove a bookmark, return Set-Cookie.
 pub async fn remove_device_bookmark(
+    State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     axum::extract::Path(work_id): axum::extract::Path<i32>,
 ) -> Result<Response, AppError> {
     require_consent(&headers)?;
-    let mut library = read_or_init(&headers);
+    let mut library = read_or_init(&headers, &state.jwt_secret);
     if library.bookmarks.contains(&work_id) {
         library.bookmarks.retain(|id| *id != work_id);
         library.updated_at = Some(chrono::Utc::now().to_rfc3339());
     }
 
-    let set_cookie = make_set_cookie(&library)?;
+    let set_cookie = make_set_cookie(&library, &state.jwt_secret)?;
     let mut out_headers = HeaderMap::new();
     out_headers.insert(SET_COOKIE, set_cookie);
     let body = Json(json!({ "err": 0, "msg": "Removed", "library": &library }));
@@ -207,11 +209,12 @@ pub struct DeviceFollowBody {
 }
 
 pub async fn add_device_follow(
+    State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Json(body): Json<DeviceFollowBody>,
 ) -> Result<Response, AppError> {
     require_consent(&headers)?;
-    let mut library = read_or_init(&headers);
+    let mut library = read_or_init(&headers, &state.jwt_secret);
 
     let follow = DeviceFollow {
         target_type: body.target_type,
@@ -229,7 +232,7 @@ pub async fn add_device_follow(
         library.updated_at = Some(chrono::Utc::now().to_rfc3339());
     }
 
-    let set_cookie = make_set_cookie(&library)?;
+    let set_cookie = make_set_cookie(&library, &state.jwt_secret)?;
     let mut out_headers = HeaderMap::new();
     out_headers.insert(SET_COOKIE, set_cookie);
     let body = Json(json!({ "err": 0, "msg": "Following", "library": &library }));
@@ -238,11 +241,12 @@ pub async fn add_device_follow(
 
 /// `DELETE /api/v1/device/follow` — remove a follow, return Set-Cookie.
 pub async fn remove_device_follow(
+    State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Json(body): Json<DeviceFollowBody>,
 ) -> Result<Response, AppError> {
     require_consent(&headers)?;
-    let mut library = read_or_init(&headers);
+    let mut library = read_or_init(&headers, &state.jwt_secret);
 
     library.follows.retain(|f| {
         !(f.target_type == body.target_type
@@ -251,7 +255,7 @@ pub async fn remove_device_follow(
     });
     library.updated_at = Some(chrono::Utc::now().to_rfc3339());
 
-    let set_cookie = make_set_cookie(&library)?;
+    let set_cookie = make_set_cookie(&library, &state.jwt_secret)?;
     let mut out_headers = HeaderMap::new();
     out_headers.insert(SET_COOKIE, set_cookie);
     let body = Json(json!({ "err": 0, "msg": "Unfollowed", "library": &library }));
@@ -279,12 +283,12 @@ pub async fn merge_device_library(
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
+    let secret = state.jwt_secret.clone();
     let library = if let Some(ref raw) = body.cookie_value {
         verify_cookie(raw, &secret)
             .ok_or_else(|| AppError::BadRequest("Invalid device cookie".to_string()))?
     } else {
-        read_device_cookie(&headers)
+        read_device_cookie(&headers, &secret)
             .ok_or_else(|| AppError::BadRequest("No device cookie present".to_string()))?
     };
 
@@ -415,7 +419,7 @@ mod tests {
             follows: vec![],
             updated_at: Some("2026-09-04T00:00:00Z".into()),
         };
-        let header = make_set_cookie(&library).expect("set-cookie header");
+        let header = make_set_cookie(&library, "test-secret").expect("set-cookie header");
         let s = header.to_str().unwrap();
         // Format check
         assert!(s.starts_with(&format!("{COOKIE_NAME}=")));
@@ -444,7 +448,7 @@ mod tests {
             follows: vec![],
             updated_at: None,
         };
-        let header = make_set_cookie(&library).unwrap();
+        let header = make_set_cookie(&library, "test-secret").unwrap();
         let s = header.to_str().unwrap().to_string();
         let payload = s
             .split(';')

@@ -138,7 +138,7 @@ pub async fn blind_date_handler(
             "tropes": tropes,
             "reveal": {
                 "nonce": nonce,
-                "sig": reveal_signature(&url_id, &nonce),
+                "sig": reveal_signature(&url_id, &nonce, &state.jwt_secret),
             },
         },
     })))
@@ -162,7 +162,7 @@ pub async fn blind_date_reveal_handler(
     State(state): State<Arc<AppState>>,
     Query(params): Query<RevealParams>,
 ) -> Result<Json<Value>, AppError> {
-    let expected = reveal_signature(&params.url_id, &params.nonce);
+    let expected = reveal_signature(&params.url_id, &params.nonce, &state.jwt_secret);
     if !signatures_equal(&expected, &params.sig) {
         return Err(AppError::BadRequest("invalid reveal signature".to_string()));
     }
@@ -216,14 +216,8 @@ pub async fn blind_date_reveal_handler(
 }
 
 /// HMAC-SHA256(secret, url_id || ":" || nonce), hex-encoded.
-///
-/// The secret is the app's JWT_SECRET env (already in the process env for
-/// the service; tests set it). We use the JWT secret rather than adding a
-/// new config knob so no migration/config change is required — and the
-/// value is never transmitted, only used to sign/verify.
-fn reveal_signature(url_id: &str, nonce: &str) -> String {
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
-    hmac_sha256_hex(&secret, &format!("{url_id}:{nonce}"))
+fn reveal_signature(url_id: &str, nonce: &str, secret: &str) -> String {
+    hmac_sha256_hex(secret, &format!("{url_id}:{nonce}"))
 }
 
 /// HMAC-SHA256 per RFC 2104, implemented with the project's sha2 0.11
@@ -331,9 +325,9 @@ mod tests {
     fn reveal_signature_is_deterministic_and_signed() {
         // The signature depends on the secret + url_id + nonce, and is
         // stable for the same inputs.
-        let s1 = reveal_signature("fic_1", "nonce1");
-        let s2 = reveal_signature("fic_1", "nonce1");
-        let s3 = reveal_signature("fic_2", "nonce1");
+        let s1 = reveal_signature("fic_1", "nonce1", "test-secret");
+        let s2 = reveal_signature("fic_1", "nonce1", "test-secret");
+        let s3 = reveal_signature("fic_2", "nonce1", "test-secret");
         assert_eq!(s1, s2);
         assert_ne!(s1, s3);
         assert_eq!(s1.len(), 64); // sha256 hex
