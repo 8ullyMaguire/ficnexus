@@ -35,4 +35,4 @@
 
 ## Specs & design
 
-- [v3 Customization Spec](../v3-customization-spec.md) — progression system, recipe builder, theme tokens, extension platform
+- [v3 Customization Spec](../design/v3-customization-spec.md) — progression system, recipe builder, theme tokens, extension platform
