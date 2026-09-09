@@ -56,16 +56,6 @@ const MAX_LIMIT: i64 = 100;
 /// FicNexus roles (migration 007): 0 reader, 5 curator, 10 admin.
 const MOD_ROLE: i16 = 5;
 
-/// Admin level threshold (F7). Env-overridable via FORUM_ADMIN_LEVEL.
-/// `pub(crate)` so other lane modules (groups, privileges) can gate on
-/// the same value without re-reading config.
-pub(crate) fn admin_level() -> i16 {
-    std::env::var("FORUM_ADMIN_LEVEL")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(100)
-}
-
 // ── Request bodies ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -218,7 +208,7 @@ fn public_reader_id(auth: &AuthUser, state: &AppState) -> Result<i32, AppError> 
 
 fn require_admin(auth: &AuthUser) -> Result<i32, AppError> {
     let uid = require_user(auth)?;
-    if auth.trust_level < admin_level() {
+    if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".to_string()));
     }
     Ok(uid)
@@ -374,12 +364,12 @@ pub const PINNED_FIRST_ORDER: &str = "t.status = 'pinned' DESC";
 
 /// `pub(crate)` so Lane A (groups, privileges) can re-use the same gate.
 pub(crate) fn is_mod(auth: &AuthUser) -> bool {
-    auth.trust_level >= curator_level()
+    auth.trust_level >= 3
 }
 
 fn require_mod(auth: &AuthUser) -> Result<i32, AppError> {
     let uid = require_user(auth)?;
-    if auth.trust_level < curator_level() {
+    if auth.trust_level < 3 {
         return Err(AppError::Forbidden("Moderator access required".to_string()));
     }
     Ok(uid)
@@ -991,7 +981,7 @@ pub async fn metamod_grant_detail(
     State(state): State<Arc<AppState>>,
     Path(grant_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.trust_level < curator_level() {
+    if auth.trust_level < 3 {
         return Err(AppError::Forbidden("Moderator access required".to_string()));
     }
     require_user(&auth)?;
@@ -1204,7 +1194,7 @@ pub async fn admin_create_ban(
             "scope must be 'forum' or 'category'".to_string(),
         ));
     }
-    if scope == "forum" && auth.trust_level < admin_level() {
+    if scope == "forum" && auth.trust_level < 5 {
         return Err(AppError::Forbidden(
             "Forum-scope bans require admin (level 100)".to_string(),
         ));
@@ -3849,7 +3839,7 @@ pub async fn user_profile(
     axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::server::AppState>>,
     axum::extract::Path(user_id): axum::extract::Path<i32>,
 ) -> Result<axum::Json<serde_json::Value>, AppError> {
-    let row = sqlx::query_as::<_, (i32, String, i16, i64, i32, i32, i32, i32, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>, i64, i32)>(
+    let row = sqlx::query_as::<_, (i32, String, i16, i64, i32, i32, i32, i32)>(
         "SELECT id, username, trust, reputation, created_at, last_active_at, total_words_read, total_works_read
          FROM users WHERE id = $1",
     )
@@ -3860,10 +3850,7 @@ pub async fn user_profile(
 
     let (id, username, trust, reputation, created_at, last_active_at, total_words_read, total_works_read) = row;
 
-    // Compute XP progress within current level (using unified xp column)
-            let progress = 0;
-
-    Ok(axum::Json(serde_json::json!({
+        Ok(axum::Json(serde_json::json!({
         "err": 0,
         "data": {
             "id": id,
@@ -3886,7 +3873,7 @@ pub async fn user_xp_history(
     axum::extract::Path(user_id): axum::extract::Path<i32>,
 ) -> Result<axum::Json<serde_json::Value>, AppError> {
     // Get current XP info
-    let user = sqlx::query_as::<_, (i64, i16, i32)>(
+    let user = sqlx::query_as::<_, (i16, i64)>(
         "SELECT trust, reputation FROM users WHERE id = $1",
     )
     .bind(user_id)
@@ -3919,10 +3906,7 @@ pub async fn user_xp_history(
     Ok(axum::Json(serde_json::json!({
         "err": 0,
         "data": {
-            "current_xp": xp,
-            "current_level": level,
-            "rank": rank,
-                        "recent_events": events.into_iter().map(|(event_type, xp, created_at)| {
+                                    "recent_events": events.into_iter().map(|(event_type, xp, created_at)| {
                 serde_json::json!({
                     "event_type": event_type,
                     "xp": xp,
@@ -3932,7 +3916,7 @@ pub async fn user_xp_history(
             "today_by_type": today_events.into_iter().map(|(event_type, total)| {
                 serde_json::json!({
                     "event_type": event_type,
-                    "total_xp": total,
+                    "total": total,
                 })
             }).collect::<Vec<_>>(),
         }

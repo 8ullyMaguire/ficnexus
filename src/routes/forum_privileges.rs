@@ -13,7 +13,6 @@ use serde_json::json;
 
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
-use crate::routes::forum::admin_level;
 use crate::server::AppState;
 
 pub const VALID_PRIVILEGES: &[&str] = &["read", "write", "reply", "moderate", "flag", "manage_membership"];
@@ -27,12 +26,12 @@ pub fn valid_privilege(p: &str) -> bool {
 pub async fn can(
     db: &sqlx::PgPool,
     user_id: Option<i32>,
-    user_level: i16,
+    user_trust: i16,
     user_role: i16,
     category_id: i64,
     privilege: &str,
 ) -> Result<bool, AppError> {
-    if user_level >= admin_level() || user_role >= 10 {
+    if user_trust >= 5 || user_role >= 10 {
         return Ok(true);
     }
     let is_mod_only: Option<bool> =
@@ -42,7 +41,7 @@ pub async fn can(
             .await
             .map_err(|e| AppError::Database(e.to_string()))?;
     let is_mod_only = is_mod_only.unwrap_or(false);
-    if is_mod_only && user_level < 50 && user_role < 5 {
+    if is_mod_only && user_trust < 50 && user_role < 5 {
         return Ok(false);
     }
     let uid = match user_id {
@@ -65,7 +64,7 @@ pub async fn can(
 }
 
 fn require_admin(auth: &AuthUser) -> Result<(), AppError> {
-    if auth.level >= admin_level() || auth.trust_level >= 5 {
+    if auth.trust_level >= 5 || auth.trust_level >= 5 {
         Ok(())
     } else {
         Err(AppError::Forbidden("admin only".into()))

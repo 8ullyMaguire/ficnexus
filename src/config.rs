@@ -342,10 +342,8 @@ pub struct Config {
     pub forum_post_delay_secs: i32,
     // ── F7 site-wide leveling (SPEC-COMMUNITY-PLATFORM §10) ──────────────
     /// Level required to act as curator/mod (level >= this = mod).
-    pub forum_curator_level: i16,
-    /// Level required to act as admin.
-    pub forum_admin_level: i16,
-    /// Exp required per level (level = exp / this, capped at 100).
+        /// Level required to act as admin.
+        /// Exp required per level (level = exp / this, capped at 100).
     pub forum_exp_per_level: i32,
     /// Exp awarded for creating a forum topic.
     pub forum_exp_topic_create: i32,
@@ -1200,15 +1198,7 @@ impl Config {
             .unwrap_or(10);
 
         // ── F7 site-wide leveling (SPEC-COMMUNITY-PLATFORM §10) ─────────
-        let forum_curator_level = std::env::var("FORUM_CURATOR_LEVEL")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(50);
-        let forum_admin_level = std::env::var("FORUM_ADMIN_LEVEL")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(100);
-        let forum_exp_per_level = std::env::var("FORUM_EXP_PER_LEVEL")
+                        let forum_exp_per_level = std::env::var("FORUM_EXP_PER_LEVEL")
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(100);
@@ -1415,9 +1405,7 @@ impl Config {
             forum_mod_actions_per_day,
             forum_min_post_len,
             forum_post_delay_secs,
-            forum_curator_level,
-            forum_admin_level,
-            forum_exp_per_level,
+                                    forum_exp_per_level,
             forum_exp_topic_create,
             forum_exp_post_create,
             forum_exp_mod_received,
@@ -1740,9 +1728,7 @@ mod tests {
         assert_eq!(config.forum_resolve_min_trust, 5);
         assert_eq!(config.forum_mod_actions_per_day, 50);
         // F7 site-wide leveling defaults (SPEC §10)
-        assert_eq!(config.forum_curator_level, 50);
-        assert_eq!(config.forum_admin_level, 100);
-        assert_eq!(config.forum_exp_per_level, 100);
+                        assert_eq!(config.forum_exp_per_level, 100);
         assert_eq!(config.forum_exp_topic_create, 2);
         assert_eq!(config.forum_exp_post_create, 2);
         assert_eq!(config.forum_exp_mod_received, 1);

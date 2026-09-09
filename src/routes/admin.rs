@@ -437,13 +437,12 @@ pub async fn rep_award_handler(
     if !is_admin_only.0 {
         return Err(AppError::BadRequest("Not an admin-awarded reward".into()));
     }
-    let awarded = crate::services::progression::award_xp(
+    let _ = crate::db::queries::update_reputation_and_promote(
         &state.db,
         req.user_id,
+        10,
         &req.event_type,
-        req.source_ref.as_deref(),
-    )
-    .await?;
+    ).await; // 
     // Badge side-effect: admin-granted event types (e.g. marathon_writer)
     // should also issue the matching user_badges record. check_and_award_badges
     // is keyed on event_type matching badge_definitions.trigger, so the same
@@ -461,7 +460,7 @@ pub async fn rep_award_handler(
             ("event_type", json!(req.event_type)),
             ("source_ref", json!(req.source_ref)),
             ("note", json!(req.note)),
-            ("xp_awarded", json!(awarded)),
+            
         ],
     )
     .await;

@@ -30,7 +30,6 @@ use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::routes::auth::AuthUser;
-use crate::routes::forum::admin_level;
 use crate::server::AppState;
 use crate::services::trust::PUBLISH_MIN_TRUST;
 
@@ -65,7 +64,7 @@ async fn is_group_admin(
     auth: &AuthUser,
     group_id: i64,
 ) -> Result<bool, AppError> {
-    if auth.level >= crate::routes::forum::admin_level() {
+    if auth.trust_level >= 5 {
         return Ok(true);
     }
     let uid = match auth.user_id {
@@ -150,8 +149,8 @@ pub async fn list_groups(
     let cursor = q.cursor.unwrap_or(i64::MAX);
     let caller_uid = auth.user_id.unwrap_or(0);
     let caller_role = auth.trust_level;
-    let caller_level = auth.level;
-    let is_staff = caller_level >= crate::routes::forum::admin_level()
+    let caller_level = auth.trust_level;
+    let is_staff = caller_level >= 5
         || caller_role >= 10;
 
     // Build WHERE per filters and visibility:
@@ -305,7 +304,7 @@ pub async fn get_group(
     .fetch_optional(&state.db)
     .await?;
     let r = row.ok_or_else(|| AppError::NotFound("group not found".to_string()))?;
-    let is_staff = auth.level >= crate::routes::forum::admin_level();
+    let is_staff = auth.trust_level >= 5;
     if r.is_system && !is_staff {
         return Err(AppError::Forbidden("not allowed".to_string()));
     }
@@ -503,7 +502,7 @@ pub async fn delete_group(
     Path(group_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
     let uid = crate::routes::forum::require_user(&auth)?;
-    if auth.level < crate::routes::forum::admin_level() {
+    if auth.trust_level < 5 {
         // Non-admins must be owner
         let role: Option<String> = sqlx::query_scalar(
             "SELECT role FROM forum_group_members WHERE group_id = $1 AND user_id = $2",
@@ -624,7 +623,7 @@ pub async fn invite_to_group(
         ));
     }
     // Only admin can set role=owner
-    if role == "owner" && auth.level < crate::routes::forum::admin_level() {
+    if role == "owner" && auth.trust_level < 5 {
         return Err(AppError::Forbidden(FORBIDDEN_NOT_ADMIN.to_string()));
     }
     sqlx::query(
@@ -660,7 +659,7 @@ pub async fn change_member_role(
             "role must be owner|manager|member".to_string(),
         ));
     }
-    if body.role == "owner" && auth.level < crate::routes::forum::admin_level() {
+    if body.role == "owner" && auth.trust_level < 5 {
         return Err(AppError::Forbidden(FORBIDDEN_NOT_ADMIN.to_string()));
     }
     let res = sqlx::query(
@@ -696,7 +695,7 @@ pub async fn list_group_members(
     if is_private {
         let caller = auth.user_id;
         let is_staff =
-            auth.level >= admin_level() || auth.trust_level == 2 || caller == Some(owner as i32);
+            auth.trust_level >= 5 || auth.trust_level == 2 || caller == Some(owner as i32);
         if !is_staff {
             let member: Option<(i32,)> = if let Some(uid) = caller {
                 sqlx::query_as(
