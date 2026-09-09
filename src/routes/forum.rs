@@ -77,160 +77,21 @@ pub(crate) fn admin_level() -> i16 {
 }
 
 /// Exp needed per level (F7). Env-overridable via FORUM_EXP_PER_LEVEL.
-fn exp_per_level() -> i64 {
-    std::env::var("FORUM_EXP_PER_LEVEL")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(100)
-}
 
 /// Compute the site-wide level from experience (level = exp / per_level,
 /// capped at 100). Never decreases below 0.
-fn level_for_exp(exp: i64) -> i16 {
-    let per = exp_per_level().max(1);
-    ((exp / per).clamp(0, 100)) as i16
-}
 
 /// Award XP to a user. Best-effort: failures are logged, never fail the caller.
 /// Delegates to `services::progression::award_xp` which writes to the unified
 /// `xp_events` / `users.xp` ledger, respects daily caps, and handles cooldowns.
-async fn award_exp(
-    db: &sqlx::PgPool,
-    user_id: i32,
-    event_type: &str,
-    reference_type: Option<&str>,
-    reference_id: Option<i64>,
-) {
-    // Compute the flat XP amount from xp_source_defs for this event type.
-    let amount: i64 = sqlx::query_scalar::<_, i32>(
-        "SELECT xp_amount FROM xp_source_defs WHERE event_type = $1",
-    )
-    .bind(event_type)
-    .fetch_optional(db)
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or(0) as i64;
-
-    if amount == 0 {
-        return;
-    }
-
-    let source_ref = match (reference_type, reference_id) {
-        (Some(rt), Some(rid)) => Some(format!("{}:{}", rt, rid)),
-        (Some(rt), None) => Some(rt.to_string()),
-        _ => None,
-    };
-
-    // Capture pre-award state for level-up notification.
-    let pre_level: i16 = sqlx::query_scalar("SELECT level FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or(0);
-
-    let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 2, "forum_post_create").await; // 
-        db,
-        user_id,
-        event_type,
-        source_ref.as_deref(),
-    )
-    .await;
-
-    // Check for level-up and send notification.
-    let post_level: i16 = sqlx::query_scalar("SELECT level FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(db)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or(0);
-
-    if post_level > pre_level {
-        if let Err(e) = sqlx::query(
-            "INSERT INTO notifications (user_id, notification_type, title, body, created_at)
-             VALUES ($1, 'level_up', $2, $3, NOW())",
-        )
-        .bind(user_id)
-        .bind(format!("Level {post_level}!"))
-        .bind(format!("You reached level {post_level}."))
-        .execute(db)
-        .await
-        {
-            tracing::warn!("award_exp: level-up notification failed: {e}");
-        }
-    }
-}
 
 /// XP awarded for creating a forum post or topic (SPEC §10): +2.
 /// Amount is read from xp_source_defs by award_exp.
-async fn award_post_exp(db: &sqlx::PgPool, user_id: i32, post_id: i64) {
-    award_exp(
-        db,
-        user_id,
-        "forum_post_create",
-        Some("forum_post"),
-        Some(post_id),
-    )
-    .await;
-}
 
 /// Exp awarded to a post author when a moderator action is positive (SPEC
 /// §10): +1, capped at +3/day (mod-received).
-async fn award_mod_received_exp(db: &sqlx::PgPool, user_id: i32, modlog_id: i64) {
-    // Daily cap: count today's positive mod-received events for this user.
-    let today: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM xp_events
-         WHERE user_id = $1 AND event_type = 'mod_received'
-           AND created_at >= CURRENT_DATE",
-    )
-    .bind(user_id)
-    .fetch_one(db)
-    .await
-    .unwrap_or(0);
-    if today >= 3 {
-        return;
-    }
-    award_exp(
-        db,
-        user_id,
-        "mod_received",
-        Some("forum_moderation"),
-        Some(modlog_id),
-    )
-    .await;
-}
 
 /// GET /api/users/me/level — leveling progress (F7). Requires login.
-pub async fn my_level(
-    auth: AuthUser,
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Value>, AppError> {
-    let user_id = require_user(&auth)?;
-    let row: Option<(i16, i64)> = sqlx::query_as("SELECT level, xp FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(&state.db)
-        .await?;
-    let (level, xp) = row.ok_or_else(|| AppError::BadRequest("user not found".to_string()))?;
-    let per = exp_per_level().max(1);
-    let next_level_xp = i64::from(level.saturating_add(1)) * per;
-    let cur_level_xp = i64::from(level) * per;
-    let progress = if level >= 100 {
-        1.0
-    } else {
-        (xp - cur_level_xp) as f64 / (next_level_xp - cur_level_xp).max(1) as f64
-    };
-    Ok(Json(json!({
-        "err": 0,
-        "level": level,
-        "xp": xp,
-        "xp_to_next": (next_level_xp - xp).max(0),
-        "progress": progress.clamp(0.0, 1.0),
-        "level_up": false,
-    })))
-}
 
 // ── Request bodies ─────────────────────────────────────────────────────────
 
@@ -930,7 +791,7 @@ pub async fn moderate_post(
 
     // F7: positive mod received → the post author gains +1 exp (capped +3/day).
     if delta > 0 {
-        award_mod_received_exp(&state.db, author_id, post_id).await;
+        let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, author_id, 1, "mod_received").await;
     }
 
     Ok(Json(json!({
@@ -2890,7 +2751,7 @@ pub async fn create_topic(
         }
     }
 
-    award_post_exp(&state.db, user_id, post_id).await;
+    let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 2, "forum_post_create").await;
 
     Ok(Json(json!({
         "err": 0,
@@ -3151,7 +3012,7 @@ pub async fn create_post(
     )
     .await;
 
-    award_post_exp(&state.db, user_id, post_id).await;
+    let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 2, "forum_post_create").await;
 
     // Check for newly unlocked achievements (best-effort)
     let _ = crate::services::achievements::check_and_unlock_achievements(
@@ -3865,7 +3726,7 @@ pub async fn react_to_post(
     // Award XP for reaction (upvote equivalent) only on 0→1 transitions,
     // not on toggle cycles (un-react/re-react). This prevents XP farming.
     if is_new_reaction {
-        award_reaction_exp(&state.db, user_id, post_id).await;
+        let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 5, "post_reacted").await;
 
         // Check for newly unlocked achievements (best-effort)
         let _ = crate::services::achievements::check_and_unlock_achievements(
@@ -4265,51 +4126,5 @@ pub async fn widget_stats(
 // ── Phase 8d: Additional XP awards ─────────────────────────────────────────
 
 /// Exp awarded when a post receives a reaction (upvote equivalent): +5.
-pub async fn award_reaction_exp(db: &sqlx::PgPool, user_id: i32, post_id: i64) {
-    // Daily cap: count today's reaction events for this user.
-    let today: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM exp_events
-         WHERE user_id = $1 AND event_type = 'post_reacted'
-           AND created_at >= CURRENT_DATE",
-    )
-    .bind(user_id)
-    .fetch_one(db)
-    .await
-    .unwrap_or(0);
-    if today >= 10 {
-        return; // daily cap: 10 reactions * 5 XP = 50 XP max
-    }
-    award_exp(
-        db,
-        user_id,
-        "post_reacted",
-        Some("forum_post"),
-        Some(post_id),
-    )
-    .await;
-}
 
 /// XP awarded when a user votes on a poll: +3.
-pub async fn award_poll_vote_exp(db: &sqlx::PgPool, user_id: i32, poll_id: i64) {
-    // Daily cap: count today's poll vote events for this user.
-    let today: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM xp_events
-         WHERE user_id = $1 AND event_type = 'poll_voted'
-           AND created_at >= CURRENT_DATE",
-    )
-    .bind(user_id)
-    .fetch_one(db)
-    .await
-    .unwrap_or(0);
-    if today >= 10 {
-        return; // daily cap: 10 votes * 3 XP = 30 XP max
-    }
-    award_exp(
-        db,
-        user_id,
-        "poll_voted",
-        Some("forum_poll"),
-        Some(poll_id),
-    )
-    .await;
-}
