@@ -545,6 +545,20 @@ pub async fn check_and_unlock_achievements(
 
             if result.is_some() {
                 newly_unlocked.push(slug.to_string());
+                // Fire notification for the newly unlocked achievement
+                let notif_title = format!("Achievement Unlocked: {}", slug);
+                let notif_body = format!("You've earned the '{}' achievement!", slug);
+                let _ = crate::db::queries::social::create_notification(
+                    pool,
+                    user_id,
+                    "achievement",
+                    &notif_title,
+                    Some(&notif_body),
+                    Some("/achievements"),
+                    Some("achievement"),
+                    Some(slug),
+                )
+                .await;
             }
         }
     }

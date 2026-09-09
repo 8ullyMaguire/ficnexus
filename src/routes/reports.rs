@@ -27,12 +27,42 @@ const CONTESTED_WEIGHT: i32 = 3;
 const AUTO_HIDE_WEIGHT: i32 = 6;
 
 #[derive(Debug, Deserialize)]
+pub struct CreateBanAppealBody {
+    pub reason: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReviewBanAppealBody {
+    pub action: String,
+    pub note: Option<String>,
+}
+
+#[derive(sqlx::FromRow, serde::Serialize)]
+pub struct BanAppealEntry {
+    pub id: i64,
+    pub ban_id: i64,
+    pub user_id: i32,
+    pub reason: String,
+    pub status: String,
+    pub reviewed_by: Option<i32>,
+    pub reviewed_at: Option<chrono::DateTime<Utc>>,
+    pub reviewer_note: Option<String>,
+    pub created_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateReportBody {
     pub target_type: String,
     pub target_id: i32,
     pub reason: String,
     #[serde(default)]
     pub details: Option<Value>,
+    #[serde(default = "default_report_category")]
+    pub category: String,
+}
+
+fn default_report_category() -> String {
+    "other".into()
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,6 +109,14 @@ pub async fn create_report(
     let reason = body.reason.trim();
     if reason.is_empty() {
         return Err(AppError::BadRequest("reason required".to_string()));
+    }
+    if !matches!(
+        body.category.as_str(),
+        "spam" | "harassment" | "copyright" | "inappropriate" | "other"
+    ) {
+        return Err(AppError::BadRequest(
+            "category must be one of: spam, harassment, copyright, inappropriate, other".to_string(),
+        ));
     }
     if reason.chars().count() > 1000 {
         return Err(AppError::BadRequest(
@@ -132,8 +170,8 @@ pub async fn create_report(
     }
 
     let report_id: i64 = sqlx::query_scalar(
-        r#"INSERT INTO user_reports (reporter_id, target_type, target_id, reason, details, weight)
-           VALUES ($1, $2, $3, $4, $5, $6)
+        r#"INSERT INTO user_reports (reporter_id, target_type, target_id, reason, details, weight, category)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING id"#,
     )
     .bind(reporter_id)
@@ -142,6 +180,7 @@ pub async fn create_report(
     .bind(reason)
     .bind(body.details)
     .bind(weight)
+    .bind(&body.category)
     .fetch_one(&state.db)
     .await?;
 
@@ -285,11 +324,12 @@ pub async fn list_reports(
                 String,
                 Option<Value>,
                 String,
+                String,
                 chrono::DateTime<Utc>,
             ),
         >(
             r#"SELECT r.id, r.reporter_id, u.username, r.target_type, r.target_id,
-                      r.reason, r.details, r.status, r.created_at
+                      r.reason, r.details, r.category, r.status, r.created_at
                FROM user_reports r
                LEFT JOIN users u ON u.id = r.reporter_id
                ORDER BY r.created_at DESC
@@ -309,11 +349,12 @@ pub async fn list_reports(
                 String,
                 Option<Value>,
                 String,
+                String,
                 chrono::DateTime<Utc>,
             ),
         >(
             r#"SELECT r.id, r.reporter_id, u.username, r.target_type, r.target_id,
-                      r.reason, r.details, r.status, r.created_at
+                      r.reason, r.details, r.category, r.status, r.created_at
                FROM user_reports r
                LEFT JOIN users u ON u.id = r.reporter_id
                WHERE r.status = $1
@@ -379,6 +420,7 @@ pub async fn list_reports(
                 target_id,
                 reason,
                 details,
+                category,
                 status,
                 created,
             )| {
@@ -391,6 +433,7 @@ pub async fn list_reports(
                     "target_id": target_id,
                     "reason": reason,
                     "details": details,
+                    "category": category,
                     "status": status,
                     "created_at": created.to_rfc3339(),
                     "link": link,
@@ -419,10 +462,11 @@ pub async fn report_status(
         i32,
         String,
         String,
+        String,
         Option<chrono::DateTime<Utc>>,
         Option<i32>,
     )> = sqlx::query_as(
-        "SELECT reporter_id, target_type, target_id, status, auto_status,
+        "SELECT reporter_id, target_type, target_id, status, category, auto_status,
                 resolved_at, resolved_by
          FROM user_reports WHERE id = $1",
     )
@@ -443,9 +487,10 @@ pub async fn report_status(
         "err": 0,
         "report_id": report_id,
         "status": row.3,
-        "auto_status": row.4,
-        "resolved_at": row.5.map(|d| d.to_rfc3339()),
-        "resolved_by": row.6,
+        "category": row.4,
+        "auto_status": row.5,
+        "resolved_at": row.6.map(|d| d.to_rfc3339()),
+        "resolved_by": row.7,
     })))
 }
 pub async fn resolve_report(
@@ -494,5 +539,215 @@ pub async fn resolve_report(
 
     Ok(Json(
         json!({"err": 0, "report_id": report_id, "status": new_status}),
+    ))
+}
+
+/// POST /api/bans/{id}/appeal — submit a ban appeal (banned user only).
+pub async fn create_ban_appeal(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+    Path(ban_id): Path<i64>,
+    Json(body): Json<CreateBanAppealBody>,
+) -> Result<Json<Value>, AppError> {
+    let user_id = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+
+    // Verify the ban exists and belongs to this user
+    let ban: Option<(i32,)> = sqlx::query_as("SELECT user_id FROM forum_bans WHERE id = $1")
+        .bind(ban_id)
+        .fetch_optional(&state.db)
+        .await?;
+
+    let Some(ban) = ban else {
+        return Err(AppError::NotFound("Ban not found".into()));
+    };
+
+    if ban.0 != user_id {
+        return Err(AppError::Forbidden("You can only appeal your own bans".into()));
+    }
+
+    // Check for existing pending appeal
+    let existing: Option<(i64,)> = sqlx::query_as(
+        "SELECT id FROM ban_appeals WHERE ban_id = $1 AND status = 'pending'",
+    )
+    .bind(ban_id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    if existing.is_some() {
+        return Err(AppError::BadRequest(
+            "You already have a pending appeal for this ban".into(),
+        ));
+    }
+
+    let reason = body.reason.trim();
+    if reason.is_empty() {
+        return Err(AppError::BadRequest("Appeal reason required".into()));
+    }
+    if reason.chars().count() > 2000 {
+        return Err(AppError::BadRequest(
+            "Appeal reason too long (max 2000 chars)".into(),
+        ));
+    }
+
+    let appeal_id: i64 = sqlx::query_scalar(
+        "INSERT INTO ban_appeals (ban_id, user_id, reason)
+         VALUES ($1, $2, $3) RETURNING id",
+    )
+    .bind(ban_id)
+    .bind(user_id)
+    .bind(reason)
+    .fetch_one(&state.db)
+    .await?;
+
+    // Notify admins
+    crate::modlog::record_json(
+        &state.db,
+        Some(user_id),
+        auth.username.clone(),
+        "ban_appeal_created",
+        "forum_ban",
+        &ban_id.to_string(),
+        vec![("appeal_id", json!(appeal_id)), ("reason", json!(reason))],
+    )
+    .await;
+
+    Ok(Json(
+        json!({"err": 0, "appeal_id": appeal_id, "status": "pending"}),
+    ))
+}
+
+/// GET /api/bans/{id}/appeals — list appeals for a ban (staff only).
+pub async fn list_ban_appeals(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+    Path(ban_id): Path<i64>,
+) -> Result<Json<Value>, AppError> {
+    if auth.trust_level < 5 {
+        return Err(AppError::Forbidden("Admin access required".into()));
+    }
+
+    let appeals = sqlx::query_as::<_, BanAppealEntry>(
+        "SELECT id, ban_id, user_id, reason, status, reviewed_by, reviewed_at, reviewer_note, created_at
+         FROM ban_appeals WHERE ban_id = $1 ORDER BY created_at DESC",
+    )
+    .bind(ban_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let items: Vec<Value> = appeals
+        .into_iter()
+        .map(|a| {
+            json!({
+                "id": a.id,
+                "ban_id": a.ban_id,
+                "user_id": a.user_id,
+                "reason": a.reason,
+                "status": a.status,
+                "reviewed_by": a.reviewed_by,
+                "reviewed_at": a.reviewed_at.map(|d| d.to_rfc3339()),
+                "reviewer_note": a.reviewer_note,
+                "created_at": a.created_at.to_rfc3339(),
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({"err": 0, "appeals": items})))
+}
+
+/// POST /api/bans/{id}/appeals/{appealId}/review — approve/reject an appeal (staff only).
+pub async fn review_ban_appeal(
+    State(state): State<Arc<AppState>>,
+    auth: AuthUser,
+    Path((ban_id, appeal_id)): Path<(i64, i64)>,
+    Json(body): Json<ReviewBanAppealBody>,
+) -> Result<Json<Value>, AppError> {
+    if auth.trust_level < 5 {
+        return Err(AppError::Forbidden("Admin access required".into()));
+    }
+
+    let new_status = match body.action.as_str() {
+        "approved" => "approved",
+        "rejected" => "rejected",
+        _ => {
+            return Err(AppError::BadRequest(
+                "action must be 'approved' or 'rejected'".to_string(),
+            ));
+        }
+    };
+
+    let result = sqlx::query(
+        "UPDATE ban_appeals SET status = $1, reviewed_by = $2, reviewed_at = NOW(), reviewer_note = $3
+         WHERE id = $4 AND ban_id = $5 AND status = 'pending'",
+    )
+    .bind(new_status)
+    .bind(auth.user_id)
+    .bind(body.note.as_deref().unwrap_or_default())
+    .bind(appeal_id)
+    .bind(ban_id)
+    .execute(&state.db)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "Appeal not found or already reviewed".into(),
+        ));
+    }
+
+    // If approved, delete the ban
+    if new_status == "approved" {
+        sqlx::query("DELETE FROM forum_bans WHERE id = $1")
+            .bind(ban_id)
+            .execute(&state.db)
+            .await?;
+    }
+
+    // Notify the user
+    let appeal: Option<(i32,)> = sqlx::query_as("SELECT user_id FROM ban_appeals WHERE id = $1")
+        .bind(appeal_id)
+        .fetch_optional(&state.db)
+        .await?;
+
+    if let Some(appeal) = appeal {
+        let notif_title = if new_status == "approved" {
+            "Ban Appeal Approved"
+        } else {
+            "Ban Appeal Rejected"
+        };
+        let notif_body = if new_status == "approved" {
+            "Your ban appeal has been approved. Your access has been restored.".to_string()
+        } else {
+            format!(
+                "Your ban appeal has been rejected. Reason: {}",
+                body.note.as_deref().unwrap_or("No reason provided")
+            )
+        };
+        let _ = crate::db::queries::social::create_notification(
+            &state.db,
+            appeal.0,
+            "ban_appeal",
+            notif_title,
+            Some(&notif_body),
+            Some("/appeals"),
+            Some("ban_appeal"),
+            Some(&appeal_id.to_string()),
+        )
+        .await;
+    }
+
+    crate::modlog::record_json(
+        &state.db,
+        auth.user_id,
+        auth.username.clone(),
+        "ban_appeal_reviewed",
+        "ban_appeal",
+        &appeal_id.to_string(),
+        vec![("action", json!(new_status)), ("note", json!(body.note))],
+    )
+    .await;
+
+    Ok(Json(
+        json!({"err": 0, "appeal_id": appeal_id, "status": new_status}),
     ))
 }

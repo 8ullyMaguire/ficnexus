@@ -2222,6 +2222,18 @@ fn chunk_customization_redirects() -> impl Into<Router<Arc<AppState>>> {
             "/api/admin/reports/{id}/resolve",
             axum::routing::post(crate::routes::reports::resolve_report),
         )
+        .route(
+            "/api/bans/{id}/appeal",
+            axum::routing::post(crate::routes::reports::create_ban_appeal),
+        )
+        .route(
+            "/api/bans/{id}/appeals",
+            get(crate::routes::reports::list_ban_appeals),
+        )
+        .route(
+            "/api/bans/{id}/appeals/{appealId}/review",
+            axum::routing::post(crate::routes::reports::review_ban_appeal),
+        )
         // Roadmap Consensus Engine
         .route(
             "/api/roadmap/suggest",
