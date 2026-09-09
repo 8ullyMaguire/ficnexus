@@ -142,8 +142,7 @@ async fn create_bundle_from_works(
             if let Some((username, password_enc)) =
                 crate::db::queries::get_user_site_credential(&state.db, uid, &host).await?
             {
-                let key =
-                    std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
+                let key = state.jwt_secret.clone();
                 if let Some(password) = crate::crypto::decrypt(&password_enc, &key) {
                     creds.push(fanfic_scrapers::SiteCredentials {
                         domain: host,
@@ -273,8 +272,7 @@ pub async fn download_author_handler(
             if let Some((username, password_enc)) =
                 crate::db::queries::get_user_site_credential(&state.db, uid, &host).await?
             {
-                let key =
-                    std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
+                let key = state.jwt_secret.clone();
                 if let Some(password) = crate::crypto::decrypt(&password_enc, &key) {
                     creds.push(fanfic_scrapers::SiteCredentials {
                         domain: host,
@@ -471,8 +469,7 @@ pub async fn download_author_stream_handler(
                 if let Ok(Some((username, password_enc))) =
                     crate::db::queries::get_user_site_credential(&state_clone.db, uid, &host).await
                 {
-                    let key = std::env::var("JWT_SECRET")
-                        .unwrap_or_else(|_| "fichub-dev-secret".into());
+                    let key = state_clone.jwt_secret.clone();
                     if let Some(password) = crate::crypto::decrypt(&password_enc, &key) {
                         creds.push(fanfic_scrapers::SiteCredentials {
                             domain: host,
@@ -542,8 +539,7 @@ pub async fn download_author_stream_handler(
                 if let Ok(Some((username, password_enc))) =
                     crate::db::queries::get_user_site_credential(&state_clone.db, uid, &host).await
                 {
-                    let key = std::env::var("JWT_SECRET")
-                        .unwrap_or_else(|_| "fichub-dev-secret".into());
+                    let key = state_clone.jwt_secret.clone();
                     if let Some(password) = crate::crypto::decrypt(&password_enc, &key) {
                         creds.push(fanfic_scrapers::SiteCredentials {
                             domain: host,
