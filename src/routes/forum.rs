@@ -131,7 +131,7 @@ async fn award_exp(
         .flatten()
         .unwrap_or(0);
 
-    let _ = crate::services::progression::award_xp(
+    let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 2, "forum_post_create").await; // 
         db,
         user_id,
         event_type,
@@ -3154,7 +3154,7 @@ pub async fn create_post(
     award_post_exp(&state.db, user_id, post_id).await;
 
     // Check for newly unlocked achievements (best-effort)
-    let _ = crate::services::progression::check_and_unlock_achievements(
+    let _ = crate::services::achievements::check_and_unlock_achievements(
         &state.db,
         user_id,
         "post_created",
@@ -3868,7 +3868,7 @@ pub async fn react_to_post(
         award_reaction_exp(&state.db, user_id, post_id).await;
 
         // Check for newly unlocked achievements (best-effort)
-        let _ = crate::services::progression::check_and_unlock_achievements(
+        let _ = crate::services::achievements::check_and_unlock_achievements(
             &state.db,
             user_id,
             "reaction_given",

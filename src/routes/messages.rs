@@ -442,7 +442,7 @@ pub async fn send_message(
         .map_err(|e| AppError::Database(e.to_string()))?;
 
     // Check for newly unlocked achievements (best-effort)
-    let _ = crate::services::progression::check_and_unlock_achievements(
+    let _ = crate::services::achievements::check_and_unlock_achievements(
         &state.db,
         sender_id,
         "message_sent",

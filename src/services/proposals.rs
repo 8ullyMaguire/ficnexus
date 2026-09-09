@@ -196,7 +196,7 @@ pub async fn record_vote(
     .map_err(|e| AppError::Internal(e.to_string()))?;
 
     // Modest curator incentive per vote (daily-capped in xp_source_defs).
-    let _ = crate::services::progression::award_xp(
+    let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 1, "xp_event").await; // TODO: fix amount 
         db,
         curator_id,
         "translation_reviewed",
@@ -510,7 +510,7 @@ async fn apply_ui_string(db: &PgPool, proposal_id: i64, pl: &Value) {
         .flatten()
         .flatten();
     if let Some(uid) = proposer {
-        let _ = crate::services::progression::award_xp(
+        let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 1, "xp_event").await; // TODO: fix amount 
             db,
             uid,
             "translation_approved",

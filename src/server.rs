@@ -2268,7 +2268,7 @@ fn chunk_customization_redirects() -> impl Into<Router<Arc<AppState>>> {
             "/api/roadmap/changelog",
             axum::routing::post(crate::routes::roadmap::changelog_create_handler),
         )
-        // ── Feature flags & progression (v3) ─────────────────────
+        // ── Feature flags & user preferences ──────────────────────
         .route("/api/features", get(routes::features::list_features))
         .route(
             "/api/features/available",
@@ -2283,20 +2283,16 @@ fn chunk_customization_redirects() -> impl Into<Router<Arc<AppState>>> {
             post(routes::features::disable_feature),
         )
         .route(
-            "/api/me/progression",
-            get(routes::progression::get_progression),
-        )
-        .route(
             "/api/me/prefs",
-            get(routes::progression::get_user_prefs).put(routes::progression::set_user_prefs),
+            get(routes::user_preferences::get_user_prefs).put(routes::user_preferences::set_user_prefs),
         )
         .route(
             "/api/me/layout/{page}",
-            get(routes::progression::get_user_layout).put(routes::progression::set_user_layout),
+            get(routes::user_preferences::get_user_layout).put(routes::user_preferences::set_user_layout),
         )
         .route(
             "/api/me/views",
-            get(routes::progression::get_user_views).post(routes::progression::create_user_view),
+            get(routes::user_preferences::get_user_views).post(routes::user_preferences::create_user_view),
         )
         .route(
             "/api/me/views/{id}",

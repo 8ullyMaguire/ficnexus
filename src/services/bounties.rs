@@ -3,13 +3,13 @@
 //! Bounties stake a *spendable* resource (`users.reputation`) for demand-side
 //! requests: \"write more of X\", \"solve my fic request\", etc. Resolved in
 //! favour of the claimant (minus a curator fee that burns). XP (the level
-//! ladder) stays locked to `award_xp` so the two economies can't cross-sabotage.
+//! ladder) stays locked to reputation so the two economies can.t cross-sabotage.
 
 use chrono::Utc;
 use sqlx::PgPool;
 
 use crate::error::{AppError, AppResult};
-use crate::services::progression::award_xp;
+
 
 /// Minimum reputation a user needs to *create* a bounty (Contributor rank).
 pub const MIN_REP_FOR_BOUNTY: i32 = 50;
@@ -222,7 +222,7 @@ pub async fn resolve_bounty(
 /// bucket → the 3600s cooldown (set by migration 011) suppresses the dupe.
 pub async fn idle_tick(pool: &PgPool, user_id: i32) -> AppResult<i64> {
     let hour_bucket = Utc::now().format("%Y-%m-%dT%H").to_string();
-    award_xp(pool, user_id, "idle_tick", Some(&hour_bucket)).await
+    Ok(0)
 }
 
 /// Public list of open bounties (no auth).

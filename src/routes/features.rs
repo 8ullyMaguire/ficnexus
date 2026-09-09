@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::error::AppError;
-use crate::progression::Feature;
+use crate::db::models::Feature;
 use crate::routes::auth::AuthUser;
 use crate::server::AppState;
 
@@ -124,7 +124,7 @@ pub async fn enable_feature(
         .ok_or_else(|| AppError::NotFound(format!("Feature '{slug}' not found")))?;
 
     // Check if unlocked
-    let uf = sqlx::query_as::<_, crate::progression::UserFeature>(
+    let uf = sqlx::query_as::<_, crate::db::models::UserFeature>(
         "SELECT * FROM user_features WHERE user_id = $1 AND feature_id = $2",
     )
     .bind(user_id)
@@ -144,7 +144,7 @@ pub async fn enable_feature(
     .await?;
 
     // Recompute unlocks to catch features gated by this one
-    crate::services::progression::recompute_unlocks(&state.db, user_id).await?;
+    crate::services::achievements::recompute_unlocks(&state.db, user_id).await?;
 
     Ok(Json(json!({"ok": true, "slug": slug})))
 }

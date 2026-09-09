@@ -46,7 +46,6 @@ pub mod modlog;
 pub mod notifications;
 pub mod opds;
 pub mod pow;
-pub mod progression;
 pub mod proposals;
 pub mod pseuds;
 pub mod quests;

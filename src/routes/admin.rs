@@ -143,7 +143,7 @@ pub async fn approve_upload(
     .await?;
     if w >= 5000 {
         if let Some(ref uid) = url_id {
-            let _ = crate::services::progression::award_xp(
+            let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 1, "xp_event").await; // TODO: fix amount 
                 &state.db,
                 uploader_id,
                 "work_publish",
@@ -151,7 +151,7 @@ pub async fn approve_upload(
             )
             .await;
         } else {
-            let _ = crate::services::progression::award_xp(
+            let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 1, "xp_event").await; // TODO: fix amount 
                 &state.db,
                 uploader_id,
                 "work_publish",
@@ -165,7 +165,7 @@ pub async fn approve_upload(
             // Override the def's base xp with the scaled amount via a one-off insert.
             // award_xp enforces caps/streak on the def row (work_complete_qualified), but
             // the XP *amount* is scaled here before recording. We call a dedicated path:
-            let _ = crate::services::progression::award_scaled_xp(
+            let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 1, "xp_event").await; // TODO: fix amount 
                 &state.db,
                 uploader_id,
                 "work_complete_qualified",

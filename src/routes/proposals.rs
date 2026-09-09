@@ -377,7 +377,7 @@ pub async fn flag_translation(
     )
     .await?;
     // small rep for flagging (capped in xp_source_defs)
-    let _ = crate::services::progression::award_xp(
+    let _ = crate::db::queries::social::update_reputation_and_promote(&state.db, user_id, 1, "xp_event").await; // TODO: fix amount 
         &state.db,
         user_id,
         "translation_flagged",

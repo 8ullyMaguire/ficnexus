@@ -425,3 +425,64 @@ pub struct LeaderboardMonthly {
     pub month_start: NaiveDate,
     pub computed_at: DateTime<Utc>,
 }
+
+/// A feature that can be gated, toggled, and pinned by users.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Feature {
+    pub id: i32,
+    pub slug: String,
+    pub name: String,
+    pub description: String,
+    pub long_help: String,
+    pub icon: Option<String>,
+    pub category: String,
+    pub gate_type: String,
+    pub gate_value: i32,
+    pub requires_feature: Option<String>,
+    pub is_default: bool,
+    pub is_revocable: bool,
+    pub admin_only: bool,
+    pub widget_component: Option<String>,
+    pub nav_target: Option<String>,
+    pub sort_hint: i32,
+    pub created_at: DateTime<Utc>,
+}
+
+/// A user's relationship to a feature: unlocked, enabled, pinned.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct UserFeature {
+    pub user_id: i32,
+    pub feature_id: i32,
+    pub unlocked_at: Option<DateTime<Utc>>,
+    pub enabled: bool,
+    pub enabled_at: Option<DateTime<Utc>>,
+    pub pinned: bool,
+    pub sort_order: i32,
+}
+
+/// A single user preference stored as a JSONB value.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct UserPref {
+    pub user_id: i32,
+    pub key: String,
+    pub value: serde_json::Value,
+}
+
+/// A per-page dashboard layout stored as JSONB.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct UserLayout {
+    pub user_id: i32,
+    pub page: String,
+    pub layout: serde_json::Value,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// A saved search / filter view that the user can pin and switch between.
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct UserView {
+    pub id: i32,
+    pub user_id: i32,
+    pub name: String,
+    pub query: serde_json::Value,
+    pub pinned: bool,
+}
