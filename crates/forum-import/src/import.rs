@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::schema::{ImportFile, ms_to_datetime, ms_to_optional_datetime};
 
@@ -21,17 +21,17 @@ pub struct ImportStats {
 /// NodeBB import uses explicit IDs and ON CONFLICT DO NOTHING, so running
 /// against a non-empty DB silently orphans children.
 /// Pass `force: true` to skip this check (use with caution).
-async fn check_preconditions(pool: &PgPool, force: bool) -> Result<()> {
+async fn check_preconditions(tx: &mut Transaction<'_, Postgres>, force: bool) -> Result<()> {
     if force {
         tracing::warn!("--force: skipping precondition checks");
         return Ok(());
     }
 
     let (user_count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
-        .fetch_one(pool)
+        .fetch_one(&mut **tx)
         .await?;
     let (topic_count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM forum_topics")
-        .fetch_one(pool)
+        .fetch_one(&mut **tx)
         .await?;
 
     if user_count > 0 || topic_count > 0 {
@@ -49,23 +49,38 @@ async fn check_preconditions(pool: &PgPool, force: bool) -> Result<()> {
     Ok(())
 }
 
-/// Run the full import. If dry_run is true, validates without writing.
+/// Run the full import wrapped in a single database transaction.
+/// If any phase fails, the entire import is rolled back.
 /// Pass `force: true` to skip the empty-database precondition check.
 pub async fn run_import(pool: &PgPool, data: &ImportFile, dry_run: bool, force: bool) -> Result<ImportStats> {
-    // Check preconditions before doing any work.
-    check_preconditions(pool, force).await?;
+    // Check preconditions before starting the transaction.
+    // We use a separate brief transaction for this so the check sees
+    // committed state (not our own uncommitted writes).
+    check_preconditions(&mut pool.begin().await?, force).await?;
+
+    if dry_run {
+        // Dry run doesn't need a transaction — just validate and count.
+        let mut stats = ImportStats::default();
+        tracing::info!("[dry-run] Would import {} users...", data.users.len());
+        stats.users_skipped = data.users.len() as u64;
+        tracing::info!("[dry-run] Would import {} categories...", data.categories.len());
+        stats.categories_skipped = data.categories.len() as u64;
+        tracing::info!("[dry-run] Would import {} topics...", data.topics.len());
+        stats.topics_skipped = data.topics.len() as u64;
+        tracing::info!("[dry-run] Would import {} posts...", data.posts.len());
+        stats.posts_skipped = data.posts.len() as u64;
+        return Ok(stats);
+    }
+
+    // Begin the main import transaction.
+    let mut tx = pool.begin().await.context("begin import transaction")?;
 
     let mut stats = ImportStats::default();
 
     // Phase 1: Users
     tracing::info!("Importing {} users...", data.users.len());
     for user in &data.users {
-        if dry_run {
-            tracing::debug!("[dry-run] Would import user {} ({})", user.uid, user.username);
-            stats.users_skipped += 1;
-            continue;
-        }
-        match import_user(pool, user).await {
+        match import_user(&mut tx, user).await {
             Ok(inserted) => {
                 if inserted {
                     stats.users_inserted += 1;
@@ -83,12 +98,7 @@ pub async fn run_import(pool: &PgPool, data: &ImportFile, dry_run: bool, force: 
     // Phase 2: Categories
     tracing::info!("Importing {} categories...", data.categories.len());
     for cat in &data.categories {
-        if dry_run {
-            tracing::debug!("[dry-run] Would import category {} ({})", cat.cid, cat.name);
-            stats.categories_skipped += 1;
-            continue;
-        }
-        match import_category(pool, cat).await {
+        match import_category(&mut tx, cat).await {
             Ok(inserted) => {
                 if inserted {
                     stats.categories_inserted += 1;
@@ -106,12 +116,7 @@ pub async fn run_import(pool: &PgPool, data: &ImportFile, dry_run: bool, force: 
     // Phase 3: Topics
     tracing::info!("Importing {} topics...", data.topics.len());
     for topic in &data.topics {
-        if dry_run {
-            tracing::debug!("[dry-run] Would import topic {}", topic.tid);
-            stats.topics_skipped += 1;
-            continue;
-        }
-        match import_topic(pool, topic).await {
+        match import_topic(&mut tx, topic).await {
             Ok(inserted) => {
                 if inserted {
                     stats.topics_inserted += 1;
@@ -129,12 +134,7 @@ pub async fn run_import(pool: &PgPool, data: &ImportFile, dry_run: bool, force: 
     // Phase 4: Posts
     tracing::info!("Importing {} posts...", data.posts.len());
     for post in &data.posts {
-        if dry_run {
-            tracing::debug!("[dry-run] Would import post {}", post.pid);
-            stats.posts_skipped += 1;
-            continue;
-        }
-        match import_post(pool, post).await {
+        match import_post(&mut tx, post).await {
             Ok(inserted) => {
                 if inserted {
                     stats.posts_inserted += 1;
@@ -150,28 +150,29 @@ pub async fn run_import(pool: &PgPool, data: &ImportFile, dry_run: bool, force: 
     }
 
     // Phase 5: Notifications (one per unique user)
-    if !dry_run {
-        let mut imported_users: Vec<i64> = data.users.iter().map(|u| u.uid).collect();
-        imported_users.dedup();
-        tracing::info!("Creating import notifications for {} users...", imported_users.len());
-        for uid in &imported_users {
-            match create_import_notification(pool, *uid).await {
-                Ok(()) => stats.notifications_created += 1,
-                Err(e) => tracing::warn!("Notification for user {}: {}", uid, e),
-            }
+    let mut imported_users: Vec<i64> = data.users.iter().map(|u| u.uid).collect();
+    imported_users.dedup();
+    tracing::info!("Creating import notifications for {} users...", imported_users.len());
+    for uid in &imported_users {
+        match create_import_notification(&mut tx, *uid).await {
+            Ok(()) => stats.notifications_created += 1,
+            Err(e) => tracing::warn!("Notification for user {}: {}", uid, e),
         }
     }
+
+    // Commit the entire import as a single atomic operation.
+    tx.commit().await.context("commit import transaction")?;
 
     Ok(stats)
 }
 
 /// Import a single user. Returns true if inserted, false if skipped (duplicate).
-async fn import_user(pool: &PgPool, user: &crate::schema::ImportUser) -> Result<bool> {
+async fn import_user(tx: &mut Transaction<'_, Postgres>, user: &crate::schema::ImportUser) -> Result<bool> {
     let row = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)",
     )
     .bind(user.uid)
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await
     .context("check user exists")?;
 
@@ -196,7 +197,7 @@ async fn import_user(pool: &PgPool, user: &crate::schema::ImportUser) -> Result<
     .bind(created_at)
     .bind(last_active)
     .bind(is_banned)
-    .execute(pool)
+    .execute(&mut **tx)
     .await
     .context("insert user")?;
 
@@ -204,12 +205,12 @@ async fn import_user(pool: &PgPool, user: &crate::schema::ImportUser) -> Result<
 }
 
 /// Import a single category. Returns true if inserted, false if skipped.
-async fn import_category(pool: &PgPool, cat: &crate::schema::ImportCategory) -> Result<bool> {
+async fn import_category(tx: &mut Transaction<'_, Postgres>, cat: &crate::schema::ImportCategory) -> Result<bool> {
     let row = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM forum_categories WHERE id = $1)",
     )
     .bind(cat.cid)
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await
     .context("check category exists")?;
 
@@ -234,7 +235,7 @@ async fn import_category(pool: &PgPool, cat: &crate::schema::ImportCategory) -> 
     .bind(cat.description.as_deref().unwrap_or(""))
     .bind(position)
     .bind(is_mod_only)
-    .execute(pool)
+    .execute(&mut **tx)
     .await
     .context("insert category")?;
 
@@ -242,12 +243,12 @@ async fn import_category(pool: &PgPool, cat: &crate::schema::ImportCategory) -> 
 }
 
 /// Import a single topic. Returns true if inserted, false if skipped.
-async fn import_topic(pool: &PgPool, topic: &crate::schema::ImportTopic) -> Result<bool> {
+async fn import_topic(tx: &mut Transaction<'_, Postgres>, topic: &crate::schema::ImportTopic) -> Result<bool> {
     let row = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM forum_topics WHERE id = $1)",
     )
     .bind(topic.tid)
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await
     .context("check topic exists")?;
 
@@ -287,7 +288,7 @@ async fn import_topic(pool: &PgPool, topic: &crate::schema::ImportTopic) -> Resu
     .bind(updated_at)
     .bind(is_hidden)
     .bind(slug)
-    .execute(pool)
+    .execute(&mut **tx)
     .await
     .context("insert topic")?;
 
@@ -295,12 +296,12 @@ async fn import_topic(pool: &PgPool, topic: &crate::schema::ImportTopic) -> Resu
 }
 
 /// Import a single post. Returns true if inserted, false if skipped.
-async fn import_post(pool: &PgPool, post: &crate::schema::ImportPost) -> Result<bool> {
+async fn import_post(tx: &mut Transaction<'_, Postgres>, post: &crate::schema::ImportPost) -> Result<bool> {
     let row = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM forum_posts WHERE id = $1)",
     )
     .bind(post.pid)
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await
     .context("check post exists")?;
 
@@ -327,7 +328,7 @@ async fn import_post(pool: &PgPool, post: &crate::schema::ImportPost) -> Result<
     .bind(edited_at)
     .bind(is_deleted.then(|| created_at))
     .bind(created_at)
-    .execute(pool)
+    .execute(&mut **tx)
     .await
     .context("insert post")?;
 
@@ -335,14 +336,14 @@ async fn import_post(pool: &PgPool, post: &crate::schema::ImportPost) -> Result<
 }
 
 /// Create an import notification for a user. Uses `notifications` table (NOT `forum_notifications`).
-async fn create_import_notification(pool: &PgPool, user_id: i64) -> Result<()> {
+async fn create_import_notification(tx: &mut Transaction<'_, Postgres>, user_id: i64) -> Result<()> {
     sqlx::query(
         "INSERT INTO notifications (user_id, notification_type, title, body, link, is_read, created_at)
          VALUES ($1, 'forum_import', 'Forum Import Complete', 'Your NodeBB content has been imported.', '/forum', true, NOW())
          ON CONFLICT DO NOTHING",
     )
     .bind(user_id)
-    .execute(pool)
+    .execute(&mut **tx)
     .await
     .context("insert import notification")?;
     Ok(())
@@ -360,7 +361,7 @@ mod tests {
     /// Set DATABASE_URL to run these tests.
     fn test_db_url() -> String {
         std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/fichub_test".into())
+            .unwrap_or_else(|_| "postgres://postgres:***@localhost:5432/fichub_test".into())
     }
 
     async fn test_pool() -> PgPool {
