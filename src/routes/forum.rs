@@ -3012,6 +3012,14 @@ pub async fn create_post(
 
     award_post_exp(&state.db, user_id, post_id).await;
 
+    // Check for newly unlocked achievements (best-effort)
+    let _ = crate::services::progression::check_and_unlock_achievements(
+        &state.db,
+        user_id,
+        "post_created",
+    )
+    .await;
+
     // Publish a realtime event to the topic channel so connected clients
     // (WS/SSE) receive the new reply immediately.
     let _ = crate::realtime::publish_event(
@@ -3717,6 +3725,14 @@ pub async fn react_to_post(
     // not on toggle cycles (un-react/re-react). This prevents XP farming.
     if is_new_reaction {
         award_reaction_exp(&state.db, user_id, post_id).await;
+
+        // Check for newly unlocked achievements (best-effort)
+        let _ = crate::services::progression::check_and_unlock_achievements(
+            &state.db,
+            user_id,
+            "reaction_given",
+        )
+        .await;
     }
 
     // Return updated reactions for this post

@@ -441,6 +441,14 @@ pub async fn send_message(
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+    // Check for newly unlocked achievements (best-effort)
+    let _ = crate::services::progression::check_and_unlock_achievements(
+        &state.db,
+        sender_id,
+        "message_sent",
+    )
+    .await;
+
     // Notifications after commit (best-effort per recipient, forum.rs precedent).
     let link = format!("/messages/{}", room_id);
     for member_id in &members {

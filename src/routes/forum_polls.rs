@@ -340,6 +340,15 @@ pub async fn vote_on_poll(
 
     // Award XP for poll vote
     crate::routes::forum::award_poll_vote_exp(&state.db, user_id, poll_id).await;
+
+    // Check for newly unlocked achievements (best-effort)
+    let _ = crate::services::progression::check_and_unlock_achievements(
+        &state.db,
+        user_id,
+        "poll_voted",
+    )
+    .await;
+
     Ok(Json(json!({ "err": 0, "voted": true, "option_id": body.option_id })))
 }
 
