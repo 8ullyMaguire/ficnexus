@@ -149,7 +149,7 @@ pub async fn list_groups(
     let limit = q.limit.unwrap_or(25).clamp(1, 100);
     let cursor = q.cursor.unwrap_or(i64::MAX);
     let caller_uid = auth.user_id.unwrap_or(0);
-    let caller_role = auth.role;
+    let caller_role = auth.trust_level;
     let caller_level = auth.level;
     let is_staff = caller_level >= crate::routes::forum::admin_level()
         || caller_role >= 10;
@@ -386,7 +386,7 @@ pub async fn create_group(
     crate::services::trust::assert_staff_or_min_trust(
         &state.db,
         Some(user_id),
-        auth.role,
+        auth.trust_level,
         PUBLISH_MIN_TRUST,
         "create forum group",
     )
@@ -696,7 +696,7 @@ pub async fn list_group_members(
     if is_private {
         let caller = auth.user_id;
         let is_staff =
-            auth.level >= admin_level() || auth.role == 2 || caller == Some(owner as i32);
+            auth.level >= admin_level() || auth.trust_level == 2 || caller == Some(owner as i32);
         if !is_staff {
             let member: Option<(i32,)> = if let Some(uid) = caller {
                 sqlx::query_as(

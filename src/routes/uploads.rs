@@ -183,7 +183,7 @@ fn upload_token() -> String {
 }
 
 fn is_staff(auth: &AuthUser) -> bool {
-    auth.level >= 50 || auth.role >= 10
+    auth.level >= 50 || auth.trust_level >= 5
 }
 /// POST /api/uploads — multipart field `file`.
 pub async fn upload_image(

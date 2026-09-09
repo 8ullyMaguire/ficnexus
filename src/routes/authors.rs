@@ -177,7 +177,7 @@ pub async fn update_author_profile(
     Path(id): Path<i32>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 5 {
+    if user.trust_level < 3 {
         return Err(AppError::Forbidden("Curator access required".into()));
     }
 
@@ -526,7 +526,7 @@ pub async fn propose_merge(
     user: AuthUser,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 5 {
+    if user.trust_level < 3 {
         return Err(AppError::Forbidden("Curator access required".into()));
     }
 
@@ -548,7 +548,7 @@ pub async fn propose_merge(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    if auto_approve && user.role >= 10 {
+    if auto_approve && user.trust_level >= 5 {
         // Admin auto-approve: create link directly
         sqlx::query(
             "INSERT INTO author_profile_links (profile_id, source_author, source_url, source_id) VALUES ($1, $2, $3, $4) ON CONFLICT (source_url) DO NOTHING",
@@ -581,7 +581,7 @@ pub async fn pending_merges(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 5 {
+    if user.trust_level < 3 {
         return Err(AppError::Forbidden("Curator access required".into()));
     }
 
@@ -628,7 +628,7 @@ pub async fn approve_merge(
     user: AuthUser,
     Path(proposal_id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 5 {
+    if user.trust_level < 3 {
         return Err(AppError::Forbidden("Curator access required".into()));
     }
 
@@ -668,7 +668,7 @@ pub async fn reject_merge(
     user: AuthUser,
     Path(proposal_id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 5 {
+    if user.trust_level < 3 {
         return Err(AppError::Forbidden("Curator access required".into()));
     }
 
@@ -735,7 +735,7 @@ mod tests {
             role: 0,
             level: 0,
         };
-        assert!(user.role < 5, "Reader should not pass curator check");
+        assert!(user.trust_level < 3, "Reader should not pass curator check");
 
         let curator = AuthUser {
             user_id: Some(2),
@@ -743,7 +743,7 @@ mod tests {
             role: 5,
             level: 50,
         };
-        assert!(curator.role >= 5, "Curator should pass curator check");
+        assert!(curator.trust_level >= 5, "Curator should pass curator check");
 
         let admin = AuthUser {
             user_id: Some(3),
@@ -751,7 +751,7 @@ mod tests {
             role: 10,
             level: 100,
         };
-        assert!(admin.role >= 10, "Admin should pass admin check");
+        assert!(admin.trust_level >= 10, "Admin should pass admin check");
     }
 
     #[test]
@@ -763,7 +763,7 @@ mod tests {
             role: 10,
             level: 100,
         };
-        assert!(admin.role >= 10);
+        assert!(admin.trust_level >= 10);
 
         let curator = AuthUser {
             user_id: Some(2),
@@ -771,7 +771,7 @@ mod tests {
             role: 5,
             level: 50,
         };
-        assert!(!(curator.role >= 10));
+        assert!(!(curator.trust_level >= 10));
     }
 
     #[test]

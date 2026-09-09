@@ -404,7 +404,7 @@ pub async fn get_collection_handler(
                 .collect();
 
             let is_owner = viewer_id == Some(c.user_id);
-            let is_curator = auth.role >= 5;
+            let is_curator = auth.trust_level >= 3;
 
             Ok(Json(json!({
                 "err": 0,
@@ -461,7 +461,7 @@ async fn pub_get_collection_handler(
                 .collect();
 
             let is_owner = viewer_id == Some(c.user_id);
-            let is_curator = auth.role >= 5;
+            let is_curator = auth.trust_level >= 3;
 
             Ok(Json(json!({
                 "err": 0,
@@ -483,7 +483,7 @@ pub async fn update_collection_handler(
     Json(body): Json<UpdateCollectionBody>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let is_curator = auth.role >= 5;
+    let is_curator = auth.trust_level >= 3;
 
     let current = queries::get_collection(&state.db, id, Some(user_id)).await?;
     let current = match current {
@@ -579,7 +579,7 @@ pub async fn delete_collection_handler(
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let is_curator = auth.role >= 5;
+    let is_curator = auth.trust_level >= 3;
 
     let removed = queries::delete_collection(&state.db, id, user_id, is_curator).await?;
     if !removed {
@@ -600,7 +600,7 @@ pub async fn add_collection_item_handler(
     Json(body): Json<AddItemBody>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let is_curator = auth.role >= 5;
+    let is_curator = auth.trust_level >= 3;
 
     let col = queries::get_collection(&state.db, id, Some(user_id)).await?;
     let col = match col {
@@ -682,7 +682,7 @@ pub async fn remove_collection_item_handler(
     Path((id, work_id)): Path<(i32, i32)>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let is_curator = auth.role >= 5;
+    let is_curator = auth.trust_level >= 3;
 
     let col = queries::get_collection(&state.db, id, Some(user_id)).await?;
     let col = match col {
@@ -764,7 +764,7 @@ pub async fn list_collection_item_requests_handler(
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let is_curator = auth.role >= 5;
+    let is_curator = auth.trust_level >= 3;
 
     let col = queries::get_collection(&state.db, id, Some(user_id)).await?;
     let col = match col {
@@ -813,7 +813,7 @@ pub async fn approve_collection_item_handler(
     Path((id, req_id)): Path<(i32, i64)>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let is_curator = auth.role >= 5;
+    let is_curator = auth.trust_level >= 3;
 
     let col = queries::get_collection(&state.db, id, Some(user_id)).await?;
     let col = match col {
@@ -842,7 +842,7 @@ pub async fn reject_collection_item_handler(
     Path((id, req_id)): Path<(i32, i64)>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let is_curator = auth.role >= 5;
+    let is_curator = auth.trust_level >= 3;
 
     let col = queries::get_collection(&state.db, id, Some(user_id)).await?;
     let col = match col {
@@ -946,7 +946,7 @@ pub async fn curator_approvals_handler(
     Query(q): Query<ApprovalsQuery>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    if auth.role < 5 {
+    if auth.trust_level < 3 {
         return Err(AppError::Forbidden("Curator access required".to_string()));
     }
 
@@ -1461,7 +1461,7 @@ pub async fn challenge_assign_handler(
     let col = queries::get_collection(&state.db, id, Some(uid))
         .await?
         .ok_or_else(|| AppError::NotFound("Collection not found".into()))?;
-    if col.user_id != uid && auth.role < 5 {
+    if col.user_id != uid && auth.trust_level < 3 {
         return Err(AppError::Forbidden("Owner/curator only".into()));
     }
     let cid: Option<i32> = sqlx::query_scalar("SELECT id FROM challenges WHERE collection_id=$1")

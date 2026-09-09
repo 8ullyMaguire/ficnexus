@@ -575,7 +575,7 @@ async fn require_trust_queue(state: &AppState, auth: &AuthUser) -> Result<i16, A
     let level = crate::services::trust::assert_staff_or_min_trust(
         &state.db,
         Some(uid),
-        auth.role,
+        auth.trust_level,
         queue_min_trust(state),
         "moderation queue access",
     )
@@ -589,7 +589,7 @@ async fn require_trust_resolve(state: &AppState, auth: &AuthUser) -> Result<i16,
     let level = crate::services::trust::assert_staff_or_min_trust(
         &state.db,
         Some(uid),
-        auth.role,
+        auth.trust_level,
         resolve_min_trust(state),
         "report resolution",
     )
@@ -627,7 +627,7 @@ pub(crate) async fn check_category_priv(
         db,
         Some(user_id),
         auth.level,
-        auth.role,
+        auth.trust_level,
         category_id,
         privilege,
     )
@@ -643,7 +643,7 @@ pub(crate) async fn check_category_priv(
 /// default 10s) per user, measured from their most recent topic or post.
 /// Staff (role ≥ 10) always passes. Returns the seconds the user must wait.
 async fn check_flood(state: &AppState, auth: &AuthUser) -> Result<(), AppError> {
-    if auth.role >= 10 {
+    if auth.trust_level >= 5 {
         return Ok(());
     }
     let delay = state.config.forum_post_delay_secs.max(0);
@@ -770,8 +770,8 @@ pub async fn moderation_status(
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
     let trust_level = crate::services::trust::fetch_trust_level(&state.db, Some(user_id)).await;
-    let can_queue = trust_level >= queue_min_trust(&state) || auth.role >= 10;
-    let can_resolve = trust_level >= resolve_min_trust(&state) || auth.role >= 10;
+    let can_queue = trust_level >= queue_min_trust(&state) || auth.trust_level >= 5;
+    let can_resolve = trust_level >= resolve_min_trust(&state) || auth.trust_level >= 5;
     let (used, cap) = daily_mod_usage(&state, user_id).await?;
     let day_end = Utc::now().date_naive().and_hms_opt(23, 59, 59).map(|t| {
         chrono::DateTime::<Utc>::from_naive_utc_and_offset(t, Utc).to_rfc3339()
@@ -2265,7 +2265,7 @@ pub async fn topic_detail(
     // and staff (who need to preview). 404-shape to avoid leaking existence.
     if topic_scheduled_at.is_some() {
         let viewer = auth.user_id.unwrap_or(0);
-        let staff = auth.level >= 50 || auth.role >= 10;
+        let staff = auth.level >= 50 || auth.trust_level >= 5;
         if !staff && viewer != topic_author_id {
             return Err(AppError::BadRequest("topic not found".to_string()));
         }

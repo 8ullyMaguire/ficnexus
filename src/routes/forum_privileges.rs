@@ -65,7 +65,7 @@ pub async fn can(
 }
 
 fn require_admin(auth: &AuthUser) -> Result<(), AppError> {
-    if auth.level >= admin_level() || auth.role >= 10 {
+    if auth.level >= admin_level() || auth.trust_level >= 5 {
         Ok(())
     } else {
         Err(AppError::Forbidden("admin only".into()))

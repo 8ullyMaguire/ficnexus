@@ -138,7 +138,7 @@ async fn check_dm_flood(
     auth: &AuthUser,
     sender_id: i32,
 ) -> Result<(), AppError> {
-    if auth.role >= 10 {
+    if auth.trust_level >= 5 {
         return Ok(());
     }
     let delay = state.config.forum_post_delay_secs.max(0);

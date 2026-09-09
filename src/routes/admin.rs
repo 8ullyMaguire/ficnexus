@@ -45,7 +45,7 @@ pub async fn mod_queue(
     user: AuthUser,
     Query(params): Query<PageParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -105,7 +105,7 @@ pub async fn approve_upload(
     user: AuthUser,
     Path(work_id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -207,7 +207,7 @@ pub async fn reject_upload(
     user: AuthUser,
     Path(work_id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -241,7 +241,7 @@ pub async fn scraper_health(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -298,7 +298,7 @@ pub async fn admin_users(
     user: AuthUser,
     Query(params): Query<AdminUserParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -355,7 +355,7 @@ pub async fn set_user_role(
     Path(user_id): Path<i32>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -392,7 +392,7 @@ pub async fn toggle_ban(
     Path(user_id): Path<i32>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -442,7 +442,7 @@ pub async fn rep_award_handler(
     auth: AuthUser,
     Json(req): Json<RepAwardReq>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.role < 10 {
+    if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let admin_id = auth
@@ -503,7 +503,7 @@ pub async fn admin_list_translations(
     user: AuthUser,
     Query(params): Query<TranslationListParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -578,7 +578,7 @@ pub async fn admin_approve_translation(
     user: AuthUser,
     Path(translation_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -625,7 +625,7 @@ pub async fn admin_reject_translation(
     user: AuthUser,
     Path(translation_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -673,7 +673,7 @@ pub async fn admin_edit_translation(
     Path(translation_id): Path<i64>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -729,7 +729,7 @@ pub async fn admin_rating_checks(
     user: AuthUser,
     Query(params): Query<PageParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -802,7 +802,7 @@ pub async fn admin_verify_rating(
     Path(work_id): Path<i32>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -876,7 +876,7 @@ pub async fn admin_fix_tag_score(
     Path(tag_id): Path<i32>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -950,7 +950,7 @@ pub async fn admin_stats(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -1007,7 +1007,7 @@ pub async fn admin_bots(
     user: AuthUser,
     Query(params): Query<BotParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -1092,7 +1092,7 @@ pub async fn admin_bot_shadowban(
     user: AuthUser,
     Path(client_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     if client_id.is_empty() || client_id == "anon" {
@@ -1114,7 +1114,7 @@ pub async fn admin_bot_unshadowban(
     user: AuthUser,
     Path(client_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     if client_id.is_empty() || client_id == "anon" {
@@ -1142,7 +1142,7 @@ pub async fn admin_search_analytics(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -1222,7 +1222,7 @@ pub async fn admin_realtime(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -1299,7 +1299,7 @@ pub async fn admin_roadmap_consensus(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -1364,7 +1364,7 @@ pub async fn moderation_comments(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -1438,7 +1438,7 @@ pub async fn blacklist_fic(
     user: AuthUser,
     Json(body): Json<FicBlacklistBody>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     if body.url_id.trim().is_empty() {
@@ -1477,7 +1477,7 @@ pub async fn blacklist_author(
     user: AuthUser,
     Json(body): Json<AuthorBlacklistBody>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let reason = body.reason.unwrap_or(5);
@@ -1516,7 +1516,7 @@ pub async fn list_blacklist(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -1554,7 +1554,7 @@ pub async fn admin_hide_comment(
     user: AuthUser,
     Path(comment_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -1595,7 +1595,7 @@ pub async fn admin_delete_comment(
     user: AuthUser,
     Path(comment_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -1661,7 +1661,7 @@ pub async fn update_work_metadata(
     Path(work_id): Path<i32>,
     Json(body): Json<WorkMetadataBody>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -1755,7 +1755,7 @@ pub async fn list_content_scan(
     user: AuthUser,
     Query(params): Query<ContentScanParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let per_page = params.per_page.unwrap_or(50).max(1).min(200);
@@ -1809,7 +1809,7 @@ pub async fn run_content_scan(
     user: AuthUser,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let limit = body
@@ -1837,7 +1837,7 @@ pub async fn review_content_scan(
     Json(body): Json<ContentScanReviewBody>,
 ) -> Result<Json<Value>, AppError> {
     // Curators (role >= 5) and admins (role >= 10) can review
-    if user.role < 5 {
+    if user.trust_level < 3 {
         return Err(AppError::Forbidden("Curator access required".into()));
     }
     let action = body.action.as_str();
@@ -1905,7 +1905,7 @@ pub async fn search_mining(
     user: AuthUser,
     Query(params): Query<SearchMiningParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let days = params.days.unwrap_or(30).max(1).min(365);
@@ -1946,7 +1946,7 @@ pub async fn run_embedding_dedupe(
     user: AuthUser,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let threshold = body
@@ -1981,7 +1981,7 @@ pub async fn admin_approve_chapter_translation_version(
     user: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let admin_id = user
@@ -2004,7 +2004,7 @@ pub async fn admin_reject_chapter_translation_version(
     user: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let admin_id = user
@@ -2027,7 +2027,7 @@ pub async fn admin_backfill_tags(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -2077,7 +2077,7 @@ pub async fn admin_backfill_bodies(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 

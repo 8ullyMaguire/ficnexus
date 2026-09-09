@@ -201,7 +201,7 @@ pub async fn me_handler(auth: AuthUser) -> Result<Json<Value>, AppError> {
             "user": {
                 "id": id,
                 "username": auth.username,
-                "role": auth.role,
+                "role": auth.trust_level,
             }
         }))),
         None => Ok(Json(json!({ "err": 401, "msg": "Not authenticated" }))),
@@ -224,7 +224,7 @@ pub async fn refresh_handler(
     }
 
     let user = sqlx::query_as::<_, (i32, String, i16, i32, Option<String>, i16, i64)>(
-        "SELECT id, username, role, reputation, email, level, exp FROM users WHERE id = $1",
+        "SELECT id, username, trust_level, reputation, email, level, exp FROM users WHERE id = $1",
     )
     .bind(claims.sub)
     .fetch_optional(&state.db)
@@ -234,7 +234,7 @@ pub async fn refresh_handler(
     let user = auth::User {
         id: user.0,
         username: user.1,
-        role: user.2,
+        trust_level: user.2,
         reputation: user.3,
         email: user.4,
         level: user.5,

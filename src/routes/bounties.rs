@@ -118,7 +118,7 @@ pub async fn resolve_bounty_handler(
     Path(pot_id): Path<i32>,
     Json(req): Json<ResolveBountyReq>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.role < 10 {
+    if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let resolver_id = auth

@@ -12,7 +12,7 @@
 //! - `POST /api/admin/auto-tag/dismiss/{url_id}/{tag_id}` — delete the
 //!   suggestion row.
 //!
-//! All handlers gate on `user.role >= 10` (same guard as `src/routes/admin.rs`).
+//! All handlers gate on `user.trust_level >= 5` (same guard as `src/routes/admin.rs`).
 
 use std::sync::Arc;
 
@@ -39,7 +39,7 @@ pub async fn auto_tag_fic(
     user: AuthUser,
     Json(req): Json<AutoTagRequest>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let url_id = req.url_id.trim().to_string();
@@ -82,7 +82,7 @@ pub async fn auto_tag_backfill(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -114,7 +114,7 @@ pub async fn auto_tag_queue(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -172,7 +172,7 @@ pub async fn auto_tag_approve(
     user: AuthUser,
     Path((url_id, tag_id)): Path<(String, i32)>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -209,7 +209,7 @@ pub async fn auto_tag_dismiss(
     user: AuthUser,
     Path((url_id, tag_id)): Path<(String, i32)>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 

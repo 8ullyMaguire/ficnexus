@@ -63,7 +63,7 @@ pub async fn create_report(
 
     // Trust sandbox: TL0 (brand-new) may read but may not flag — flags carry
     // trust-weighted value, so a guest account must first engage.
-    trust::assert_staff_or_min_trust(&state.db, Some(reporter_id), auth.role, 1, "Filing reports")
+    trust::assert_staff_or_min_trust(&state.db, Some(reporter_id), auth.trust_level, 1, "Filing reports")
         .await?;
     let reporter_trust = trust::fetch_trust_level(&state.db, Some(reporter_id)).await;
     let weight = flag_weight(reporter_trust);
@@ -262,7 +262,7 @@ pub async fn list_reports(
     user: AuthUser,
     Query(params): Query<ReportQuery>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -411,7 +411,7 @@ pub async fn resolve_report(
     Json(body): Json<ResolveReportBody>,
 ) -> Result<Json<Value>, AppError> {
     // Admins always; Community Moderators (TL5+) may also resolve reports.
-    let is_admin = user.role >= 10;
+    let is_admin = user.trust_level >= 5;
     if !is_admin {
         trust::assert_min_trust(
             &state.db,

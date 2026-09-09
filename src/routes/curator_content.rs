@@ -26,7 +26,7 @@ pub(crate) fn require_curator(user: &AuthUser) -> AppResult<i32> {
     let uid = user
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Curator access required".to_string()));
     }
     Ok(uid)

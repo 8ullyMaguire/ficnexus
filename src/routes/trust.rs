@@ -57,7 +57,7 @@ pub async fn admin_trust(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.role < 10 {
+    if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin only".into()));
     }
     let distribution: Vec<(i16, i64)> = sqlx::query_as(
@@ -82,7 +82,7 @@ pub async fn admin_set_trust(
     Path(user_id): Path<i32>,
     Json(body): Json<SetTrustBody>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.role < 10 {
+    if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin only".into()));
     }
     let reason = body.reason.unwrap_or_else(|| "admin override".into());
@@ -106,7 +106,7 @@ pub async fn admin_digest(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.role < 10 {
+    if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin only".into()));
     }
     let contested: Vec<(i64, String, String, String)> = sqlx::query_as(

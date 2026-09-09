@@ -243,7 +243,7 @@ pub async fn delete_list_handler(
     Path(list_id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    let is_curator = auth.role >= 5;
+    let is_curator = auth.trust_level >= 3;
 
     let removed = queries::delete_reading_list(&state.db, list_id, user_id, is_curator).await?;
     if !removed {
@@ -264,7 +264,7 @@ pub async fn add_item_handler(
     // Owner or curator may add items.
     let list = queries::get_reading_list(&state.db, list_id, user_id, false).await?;
     let is_owner = list.is_some();
-    let is_curator = auth.role >= 5;
+    let is_curator = auth.trust_level >= 3;
     if !is_owner && !is_curator {
         return Err(AppError::NotFound("Reading list not found".into()));
     }
@@ -315,7 +315,7 @@ pub async fn remove_item_handler(
 
     let list = queries::get_reading_list(&state.db, list_id, user_id, false).await?;
     let is_owner = list.is_some();
-    let is_curator = auth.role >= 5;
+    let is_curator = auth.trust_level >= 3;
     if !is_owner && !is_curator {
         return Err(AppError::NotFound("Reading list not found".into()));
     }

@@ -113,7 +113,7 @@ pub async fn ingest_docs(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 

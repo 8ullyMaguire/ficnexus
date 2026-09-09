@@ -198,7 +198,7 @@ pub async fn endpoint_usage_handler(
     if auth.user_id.is_none() {
         return Err(AppError::Unauthorized("Login required".to_string()));
     }
-    if auth.role < 10 {
+    if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".to_string()));
     }
     let days: i32 = params
@@ -235,7 +235,7 @@ pub async fn admin_analytics_handler(
     if auth.user_id.is_none() {
         return Err(AppError::Unauthorized("Login required".to_string()));
     }
-    if auth.role < 10 {
+    if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".to_string()));
     }
 

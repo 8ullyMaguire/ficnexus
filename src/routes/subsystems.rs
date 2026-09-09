@@ -67,7 +67,7 @@ fn require_user(auth: &AuthUser) -> Result<i32, AppError> {
 /// Require curator (role ≥ 5); 403 otherwise (also requires login → 401).
 fn require_mod(auth: &AuthUser) -> Result<i32, AppError> {
     let uid = require_user(auth)?;
-    if auth.role < 5 {
+    if auth.trust_level < 3 {
         return Err(AppError::Forbidden("Moderator access required".to_string()));
     }
     Ok(uid)

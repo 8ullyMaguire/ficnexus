@@ -56,7 +56,7 @@ pub async fn post_delete_request(
     let uploader_id: Option<i32> = row.get("uploader_id");
 
     // Curator or admin (role >= 10) or the work's own uploader deletes now.
-    if user.role >= 10 || uploader_id == Some(user_id) {
+    if user.trust_level >= 5 || uploader_id == Some(user_id) {
         sqlx::query("DELETE FROM works WHERE id = $1")
             .bind(work_id)
             .execute(&state.db)
@@ -72,7 +72,7 @@ pub async fn post_delete_request(
             serde_json::json!({
                 "effected_immediately": true,
                 "actor_level": user.level,
-                "actor_role": user.role,
+                "actor_role": user.trust_level,
             }),
         )
         .await;

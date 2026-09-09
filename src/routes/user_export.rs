@@ -340,7 +340,7 @@ pub async fn user_export_handler(
     let comments = collect_comments(&state, user_id).await?;
     let follows = collect_follows(&state, user_id).await?;
     let reputation = collect_reputation(&state, user_id).await?;
-    let stats = collect_user_stats(&state, user_id, &username, auth.role).await?;
+    let stats = collect_user_stats(&state, user_id, &username, auth.trust_level).await?;
     let progress = collect_progress(&state, user_id).await?;
 
     // ── Assemble the archive ──────────────────────────────────────────

@@ -537,7 +537,7 @@ pub async fn strategies_handler(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -604,7 +604,7 @@ pub async fn train_handler(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let results = crate::recommender::worker::run_training_pipeline(

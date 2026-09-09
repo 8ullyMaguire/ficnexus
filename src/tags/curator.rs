@@ -21,7 +21,7 @@ fn require_curator(user: &AuthUser) -> AppResult<()> {
     if user.user_id.is_none() {
         return Err(AppError::Unauthorized("Login required".to_string()));
     }
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Curator access required".to_string()));
     }
     Ok(())

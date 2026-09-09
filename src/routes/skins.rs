@@ -188,7 +188,7 @@ pub async fn create_skin(
         trust::assert_staff_or_min_trust(
             &state.db,
             Some(uid),
-            auth.role,
+            auth.trust_level,
             trust::PUBLISH_MIN_TRUST,
             "Publishing skins",
         )
@@ -212,7 +212,7 @@ pub async fn update_skin(
         .bind(id)
         .fetch_optional(&state.db)
         .await?;
-    if owner != Some(uid) && auth.role < 5 {
+    if owner != Some(uid) && auth.trust_level < 3 {
         return Err(AppError::NotFound("Skin not found".into()));
     }
     if let Some(t) = body.title {
@@ -257,7 +257,7 @@ pub async fn delete_skin(
         .bind(id)
         .fetch_optional(&state.db)
         .await?;
-    if owner != Some(uid) && auth.role < 10 {
+    if owner != Some(uid) && auth.trust_level < 5 {
         return Err(AppError::NotFound("Skin not found".into()));
     }
     sqlx::query("DELETE FROM skins WHERE id=$1")

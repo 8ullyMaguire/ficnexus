@@ -46,7 +46,7 @@ pub async fn bulk_refresh(
     user: AuthUser,
     Json(req): Json<BulkRequest>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -71,7 +71,7 @@ pub async fn bulk_auto_tag(
     user: AuthUser,
     Json(req): Json<BulkRequest>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -97,7 +97,7 @@ pub async fn search_fics_for_admin(
     user: AuthUser,
     Query(params): Query<FicSearchQuery>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 

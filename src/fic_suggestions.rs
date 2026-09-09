@@ -464,7 +464,7 @@ pub async fn remove_suggestion(
         return Ok(Json(json!({ "err": -5, "msg": "suggestion not found" })));
     };
 
-    if auth.role < 10 && Some(user_id) != sug_user_id {
+    if auth.trust_level < 5 && Some(user_id) != sug_user_id {
         return Err(AppError::Forbidden("not your suggestion".into()));
     }
 

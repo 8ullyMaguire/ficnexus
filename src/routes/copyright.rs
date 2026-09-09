@@ -83,7 +83,7 @@ pub async fn list_notices(
     State(state): State<Arc<AppState>>,
     auth: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if auth.role < 10 {
+    if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let rows: Vec<Value> = sqlx::query_as::<
@@ -148,7 +148,7 @@ pub async fn action_notice(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.role < 10 {
+    if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let work_url_id: Option<String> = sqlx::query_scalar(
@@ -204,7 +204,7 @@ pub async fn reject_notice(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.role < 10 {
+    if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let n = sqlx::query(

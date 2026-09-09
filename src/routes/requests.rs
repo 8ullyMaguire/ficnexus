@@ -403,7 +403,7 @@ pub async fn delete_request(
     let user_id = auth
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
-    let role = auth.role;
+    let role = auth.trust_level;
     let req_row: Option<(i32,)> =
         sqlx::query_as("SELECT user_id FROM fic_requests WHERE id = $1 AND deleted_at IS NULL")
             .bind(id)
@@ -604,7 +604,7 @@ pub async fn delete_answer(
     let user_id = auth
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
-    let role = auth.role;
+    let role = auth.trust_level;
     let row: Option<(i32,)> = sqlx::query_as(
         "SELECT user_id FROM fic_request_answers WHERE id = $1 AND request_id = $2 AND deleted_at IS NULL",
     )

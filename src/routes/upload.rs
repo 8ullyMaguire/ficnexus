@@ -292,7 +292,7 @@ pub async fn handle_fic_update(
         .ok_or_else(|| AppError::NotFound("Work not found".into()))?;
 
     // Only allow if user is admin/curator (role >= 10) or the uploader
-    if user.role < 10 && work.uploader_id != Some(user_id) {
+    if user.trust_level < 5 && work.uploader_id != Some(user_id) {
         return Err(AppError::Forbidden(
             "Only the uploader or a curator can update this fic".into(),
         ));
@@ -398,7 +398,7 @@ pub async fn handle_fic_delete(
         .ok_or_else(|| AppError::NotFound("Work not found".into()))?;
 
     // Only allow if user is admin/curator (role >= 10) or the uploader
-    if user.role < 10 && work.uploader_id != Some(user_id) {
+    if user.trust_level < 5 && work.uploader_id != Some(user_id) {
         return Err(AppError::Forbidden(
             "Only the uploader or a curator can delete this fic".into(),
         ));

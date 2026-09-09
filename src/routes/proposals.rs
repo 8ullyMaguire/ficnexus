@@ -193,7 +193,7 @@ pub async fn vote(
         &state.config,
         id,
         curator_id,
-        user.role,
+        user.trust_level,
         &name,
         &body.decision,
     )
@@ -224,7 +224,7 @@ pub async fn decide(
         &state.config,
         id,
         curator_id,
-        user.role,
+        user.trust_level,
         &name,
         &body.decision,
         body.note.as_deref(),
@@ -255,7 +255,7 @@ pub async fn queue(
     user: AuthUser,
     Query(q): Query<QueueParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    if user.role < 5 {
+    if user.trust_level < 3 {
         return Err(AppError::Forbidden("Curator access required".into()));
     }
     let status = q.status.unwrap_or_else(|| "pending".into());

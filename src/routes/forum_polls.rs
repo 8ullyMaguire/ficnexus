@@ -124,7 +124,7 @@ pub async fn create_poll(
     Json(body): Json<CreatePollBody>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    trust::assert_staff_or_min_trust(&state.db, Some(user_id), auth.role, PUBLISH_MIN_TRUST, "Creating polls").await?;
+    trust::assert_staff_or_min_trust(&state.db, Some(user_id), auth.trust_level, PUBLISH_MIN_TRUST, "Creating polls").await?;
 
     let question = body.question.trim().to_string();
     if question.is_empty() || question.chars().count() > 500 {
@@ -159,7 +159,7 @@ pub async fn create_poll(
     .flatten();
     let topic_author =
         topic_author.ok_or_else(|| AppError::NotFound("topic not found".to_string()))?;
-    let is_staff = auth.level >= 50 || auth.role >= 10;
+    let is_staff = auth.level >= 50 || auth.trust_level >= 5;
     if !is_staff && topic_author != user_id {
         return Err(AppError::Forbidden(
             "only the topic author or staff can attach a poll".to_string(),
@@ -369,7 +369,7 @@ pub async fn close_poll(
     .await?
     .flatten();
 
-    let is_admin = auth.level >= 50 || auth.role >= 10;
+    let is_admin = auth.level >= 50 || auth.trust_level >= 5;
     let is_author = poll_author.map(|a| a == user_id).unwrap_or(false);
 
     if !is_admin && !is_author {

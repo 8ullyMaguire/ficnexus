@@ -44,7 +44,7 @@ pub async fn list(
     auth: AuthUser,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.role < 5 {
+    if auth.trust_level < 3 {
         return Err(AppError::Forbidden(
             "Level 5 required to view marginalia admin list".to_string(),
         ));

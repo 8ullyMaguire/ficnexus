@@ -44,7 +44,7 @@ pub(crate) async fn admin_list(
     auth: AuthUser,
     Query(q): Query<GalleryQuery>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.role < 10 {
+    if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let rows = extensions::gallery_all(&state.db, q.kind.as_deref(), q.q.as_deref(), 200).await?;
@@ -86,7 +86,7 @@ pub(crate) async fn publish(
     let _ = trust::assert_staff_or_min_trust(
         &state.db,
         Some(uid),
-        auth.role,
+        auth.trust_level,
         trust::PUBLISH_MIN_TRUST,
         "Publishing extensions",
     )
@@ -112,7 +112,7 @@ pub(crate) async fn get_one(
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
     let ext = extensions::get(&state.db, id).await?;
-    if !ext.is_public && auth.user_id != Some(ext.author_id) && auth.role < 10 {
+    if !ext.is_public && auth.user_id != Some(ext.author_id) && auth.trust_level < 5 {
         return Err(AppError::Forbidden("Not allowed".into()));
     }
     Ok(Json(json!({ "err": 0, "extension": ext })))
@@ -152,7 +152,7 @@ pub(crate) async fn admin_verify(
     auth: AuthUser,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.role < 10 {
+    if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let now_verified: Option<bool> = sqlx::query_scalar(

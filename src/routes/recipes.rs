@@ -296,7 +296,7 @@ pub async fn publish_recipe(
         trust::assert_staff_or_min_trust(
             &state.db,
             Some(user_id),
-            auth.role,
+            auth.trust_level,
             trust::PUBLISH_MIN_TRUST,
             "Publishing recipes",
         )

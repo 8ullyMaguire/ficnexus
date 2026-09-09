@@ -68,7 +68,7 @@ pub async fn heal_handler(
     user: AuthUser,
     Query(params): Query<HealQuery>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
@@ -205,7 +205,7 @@ pub async fn list_extractions_handler(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let rows = crate::heal::extract::list_extractions(&state.db, false, 100)
@@ -236,7 +236,7 @@ pub async fn trust_extraction_handler(
     user: AuthUser,
     axum::extract::Path(id): axum::extract::Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
     let trusted = crate::heal::extract::mark_trusted(&state.db, id)
@@ -257,7 +257,7 @@ pub async fn replay_pending_handler(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.role < 10 {
+    if user.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".into()));
     }
 
