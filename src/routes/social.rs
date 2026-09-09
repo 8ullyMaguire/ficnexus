@@ -53,7 +53,7 @@ pub async fn register_handler(
         })));
     }
 
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
+    let secret = state.jwt_secret.clone();
 
     // ── F7: registration mode gate ────────────────────────────────────
     // * invite: an unused, unexpired invite code is REQUIRED (403 without).
@@ -122,7 +122,7 @@ pub async fn login_handler(
     // ── Tiered rate limit (auth tier: 10/min per IP) ──────────────────
     enforce_auth_rate_limit(&state).await?;
 
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
+    let secret = state.jwt_secret.clone();
     match auth::login_user(&state.db, body, &secret).await {
         Ok(result) => {
             let refresh = auth::create_refresh_token(result.user.id, &secret)?;
@@ -213,7 +213,7 @@ pub async fn refresh_handler(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RefreshRequest>,
 ) -> Result<Json<Value>, AppError> {
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
+    let secret = state.jwt_secret.clone();
 
     let claims = auth::verify_token(&body.refresh_token, &secret)
         .map_err(|_| AppError::Unauthorized("Invalid refresh token".into()))?;
