@@ -22,9 +22,9 @@ use crate::server::AppState;
 use crate::services::trust::{self, flag_weight};
 
 /// Report weight threshold that marks a target as requiring admin review.
-const CONTESTED_WEIGHT: i32 = 3;
+const CONTESTED_WEIGHT: i64 = 3;
 /// Report weight threshold that auto-hides a target pending review.
-const AUTO_HIDE_WEIGHT: i32 = 6;
+const AUTO_HIDE_WEIGHT: i64 = 6;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateBanAppealBody {
@@ -204,20 +204,24 @@ async fn run_report_triage(
     target_type: &str,
     target_id: i32,
 ) -> Result<(), AppError> {
-    let open_weighted: Option<(i64, i32)> = sqlx::query_as(
+    // Both aggregates are bigint: COUNT(*) and SUM() over an integer column
+    // both widen to int8, and COALESCE(SUM(weight), 0) stays bigint because the
+    // literal 0 is cast to the sum's type. Typing the second element i32 made
+    // every report 500 with "mismatched types; Rust type `i32` is not
+    // compatible with SQL type `INT8`" - see docs/specs/reports-category-column.md.
+    // COUNT(*) and SUM() are aggregates with no GROUP BY, so this always
+    // returns exactly one row; fetch_one states that, where fetch_optional
+    // implied a row might not come back.
+    let (count, total): (i64, i64) = sqlx::query_as(
         r#"SELECT COUNT(*), COALESCE(SUM(weight), 0)
            FROM user_reports
            WHERE target_type = $1 AND target_id = $2 AND status = 'open'"#,
     )
     .bind(target_type)
     .bind(target_id)
-    .fetch_optional(db)
+    .fetch_one(db)
     .await
     .map_err(|e| AppError::Database(format!("report triage query: {e}")))?;
-
-    let Some((count, total)) = open_weighted else {
-        return Ok(());
-    };
 
     let auto_status = if total >= AUTO_HIDE_WEIGHT {
         "auto_hidden"

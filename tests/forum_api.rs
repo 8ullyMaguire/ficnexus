@@ -39,8 +39,21 @@ async fn pool() -> sqlx::PgPool {
         .expect("failed to connect to test database (is Postgres up?)")
 }
 
+/// Install a tracing subscriber so `AppError::Database`'s real message reaches
+/// the test output. Without this the endpoint returns a bare
+/// `{"err":-1,"msg":"database error"}` and the underlying sqlx message is
+/// logged and then discarded — which makes a schema mismatch undiagnosable
+/// from the test alone. `analytics_api.rs` and `comment_triage_api.rs` already
+/// do this; this suite did not.
+fn init_tracing() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .try_init();
+}
+
 /// Build a router with the forum endpoints and a real AppState.
 async fn app() -> Router {
+    init_tracing();
     use fichub::server::AppState;
     use std::sync::Arc;
 
@@ -299,6 +312,29 @@ fn auth_header_level(user_id: i32, username: &str, trust_level: i16, level: i16)
 }
 
 /// Seed a user; returns its id. Idempotent.
+/// Seed a user at an explicit database `trust_level`.
+///
+/// Trust gates in this codebase read `users.trust_level` **from the database**
+/// (via `fetch_trust_level`), not from the JWT, so the third argument to
+/// `auth_header` does not move them. `reports.rs` rejects with
+/// "Filing reports requires trust level 1 (Basic) or higher" otherwise.
+async fn seed_user_at_trust(pool: &sqlx::PgPool, username: &str, trust_level: i16) -> i32 {
+    sqlx::query(
+        "INSERT INTO users (username, password_hash, trust_level) VALUES ($1, 'test-hash', $2)
+         ON CONFLICT (username) DO UPDATE SET trust_level = EXCLUDED.trust_level",
+    )
+    .bind(username)
+    .bind(trust_level)
+    .execute(pool)
+    .await
+    .expect("seed_user_at_trust failed");
+    sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
+        .bind(username)
+        .fetch_one(pool)
+        .await
+        .expect("seed_user_at_trust: lookup failed")
+}
+
 async fn seed_user(pool: &sqlx::PgPool, username: &str) -> i32 {
     sqlx::query(
         "INSERT INTO users (username, password_hash) VALUES ($1, 'test-hash') ON CONFLICT (username) DO NOTHING",
@@ -504,6 +540,14 @@ async fn patch_json(
 async fn anonymous_gets_401_on_all_forum_routes() {
     let _g = db_guard();
     let app = app().await;
+    // Seeded, not assumed: this test reads ?category=general below, and a
+    // provisioner-built database has no categories at all. Same defect as
+    // uploads_api's hardcoded user id 1 - a test that only passes against a
+    // database someone prepared by hand.
+    {
+        let db = pool().await;
+        seed_category(&db, "general", "General").await;
+    }
 
     // Public reads: anonymous may list categories/topics (FORUM_PUBLIC_READ
     // default true).
@@ -1002,7 +1046,7 @@ async fn topic_slug_by_slug_route_and_detail() {
         &app,
         "/api/forum/topics",
         Some(&token),
-        json!({ "title": "My Great Topic!", "category_slug": "slug-general", "body": "body" }),
+        json!({ "title": "My Great Topic!", "category_slug": "slug-general", "body": "body long enough" }),
     )
     .await;
     assert_eq!(s, StatusCode::OK, "create: {b}");
@@ -1644,7 +1688,7 @@ async fn f3_edit_post_author_window_and_mod() {
         &app,
         &format!("/api/forum/posts/{own_post}"),
         Some(&token_author),
-        json!({ "body": "mine v2" }),
+        json!({ "body": "mine v2 edited" }),
     )
     .await;
     assert_eq!(s, StatusCode::OK, "author fresh edit: {b}");
@@ -1654,7 +1698,7 @@ async fn f3_edit_post_author_window_and_mod() {
             .fetch_one(&db)
             .await
             .expect("own post row");
-    assert_eq!(body, "mine v2");
+    assert_eq!(body, "mine v2 edited");
     assert!(edited.is_some(), "edited_at set");
 
     // Author edits old post after window → 403.
@@ -1662,7 +1706,7 @@ async fn f3_edit_post_author_window_and_mod() {
         &app,
         &format!("/api/forum/posts/{old_post}"),
         Some(&token_author),
-        json!({ "body": "hijack" }),
+        json!({ "body": "hijacked by author" }),
     )
     .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "author expired: {b}");
@@ -2939,7 +2983,7 @@ async fn f5_ban_enforcement() {
         &app,
         "/api/forum/topics",
         Some(&target_token),
-        json!({ "title": "fr5 banned topic", "category_slug": "fr5-ban-a", "body": "x" }),
+        json!({ "title": "fr5 banned topic", "category_slug": "fr5-ban-a", "body": "fr5 body long enough" }),
     )
     .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "forum ban blocks: {b}");
@@ -2972,7 +3016,7 @@ async fn f5_ban_enforcement() {
         &app,
         "/api/forum/topics",
         Some(&target_token),
-        json!({ "title": "fr5 banned topic a", "category_slug": "fr5-ban-a", "body": "x" }),
+        json!({ "title": "fr5 banned topic a", "category_slug": "fr5-ban-a", "body": "fr5 body long enough" }),
     )
     .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "category ban blocks A: {b}");
@@ -2980,7 +3024,7 @@ async fn f5_ban_enforcement() {
         &app,
         "/api/forum/topics",
         Some(&target_token),
-        json!({ "title": "fr5 allowed topic b", "category_slug": "fr5-ban-b", "body": "x" }),
+        json!({ "title": "fr5 allowed topic b", "category_slug": "fr5-ban-b", "body": "fr5 body long enough" }),
     )
     .await;
     assert_eq!(s, StatusCode::OK, "category ban allows B: {b}");
@@ -3024,7 +3068,7 @@ async fn f5_ban_enforcement() {
         &app,
         "/api/forum/topics",
         Some(&target_token),
-        json!({ "title": "fr5 expired topic", "category_slug": "fr5-ban-a", "body": "x" }),
+        json!({ "title": "fr5 expired topic", "category_slug": "fr5-ban-a", "body": "fr5 body long enough" }),
     )
     .await;
     assert_eq!(s, StatusCode::OK, "expired ban allows: {b}");
@@ -3096,7 +3140,7 @@ async fn f5_ban_lift() {
         &app,
         "/api/forum/topics",
         Some(&target_token),
-        json!({ "title": "fr5 lift blocked", "category_slug": "fr5-lift", "body": "x" }),
+        json!({ "title": "fr5 lift blocked", "category_slug": "fr5-lift", "body": "fr5 body long enough" }),
     )
     .await;
     assert_eq!(s, StatusCode::FORBIDDEN, "blocked while banned: {b}");
@@ -3119,7 +3163,7 @@ async fn f5_ban_lift() {
         &app,
         "/api/forum/topics",
         Some(&target_token),
-        json!({ "title": "fr5 lift allowed", "category_slug": "fr5-lift", "body": "x" }),
+        json!({ "title": "fr5 lift allowed", "category_slug": "fr5-lift", "body": "fr5 body long enough" }),
     )
     .await;
     assert_eq!(s, StatusCode::OK, "allowed after lift: {b}");
@@ -3145,7 +3189,8 @@ async fn f5_report_forum_target() {
     let db = pool().await;
     let u_reporter = "fr5_report_reporter";
     let u_author = "fr5_report_author";
-    let reporter_id = seed_user(&db, u_reporter).await;
+    // Filing reports requires trust_level >= 1, read from the database.
+    let reporter_id = seed_user_at_trust(&db, u_reporter, 2).await;
     let author_id = seed_user(&db, u_author).await;
     wipe_forum_for_users(&db, &[u_reporter, u_author]).await;
     sqlx::query("DELETE FROM forum_categories WHERE slug = 'fr5-report'")
@@ -3169,11 +3214,26 @@ async fn f5_report_forum_target() {
         &app,
         "/api/reports",
         Some(&token),
-        json!({ "target_type": "forum_post", "target_id": post_id, "reason": "spam" }),
+        json!({ "target_type": "forum_post", "target_id": post_id, "reason": "spam",
+        "category": "spam" }),
     )
     .await;
     assert_eq!(s, StatusCode::OK, "report forum_post: {b}");
     assert_eq!(b["err"], 0, "report forum_post: {b}");
+
+    // Assert the classification PERSISTS, not just that the call returned 200.
+    // A status-only assertion passes again the moment someone drops `category`
+    // from the INSERT in reports.rs - which is exactly how this endpoint came
+    // to 500 on every call in the first place. See
+    // docs/specs/reports-category-column.md R6.
+    let stored: String = sqlx::query_scalar(
+        "SELECT category FROM user_reports WHERE reporter_id = $1 ORDER BY id DESC LIMIT 1",
+    )
+    .bind(reporter_id)
+    .fetch_one(&db)
+    .await
+    .expect("stored report category");
+    assert_eq!(stored, "spam", "report category must persist");
 
     // And a forum topic.
     let (s, b) = post_json(
@@ -3398,7 +3458,7 @@ async fn f7_level_exp_from_topic_and_post() {
         &app,
         &format!("/api/forum/topics/{tid}/posts"),
         Some(&token),
-        json!({ "body": "a reply" }),
+        json!({ "body": "a reply here" }),
     )
     .await;
     assert_eq!(s, StatusCode::OK, "reply: {b}");

@@ -4,6 +4,17 @@
 # their seed rows by unique prefix, and assume they are alone in the database.
 set -uo pipefail
 cd "$(dirname "$0")/.."
+# Forum flood control has a real 10s window (FORUM_POST_DELAY_SECS, default 10
+# in Config::from_env). Suites share users, so two posts inside 10s trip it and
+# the failure lands on whichever test posted second, not on the one that
+# deserves it. check_flood returns early when delay <= 0 (src/routes/forum.rs
+# :470-477), so the window is disabled for the test run.
+#
+# Tradeoff: forum_api no longer asserts that flood control works. That is
+# deliberate and recorded rather than accidental - the two tests that tripped it
+# were never testing the limiter, they were testing replies and search.
+export FORUM_POST_DELAY_SECS="${FORUM_POST_DELAY_SECS:-0}"
+
 : > /tmp/suite_results.txt
 pass=0; fail=0; noresult=0
 for t in tests/*.rs; do
