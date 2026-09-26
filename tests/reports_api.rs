@@ -148,10 +148,18 @@ fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
 }
 
 /// Seed a user with the given role; returns its id. Idempotent.
-async fn seed_user(pool: &sqlx::PgPool, username: &str, role: i16) -> i32 {
-    sqlx::query("INSERT INTO users (username, password_hash, role) VALUES ($1, 'test-hash', $2) ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role RETURNING id")
+/// Seeds a user at an explicit database `trust_level`.
+///
+/// `create_report` calls `assert_staff_or_min_trust(..., 1, "Filing reports")`,
+/// which reads `users.trust_level` **from the database** (`src/services/trust.rs:102`),
+/// so the JWT's trust level does not move it. This helper used to write the
+/// separate legacy `users.role` column, which no trust gate reads, so every
+/// report attempt 403'd. Same defect as `uploads_api` and `admin_api`; see
+/// `docs/specs/reports-suite.md` section 3.
+async fn seed_user_at_trust(pool: &sqlx::PgPool, username: &str, trust_level: i16) -> i32 {
+    sqlx::query("INSERT INTO users (username, password_hash, trust_level) VALUES ($1, 'test-hash', $2) ON CONFLICT (username) DO UPDATE SET trust_level = EXCLUDED.trust_level RETURNING id")
         .bind(username)
-        .bind(role)
+        .bind(trust_level)
         .fetch_one(pool)
         .await
         .expect("seed_user failed")
@@ -310,7 +318,7 @@ async fn logged_in_user_files_work_report() {
     let _guard = db_guard();
     let db = pool().await;
     cleanup(&db).await;
-    let user_id = seed_user(&db, USERNAME, 0).await;
+    let user_id = seed_user_at_trust(&db, USERNAME, 2).await;
     let (work_id, _) = seed_work(
         &db,
         "reports-post-a",
@@ -375,7 +383,7 @@ async fn report_creation_validates_input() {
     let _guard = db_guard();
     let db = pool().await;
     cleanup(&db).await;
-    let user_id = seed_user(&db, USERNAME, 0).await;
+    let user_id = seed_user_at_trust(&db, USERNAME, 2).await;
     let app = app().await;
     let token = auth_header(user_id, 0, USERNAME);
 
@@ -410,8 +418,12 @@ async fn admin_lists_and_resolves_reports() {
     let _guard = db_guard();
     let db = pool().await;
     cleanup(&db).await;
-    let user_id = seed_user(&db, USERNAME, 0).await;
-    let admin_id = seed_user(&db, ADMIN_USERNAME, 10).await;
+    let user_id = seed_user_at_trust(&db, USERNAME, 2).await;
+    // DB trust 6, not 10: users_trust_level_check is CHECK (trust_level >= 0 AND
+    // trust_level <= 6), so 10 is not storable. It does not need to be -
+    // list_reports authorizes on `user.trust_level` from the JWT, which
+    // auth_header mints at 10, and the DB row only needs to exist.
+    let admin_id = seed_user_at_trust(&db, ADMIN_USERNAME, 6).await;
     let (work_id, _) = seed_work(
         &db,
         "reports-admin-a",
@@ -429,10 +441,20 @@ async fn admin_lists_and_resolves_reports() {
     let (status, body) = get_json(&app, "/api/admin/reports", Some(&admin_token)).await;
     assert_eq!(status, StatusCode::OK, "list failed: {body}");
     assert_eq!(body["err"], 0);
+    // Find OUR report by id. A count assertion here would assert that the table
+    // holds exactly one open row, which is a property of an empty database, not
+    // of the endpoint - the admin list is meant to return every open report in
+    // the system. See docs/specs/reports-suite.md section 2.
     let items = body["items"].as_array().expect("items array");
-    assert_eq!(items.len(), 1, "only open reports, got: {body}");
-    let item = &items[0];
-    assert_eq!(item["id"].as_i64(), Some(open_id));
+    let item = items
+        .iter()
+        .find(|i| i["id"].as_i64() == Some(open_id))
+        .unwrap_or_else(|| panic!("open report {open_id} missing from list: {body}"));
+    // Absence asserted against the same identity, not against a length.
+    assert!(
+        !items.iter().any(|i| i["id"].as_i64() == Some(dismissed_id)),
+        "dismissed report must not appear under status=open: {body}"
+    );
     assert_eq!(item["target_type"], "work");
     assert_eq!(item["target_id"].as_i64(), Some(work_id as i64));
     assert_eq!(item["reason"], "Wrong author");
@@ -440,11 +462,20 @@ async fn admin_lists_and_resolves_reports() {
     assert_eq!(item["reporter_id"].as_i64(), Some(user_id as i64));
     assert_eq!(item["reporter_name"], USERNAME);
 
-    // status=all returns both.
+    // status=all returns both. Same identity-not-count reasoning as the
+    // status=open check above: `status=all` is documented to return every report
+    // in the system, so the count is a property of the database, not of the
+    // filter. What this asserts is that BOTH of this test's reports are present
+    // under `all` - which is the actual difference between `all` and `open`.
     let (status, body) = get_json(&app, "/api/admin/reports?status=all", Some(&admin_token)).await;
     assert_eq!(status, StatusCode::OK, "list all failed: {body}");
-    let items = body["items"].as_array().expect("items array");
-    assert_eq!(items.len(), 2, "all reports, got: {body}");
+    let all_items = body["items"].as_array().expect("items array");
+    for (label, id) in [("open", open_id), ("dismissed", dismissed_id)] {
+        assert!(
+            all_items.iter().any(|i| i["id"].as_i64() == Some(id)),
+            "status=all must include this test's {label} report {id}: {body}"
+        );
+    }
 
     // Resolve the open report.
     let (status, body) = send(
@@ -459,12 +490,18 @@ async fn admin_lists_and_resolves_reports() {
     assert_eq!(body["err"], 0);
     assert_eq!(body["status"], "resolved");
 
-    // Now the open list is empty.
+    // The report just resolved is no longer in the open list.
+    //
+    // Not "the open list is empty" - the open list contains every open report
+    // in the system, and other suites file their own. Asserting `len() == 0`
+    // here says nothing about this resolve call: it would pass with the
+    // resolve broken and the report still open, as long as some other report
+    // happened to be there instead. See docs/specs/reports-suite.md section 2.
     let (_, body) = get_json(&app, "/api/admin/reports", Some(&admin_token)).await;
-    assert_eq!(
-        body["items"].as_array().map(|a| a.len()),
-        Some(0),
-        "no open left: {body}"
+    let open_items = body["items"].as_array().expect("items array");
+    assert!(
+        !open_items.iter().any(|i| i["id"].as_i64() == Some(open_id)),
+        "resolved report {open_id} must not appear under status=open: {body}"
     );
 
     // Resolving again → 404 (already handled).
@@ -501,7 +538,7 @@ async fn admin_report_endpoints_require_role_10() {
     let _guard = db_guard();
     let db = pool().await;
     cleanup(&db).await;
-    let user_id = seed_user(&db, USERNAME, 0).await;
+    let user_id = seed_user_at_trust(&db, USERNAME, 2).await;
     let (work_id, _) = seed_work(
         &db,
         "reports-forbid-a",

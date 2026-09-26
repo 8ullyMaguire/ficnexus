@@ -3247,6 +3247,26 @@ async fn f5_report_forum_target() {
     assert_eq!(b["err"], 0, "report forum_topic: {b}");
 
     // Cleanup
+    //
+    // Delete the reports by target_id FIRST. user_reports.reporter_id is
+    // nullable and has no FK constraint (verified: is_nullable=YES, and
+    // information_schema reports no foreign key), so deleting the reporter sets
+    // it to NULL rather than cascading - after the users go, these rows are
+    // unidentifiable by reporter and accumulate on every run. They then show up
+    // in reports_api's admin-list test as foreign rows.
+    //
+    // A cleanup that deletes by reporter_id cannot match anything, which is
+    // exactly what the first attempt at this did; it looked correct and left the
+    // count growing 15 -> 17 -> 19 across runs.
+    // See docs/specs/reports-suite.md section 2.2.
+    // target_id is `integer` (information_schema), so these bind as i32 - a
+    // text bind matches nothing and `.ok()` swallows it, which is how the first
+    // two attempts at this cleanup silently did nothing.
+    sqlx::query("DELETE FROM user_reports WHERE target_id = ANY($1)")
+        .bind(vec![tid as i32, post_id as i32])
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM forum_categories WHERE id = $1")
         .bind(cid)
         .execute(&db)
