@@ -67,6 +67,12 @@ pub async fn refresh_signals(db: &PgPool, curator_user_id: Option<i32>) -> Resul
                   $2 * (CASE WHEN b.user_id = $1 THEN $3 ELSE 1.0 END),
                   COALESCE(b.created_at, NOW())
            FROM bookmarks b
+           -- `rec_user_signals.work_id` references `fic_info(id)`, but
+           -- `bookmarks.url_id` carries no such foreign key, so it can name a
+           -- row that does not exist. Without this join the insert violates the
+           -- FK and takes down the whole signal refresh for every user, since
+           -- this function rebuilds the entire table in one statement.
+           JOIN fic_info f ON f.id = b.url_id
            WHERE b.url_id IS NOT NULL"#,
     )
     .bind(curator)
@@ -84,6 +90,9 @@ pub async fn refresh_signals(db: &PgPool, curator_user_id: Option<i32>) -> Resul
            SELECT r.user_id, r.url_id, 'rating', r.rating::float8,
                   COALESCE(r.created_at, NOW())
            FROM work_ratings r
+           -- Same reasoning as the bookmark insert above: `work_ratings.url_id`
+           -- is not constrained to `fic_info(id)`.
+           JOIN fic_info f ON f.id = r.url_id
            WHERE r.url_id IS NOT NULL AND r.rating BETWEEN 1 AND 5"#,
     )
     .execute(&mut *tx)
@@ -94,6 +103,10 @@ pub async fn refresh_signals(db: &PgPool, curator_user_id: Option<i32>) -> Resul
         r#"INSERT INTO rec_user_signals (user_id, work_id, signal_type, signal_weight, occurred_at)
            SELECT rv.user_id, rv.url_id, 'review', $1, COALESCE(rv.created_at, NOW())
            FROM reviews rv
+           -- Same reasoning as the bookmark insert: `reviews.url_id` has no
+           -- foreign key to `fic_info(id)`, only `reviews_user_id_fkey` and
+           -- `reviews_work_id_fkey` exist.
+           JOIN fic_info f ON f.id = rv.url_id
            WHERE rv.url_id IS NOT NULL AND rv.deleted_at IS NULL"#,
     )
     .bind(WEIGHT_REVIEW)
