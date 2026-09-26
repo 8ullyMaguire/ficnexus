@@ -52,6 +52,35 @@ for f in $(ls "$REPO"/migrations/*.sql | sort); do
 done
 [ "$fail" -eq 0 ] || { echo "MIGRATIONS FAILED"; exit 1; }
 
+# ---------------------------------------------------------------------------
+# KNOWN PRODUCTION GAP, not a test fixture problem.
+#
+# docs/design/SPECIFICATION.md:428 defines seven tag types by id:
+#   1 fandom, 2 character, 3 relationship, 4 freeform, 5 warning, 6 category,
+#   7 rating
+# No migration ever inserts them, so on a schema built purely from migrations/
+# the table is EMPTY. Production reads it (src/routes/opds/tags.rs serves it),
+# and 7 integration suites cannot seed a tag without it.
+#
+# Measured on 2026-09-26: with tag_types empty, 25 of 56 suites pass. After
+# seeding these 7 rows, 32 pass. Nothing else about the database changed.
+#
+# Seeding is therefore opt-in and OFF by default, so the recorded baseline stays
+# reproducible and the gap stays visible. Pass --seed-tag-types to apply it.
+#
+# The real fix is a migration inserting these rows, which is production schema
+# work and is deliberately NOT done here - see docs/specs/db-gated-suites.md.
+# ---------------------------------------------------------------------------
+if [ "${1:-}" = "--seed-tag-types" ]; then
+  psql "$APP" -q -v ON_ERROR_STOP=1 <<'SQL'
+INSERT INTO tag_types (id, name) VALUES
+  (1,'fandom'),(2,'character'),(3,'relationship'),(4,'freeform'),
+  (5,'warning'),(6,'category'),(7,'rating')
+ON CONFLICT (id) DO NOTHING;
+SQL
+  echo "seeded 7 tag_types (masks a known production gap)"
+fi
+
 n=$(psql "$APP" -tAc "select count(*) from information_schema.tables where table_schema = 'public'")
 echo "SCHEMA OK - ${n} tables"
 echo "$APP"
