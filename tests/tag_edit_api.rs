@@ -163,7 +163,7 @@ fn curator_auth(user_id: i32, username: &str) -> String {
 /// Seed a user; returns its id. Idempotent (uses ON CONFLICT DO NOTHING).
 async fn seed_user(pool: &sqlx::PgPool, username: &str, role: i16) -> i32 {
     sqlx::query(
-        "INSERT INTO users (username, password_hash, email, role) VALUES ($1, 'x', $2, $3) ON CONFLICT (username) DO NOTHING",
+        "INSERT INTO users (username, password_hash, email, role, trust_level) VALUES ($1, 'x', $2, $3, LEAST($3, 6)) ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role, trust_level = LEAST(EXCLUDED.trust_level, 6)",
     )
     .bind(username)
     .bind(username)

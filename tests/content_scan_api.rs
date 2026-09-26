@@ -53,8 +53,8 @@ async fn cleanup(db: &sqlx::PgPool, username: &str, url_id: &str) {
 
 async fn seed_admin(db: &sqlx::PgPool, username: &str) -> i32 {
     sqlx::query(
-        "INSERT INTO users (username, password_hash, role) VALUES ($1, 'x', 10) \
-                 ON CONFLICT (username) DO UPDATE SET role = 10 RETURNING id",
+        "INSERT INTO users (username, password_hash, role, trust_level) VALUES ($1, 'x', 10, 6) \
+                 ON CONFLICT (username) DO UPDATE SET role = 10, trust_level = 6 RETURNING id",
     )
     .bind(username)
     .fetch_one(db)

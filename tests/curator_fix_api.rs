@@ -152,8 +152,16 @@ fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
     format!("Bearer {token}")
 }
 
+/// `role` and `trust_level` are separate columns and both are live. The
+/// trust gates read `trust_level` (50 of them, e.g.
+/// work_proposals.rs:279, comments.rs:474, admin.rs:48), while
+/// db/queries/proposals.rs:93 and routes/subsystems.rs:475 read `role`.
+/// Seeding only `role` left `trust_level` at its column default of 0, so
+/// every curator-gated endpoint returned 403 and the suite was exercising a
+/// column no gate reads. Both are written here, from the same value, so the
+/// fixture cannot drift back to testing nothing.
 async fn seed_user(pool: &sqlx::PgPool, username: &str, role: i16) -> i32 {
-    sqlx::query("INSERT INTO users (username, password_hash, role) VALUES ($1, 'test-hash', $2) ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role RETURNING id")
+    sqlx::query("INSERT INTO users (username, password_hash, role, trust_level) VALUES ($1, 'test-hash', $2, LEAST($2, 6)) ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role, trust_level = LEAST(EXCLUDED.trust_level, 6) RETURNING id")
         .bind(username)
         .bind(role)
         .fetch_one(pool)

@@ -143,7 +143,7 @@ fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
 
 /// Seed a user (role 0 default); returns its id. Idempotent.
 async fn seed_user(pool: &sqlx::PgPool, username: &str, role: i16) -> i32 {
-    sqlx::query("INSERT INTO users (username, password_hash, role) VALUES ($1, 'test-hash', $2) ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role RETURNING id")
+    sqlx::query("INSERT INTO users (username, password_hash, role, trust_level) VALUES ($1, 'test-hash', $2, LEAST($2, 6)) ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role, trust_level = LEAST(EXCLUDED.trust_level, 6) RETURNING id")
         .bind(username)
         .bind(role)
         .fetch_one(pool)

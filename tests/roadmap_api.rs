@@ -136,7 +136,7 @@ async fn app() -> Router {
 }
 
 async fn seed_user(db: &sqlx::PgPool, username: &str) -> i32 {
-    sqlx::query("INSERT INTO users (username, password_hash, role, level) VALUES ($1, 'x', 0, 2) ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username RETURNING id")
+    sqlx::query("INSERT INTO users (username, password_hash, role, trust_level, level) VALUES ($1, 'x', 0, 0, 2) ON CONFLICT (username) DO UPDATE SET trust_level = LEAST(EXCLUDED.trust_level, 6), username = EXCLUDED.username RETURNING id")
         .bind(username)
         .fetch_one(db)
         .await
