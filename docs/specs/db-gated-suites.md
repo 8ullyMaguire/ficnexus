@@ -6,7 +6,7 @@ Repo: `~/code-local/rust/ficnexus`.
 
 ## 1. The problem, and why it is the same problem
 
-The unit suite was repaired on 2026-09-26 (935 pass, 0 fail). The 56
+The unit suite was repaired on 2026-09-26 (935 pass, 0 fail). The 57
 integration suites under `tests/` were not part of that work, because they are
 `#[ignore]`d and DB-gated and therefore did not compile in `--lib`.
 
@@ -14,7 +14,7 @@ They do not compile either.
 
 ```
 cargo test --no-run
-  10 of 56 suites fail to compile
+  10 of 57 suites fail to compile
   22 errors, in 3 classes
 ```
 
@@ -30,7 +30,7 @@ lesson of both this spec and its predecessor:
   binary and the unit suite looked fine.
 - The suites are `#[ignore]`d, so nothing ran them by default.
 - Therefore a 235k-line repository shipped with **zero runnable tests of any
-  kind** — 935 unit tests that could not compile, and 56 suites that were never
+  kind** — 935 unit tests that could not compile, and 57 suites that were never
   reachable.
 
 ## 2. The three error classes, exactly
@@ -95,7 +95,7 @@ Do not reintroduce a deleted endpoint to make a test compile.
 
 ## 3. Required outcome
 
-1. All 56 suites compile.
+1. All 57 suites compile.
 2. Every suite that can run against the provisioned database does, and its real
    result is recorded — pass or fail. **A failing assertion is a finding to
    report, not something to paper over.** See §5.
@@ -143,7 +143,7 @@ So the deliverable of this work is **a real measurement**, not a green run:
   constructed with a URL in tests but is not called, so most suites should not
   need a live Ollama. Verify rather than assume.
 
-The output of this work is a number: **N of 56 suites pass, M fail, K cannot
+The output of this work is a number: **N of 57 suites pass, M fail, K cannot
 run**, with reasons.
 
 ## 6. Out of scope
@@ -171,4 +171,4 @@ own `Mutex`, delete their own seed rows by unique prefix, and assume they are
 alone in the database. Running them in parallel corrupts each other's fixtures.
 
 Definition of done: 0 compile errors, and a recorded pass/fail/unrun count for
-all 56, with reasons for anything that is not a pass.
+all 57, with reasons for anything that is not a pass.
