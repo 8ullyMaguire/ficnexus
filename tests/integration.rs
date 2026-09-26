@@ -94,30 +94,33 @@ mod db_tests {
                     .as_nanos()
             );
 
-            // Create the schema and set search_path.
-            sqlx::raw_sql(AssertSqlSafe(format!(
-                "CREATE SCHEMA IF NOT EXISTS \"{}\"",
-                schema
-            )))
-            .execute(&pool)
-            .await
-            .expect("failed to create test schema");
+            // No migrations here on purpose.
+            //
+            // `scripts/provision_test_db.sh` applies every file in
+            // `migrations/` with `psql -f` and does not record versions in
+            // `_sqlx_migrations`, so `sqlx::migrate::Migrator` sees an empty
+            // ledger and replays all 41 files into an already-migrated
+            // database. The first one that creates an object fails with
+            //
+            //   42723 "function update_fic_tag_score already exists with same
+            //          argument types"
+            //
+            // which poisoned the shared DB_LOCK and cascaded into the other
+            // six failures in this suite. Six of the seven were never
+            // independent problems.
+            //
+            // Provisioning belongs to the provisioner. If a future migration
+            // needs applying, the provisioner applies it, and this test picks
+            // it up. Adding a second migration path here is how the two got
+            // out of sync.
+            //
+            // Per-test isolation comes from `truncate_all`, which is what these
+            // tests actually relied on. The `test_*` schema this code used to
+            // create was never populated: `001_initial.sql` is a pg_dump that
+            // hardcodes `public.` in its object names (1156 references in that
+            // file), so no search_path could redirect them.
+            let schema = "public".to_string();
 
-            sqlx::raw_sql(AssertSqlSafe(format!(
-                "SET search_path TO \"{}\", public",
-                schema
-            )))
-            .execute(&pool)
-            .await
-            .expect("failed to set search_path");
-
-            // Run migrations from the project's migration directory.
-            let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-            let migrations_path = manifest_dir.join("migrations");
-            let migrator = sqlx::migrate::Migrator::new(migrations_path)
-                .await
-                .expect("failed to load migrations");
-            migrator.run(&pool).await.expect("failed to run migrations");
 
             TestDb { pool, schema }
         }
@@ -145,15 +148,14 @@ mod db_tests {
             }
         }
 
-        /// Drop the test schema entirely (cleanup).
+        /// Clean up after a test.
+        ///
+        /// This truncates rather than dropping. The migrations hardcode
+        /// `public.` in their object names, so the objects genuinely live in
+        /// `public`; there is no per-test schema to drop. Dropping the schema
+        /// named in `self.schema` would now be `DROP SCHEMA public CASCADE`.
         async fn cleanup(&self) {
-            sqlx::raw_sql(AssertSqlSafe(format!(
-                "DROP SCHEMA IF EXISTS \"{}\" CASCADE",
-                self.schema
-            )))
-            .execute(&self.pool)
-            .await
-            .unwrap_or_else(|e| panic!("failed to drop schema {}: {e}", self.schema));
+            self.truncate_all().await;
         }
 
         #[allow(dead_code)]
