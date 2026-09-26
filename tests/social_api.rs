@@ -105,6 +105,9 @@ async fn app() -> Router {
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
         mailer: Box::new(fichub::services::mailer::MockMailer::new()),
+        rt_manager: fichub::realtime::ConnectionManager::new(),
+        jwt_secret: "fichub-test-secret".into(),
+        redis_client: None,
     });
 
     Router::new()
@@ -213,12 +216,12 @@ async fn app() -> Router {
 }
 
 /// JWT for the given user id (real token, real JWT_SECRET from env).
-fn auth_header(user_id: i32, username: &str, role: i16) -> String {
+fn auth_header(user_id: i32, username: &str, trust_level: i16) -> String {
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let user = fichub::routes::auth::User {
         id: user_id,
         username: username.into(),
-        role,
+        trust_level,
         reputation: 0,
         email: None,
         level: 0,

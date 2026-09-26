@@ -100,6 +100,9 @@ async fn app() -> Router {
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
         mailer: Box::new(fichub::services::mailer::MockMailer::new()),
+        rt_manager: fichub::realtime::ConnectionManager::new(),
+        jwt_secret: "fichub-test-secret".into(),
+        redis_client: None,
     });
 
     Router::new()
@@ -359,7 +362,7 @@ async fn honeypot_comment_silently_rejected() {
         &fichub::routes::auth::User {
             id: user_id,
             username: "honeypot_comment_user".into(),
-            role: 0,
+            trust_level: 0,
             reputation: 0,
             email: None,
             level: 0,
@@ -449,7 +452,7 @@ async fn too_fast_comment_silently_rejected() {
         &fichub::routes::auth::User {
             id: user_id,
             username: "honeypot_fast_user".into(),
-            role: 0,
+            trust_level: 0,
             reputation: 0,
             email: None,
             level: 0,
@@ -542,7 +545,7 @@ async fn normal_comment_created() {
         &fichub::routes::auth::User {
             id: user_id,
             username: "honeypot_normal_commenter".into(),
-            role: 0,
+            trust_level: 0,
             reputation: 0,
             email: None,
             level: 0,

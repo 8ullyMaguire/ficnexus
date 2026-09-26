@@ -227,21 +227,26 @@ fn make_token(user_id: i32, username: &str, secret: &str) -> String {
     use jsonwebtoken::{EncodingKey, Header};
     use serde::Serialize;
 
+    // Mirrors fichub::routes::auth::Claims: trust_level replaced the legacy
+    // `role` for access control, and `iat` is required for validation.
     #[derive(Serialize)]
     struct Claims {
         sub: i32,
         username: String,
-        role: i16,
+        trust_level: i16,
         level: i16,
         exp: i64,
+        iat: i64,
     }
 
+    let now = chrono::Utc::now().timestamp();
     let claims = Claims {
         sub: user_id,
         username: username.to_string(),
-        role: 0,
+        trust_level: 0,
         level: 0,
-        exp: chrono::Utc::now().timestamp() + 3600,
+        exp: now + 3600,
+        iat: now,
     };
 
     jsonwebtoken::encode(

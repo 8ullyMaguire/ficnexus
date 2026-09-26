@@ -127,6 +127,9 @@ async fn app() -> Router {
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
         mailer: Box::new(fichub::services::mailer::MockMailer::new()),
+        rt_manager: fichub::realtime::ConnectionManager::new(),
+        jwt_secret: "fichub-test-secret".into(),
+        redis_client: None,
     });
 
     Router::new()
@@ -145,7 +148,7 @@ fn auth_header(user_id: i32, username: &str) -> String {
     let user = fichub::routes::auth::User {
         id: user_id,
         username: username.into(),
-        role: 0,
+        trust_level: 0,
         reputation: 0,
         email: None,
         level: 0,

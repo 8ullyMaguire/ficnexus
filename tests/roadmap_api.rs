@@ -94,6 +94,9 @@ async fn app() -> Router {
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
         mailer: Box::new(fichub::services::mailer::MockMailer::new()),
+        rt_manager: fichub::realtime::ConnectionManager::new(),
+        jwt_secret: "fichub-test-secret".into(),
+        redis_client: None,
     });
 
     Router::new()
@@ -146,7 +149,7 @@ fn auth_header(user_id: i32, username: &str) -> String {
     let user = fichub::routes::auth::User {
         id: user_id,
         username: username.into(),
-        role: 0,
+        trust_level: 0,
         reputation: 0,
         email: None,
         level: 2,
@@ -854,7 +857,7 @@ async fn changelog_public_read_and_curator_write() {
     let curator_user = fichub::routes::auth::User {
         id: 0,
         username: "rmd_chlog_user".into(),
-        role: 5,
+        trust_level: 5,
         reputation: 0,
         email: None,
         level: 50,
@@ -959,7 +962,7 @@ async fn feature_move_updates_status_and_category() {
     let curator_user = fichub::routes::auth::User {
         id: 0,
         username: "rmd_promote_user".into(),
-        role: 5,
+        trust_level: 5,
         reputation: 0,
         email: None,
         level: 50,
@@ -1036,7 +1039,7 @@ async fn changelog_filter_by_kind() {
     let curator_user = fichub::routes::auth::User {
         id: 0,
         username: "rmd_chlog_filter_user".into(),
-        role: 5,
+        trust_level: 5,
         reputation: 0,
         email: None,
         level: 50,

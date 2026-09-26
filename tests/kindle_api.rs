@@ -98,7 +98,10 @@ async fn app_with_mock(mailer: Arc<MockMailer>) -> Router {
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
         mailer: Box::new(mailer.as_ref().clone_box()),
-    });
+            rt_manager: fichub::realtime::ConnectionManager::new(),
+        jwt_secret: "fichub-test-secret".into(),
+        redis_client: None,
+});
 
     Router::new()
         .route(
@@ -129,7 +132,7 @@ fn token_for(user_id: i32, username: &str) -> String {
         &fichub::routes::auth::User {
             id: user_id,
             username: username.into(),
-            role: 0,
+            trust_level: 0,
             reputation: 0,
             email: None,
             level: 0,

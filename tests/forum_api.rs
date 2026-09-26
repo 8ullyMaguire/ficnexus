@@ -106,6 +106,7 @@ async fn app() -> Router {
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
         mailer: Box::new(fichub::services::mailer::MockMailer::new()),
+        rt_manager: fichub::realtime::ConnectionManager::new(),
         jwt_secret: "fichub-test-secret".into(),
         redis_client: None,
     });
@@ -230,7 +231,6 @@ async fn app() -> Router {
             "/api/admin/reports/{id}/resolve",
             post(fichub::routes::reports::resolve_report),
         )
-        .route("/api/users/me/level", get(fichub::routes::forum::my_level))
         // ── Auth routes (register honors REGISTRATION_MODE / invite_code) ──
         .route(
             "/api/auth/register",
@@ -283,12 +283,12 @@ fn auth_header(user_id: i32, username: &str, role: i16) -> String {
 
 /// JWT with an explicit level (bypasses the role→level mapping) for gate
 /// boundary tests (e.g. level 49/99 must be forbidden).
-fn auth_header_level(user_id: i32, username: &str, role: i16, level: i16) -> String {
+fn auth_header_level(user_id: i32, username: &str, trust_level: i16, level: i16) -> String {
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let user = fichub::routes::auth::User {
         id: user_id,
         username: username.into(),
-        role,
+        trust_level,
         reputation: 0,
         email: None,
         level,
@@ -3429,40 +3429,6 @@ async fn f7_level_exp_from_topic_and_post() {
         .await
         .ok();
 }
-
-#[tokio::test]
-#[ignore]
-async fn f7_level_me_level_endpoint() {
-    let _g = db_guard();
-    let db = pool().await;
-    let u = "fr7_level_me";
-    let uid = seed_user(&db, u).await;
-    wipe_forum_for_users(&db, &[u]).await;
-    sqlx::query("UPDATE users SET level = 7, exp = 750 WHERE id = $1")
-        .bind(uid)
-        .execute(&db)
-        .await
-        .ok();
-
-    let app = app().await;
-    let token = auth_header(uid, u, 0);
-
-    let (s, b) = get_json(&app, "/api/users/me/level", Some(&token)).await;
-    assert_eq!(s, StatusCode::OK, "me level: {b}");
-    assert_eq!(b["level"], 7, "level: {b}");
-    assert_eq!(b["exp"], 750, "exp: {b}");
-    assert_eq!(b["exp_to_next"], 50, "exp to next: {b}");
-    let progress = b["progress"].as_f64().unwrap_or(0.0);
-    assert!((progress - 0.5).abs() < 0.001, "progress 50%: {progress}");
-
-    // Cleanup
-    sqlx::query("DELETE FROM users WHERE username = $1")
-        .bind(u)
-        .execute(&db)
-        .await
-        .ok();
-}
-
 #[tokio::test]
 #[ignore]
 async fn f7_level_gate_curator() {

@@ -116,6 +116,9 @@ async fn app() -> Router {
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
         mailer: Box::new(fichub::services::mailer::MockMailer::new()),
+        rt_manager: fichub::realtime::ConnectionManager::new(),
+        jwt_secret: "fichub-test-secret".into(),
+        redis_client: None,
     });
 
     Router::new()
@@ -279,6 +282,9 @@ async fn health_degrades_to_503_when_redis_unreachable() {
         suggest_cache: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
         ollama: ollama_client,
         mailer: Box::new(fichub::services::mailer::MockMailer::new()),
+        rt_manager: fichub::realtime::ConnectionManager::new(),
+        jwt_secret: "fichub-test-secret".into(),
+        redis_client: None,
     });
 
     let app = Router::new()

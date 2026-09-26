@@ -142,6 +142,9 @@ fn app() -> impl std::future::Future<Output = Router> {
             wayback: fichub::scrape::wayback::WaybackService::disabled(),
             ollama: ollama_client,
             mailer: Box::new(fichub::services::mailer::MockMailer::new()),
+            rt_manager: fichub::realtime::ConnectionManager::new(),
+            jwt_secret: "fichub-test-secret".into(),
+            redis_client: None,
         });
 
         Router::new()
@@ -157,7 +160,7 @@ fn auth_header(user_id: i32, username: &str) -> String {
     let user = auth::User {
         id: user_id,
         username: username.into(),
-        role: 1,
+        trust_level: 1,
         reputation: 0,
         email: Some("test@example.com".into()),
         level: 100,
@@ -240,7 +243,7 @@ async fn upload_low_trust_rejects() {
     // Actually assert_min_trust checks trust_level, not level. Seed a TL0 user.
     // Use a user with trust_level=0 if possible; otherwise skip.
     // For now, test with a user whose trust_level is below the threshold.
-    // The auth header sets level=10, role=1 — trust_level comes from the DB.
+    // The auth header sets level=10, trust_level=1 — trust_level comes from the DB.
     // This test seeds a user with low trust and verifies the gate.
     let user_id: i32 = 1;
     let token = auth_header(user_id, "lowtrust");

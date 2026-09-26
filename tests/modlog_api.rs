@@ -93,18 +93,21 @@ async fn build_app() -> Router {
             http_client.clone(),
         ),
         mailer: Box::new(fichub::services::mailer::MockMailer::new()),
+        rt_manager: fichub::realtime::ConnectionManager::new(),
+        jwt_secret: "fichub-test-secret".into(),
+        redis_client: None,
     });
     Router::new()
         .route("/api/modlog", get(fichub::routes::modlog::modlog_handler))
         .with_state(state)
 }
 
-fn auth_header(user_id: i32, role: i16, username: &str) -> String {
+fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let user = fichub::routes::auth::User {
         id: user_id,
         username: username.into(),
-        role,
+        trust_level,
         reputation: 0,
         email: None,
         level: 0,
