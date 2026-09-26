@@ -42,17 +42,72 @@ Eleven "fixes" and two "regressions" in tests that have nothing to do with each
 other is the signature of ordering noise, not of a code change. Chasing either
 list would have been wasted work.
 
-## 3. The likely mechanism
+## 3. The mechanism — and it is NOT test pollution
 
-`wipe_forum_for_users` cleans up per-test, but several tests seed rows through
-paths that cleanup does not cover, and the suite's own fixtures use fixed
-usernames. Whether a given test sees a clean table therefore depends on which
-tests ran before it in *this process*, and the process order is not stable —
-`db_guard()` is a `Mutex`, and test registration order across the binary is not
-guaranteed identical between builds.
+**This section originally blamed test ordering and was wrong.** The real cause is
+in `scripts/provision_test_db.sh`.
 
-The `user_reports` leak found in `reports_api` is one confirmed instance of this
-class: `f5_report_forum_target` left rows behind that another suite then saw.
+The script dropped the database with:
+
+```bash
+psql "$ADMIN" -q -v ON_ERROR_STOP=1 \
+  -c "DROP DATABASE IF EXISTS ${DB}" \
+  -c "CREATE DATABASE ${DB} OWNER fichub" || exit 1
+```
+
+Any surviving session — a leaked test connection, a psql left open — makes
+`DROP DATABASE` fail with `database "ficnexus_test" is being accessed by other
+users`. Reproduced directly:
+
+```
+drop rc: 1
+ERROR:  database "ficnexus_test" is being accessed by other users
+DETAIL:  There is 1 other session using the database.
+```
+
+**Two things then go wrong silently.** `psql -c` returns 0 for the combined
+command as long as the last statement succeeds, so the failure was invisible; and
+the migration loop re-applied onto whatever schema was left. Observed:
+
+```
+ information_schema tables: 138
+ script reported:           SCHEMA OK - 180 tables
+```
+
+So every "freshly provisioned database" in this cycle was a **stale one, 42 tables
+short**. `forum_privileges` and `topics.scheduled_at` did not exist, which is
+exactly what the failing tests reported:
+
+```
+ERROR fichub::error: Database error: relation "forum_privileges" does not exist
+ERROR fichub::error: Database error: column t.scheduled_at does not exist
+```
+
+and why the harness emitted bare `FAILED` lines with no test name — the panic
+came from shared setup, not from the assertion that was being checked.
+
+The instability (12 / 23 / 47) was **which stale schema happened to survive**,
+which depends on whether a connection was still open when the drop ran. It had
+nothing to do with test execution order.
+
+### Fixed
+
+`provision_test_db.sh` now:
+
+1. terminates other sessions on the database before dropping;
+2. checks the drop's exit status separately and fails loudly;
+3. asserts the table count against `EXPECTED_TABLES` (default 180) instead of
+   printing it, so a stale database cannot pass for a good one.
+
+This means **every failure count recorded before this fix is suspect**, including
+the ones in this document and the 42/7 figure quoted for `forum_api` earlier in
+the cycle. The suites' real baseline has to be re-measured from a genuinely fresh
+database.
+
+Test-order dependence may still exist — `wipe_forum_for_users` does not cover
+every table, and the `user_reports` leak in `reports_api` was real. It is simply
+not what was producing the variance, and it should be re-examined only after the
+baseline is trustworthy.
 
 ## 4. Requirements
 
@@ -72,6 +127,14 @@ foreign rows.
 against a documented starting state. Comparing a suite's result across two
 invocations of a shared database is not a measurement.
 
+**R5.** `provision_test_db.sh` must fail loudly rather than continue on a stale
+database. **DONE** — it now terminates other sessions, checks the drop's exit
+status separately (psql `-c` masks a failed first statement), and asserts the
+table count against `EXPECTED_TABLES`.
+
+**R6.** A `SCHEMA OK` line must never be printed for a database that was not
+recreated. **DONE** — the count is asserted, not printed.
+
 ## 5. What this blocks
 
 - The owner's decision to trim `f3_edit_topic_author_window_and_mod` and
@@ -81,13 +144,19 @@ invocations of a shared database is not a measurement.
 - `f7_level_gate_admin` / `f7_level_gate_curator`, which are the acceptance
   criteria for the F7 level gate.
 
-## 6. Recommendation
+## 6. What this means for the rest of the cycle
 
-Fix this **before** implementing the remaining two decisions. Both touch
-`forum_api`, and neither can be verified against a baseline that swings between
-12 and 47. Doing the isolation work first means the F7 gate work lands on a
-suite that can actually report whether it worked.
+The provisioning bug was worth more than any test fix in this document, and it
+invalidates the baseline every earlier number was measured against. Before
+treating any suite's failure count as real:
 
-This is a larger piece of work than the other two decisions combined, and it is
-the highest-value thing left in this repo: it is the difference between the
-suite telling you something and the suite telling you nothing.
+1. re-provision with the fixed script (expect `SCHEMA OK - 180 tables`);
+2. re-run the full 57-suite sweep and treat **that** as the baseline;
+3. only then compare.
+
+`run_db_suites.sh` calls the same provisioning path, so the whole cycle's totals
+need re-measuring. The unit-lib count (935) is unaffected — it does not touch a
+database.
+
+**Test isolation (R1-R3) is still worth doing**, but it is now a second-order
+concern. Fix the measurement before optimizing what it measures.
