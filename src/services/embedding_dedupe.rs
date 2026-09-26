@@ -9,10 +9,22 @@ use crate::db::queries;
 use serde::{Deserialize, Serialize};
 
 /// One potential duplicate pair found by embedding similarity.
+///
+/// `*_url_id` is the stable identity: `fic_info.id`, a slug such as
+/// `adminit_autotag_fic`. `*_work_id` is the actionable one: `fic_info.work_id`,
+/// which is `integer REFERENCES works(id)`. The two are bridged by
+/// `fic_info.work_id` because the merge path (`execute_merge`,
+/// `work_proposals`) operates on `works.id`.
+///
+/// `*_work_id` is `Option` because `fic_info.work_id` is nullable: an unlinked
+/// source-site entry has no `works` row to merge into. The query already filters
+/// those out, so this is belt-and-braces for the caller.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingCandidate {
-    pub source_work_id: i32,
-    pub target_work_id: i32,
+    pub source_url_id: String,
+    pub target_url_id: String,
+    pub source_work_id: Option<i32>,
+    pub target_work_id: Option<i32>,
     pub source_title: String,
     pub target_title: String,
     pub similarity: f64,
@@ -25,24 +37,32 @@ pub async fn candidate_pairs(
     threshold: f64,
     limit: usize,
 ) -> Result<Vec<EmbeddingCandidate>, sqlx::Error> {
-    let rows = sqlx::query_as::<_, (i32, String, i32, String, f64)>(
-        r#"SELECT 
-            a.work_id as source_work_id,
-            wa.canonical_title as source_title,
-            b.work_id as target_work_id,
-            wb.canonical_title as target_title,
-            1 - (a.embedding <=> b.embedding) as similarity
+    // `rec_embeddings.work_id` is `varchar(128)` with a foreign key onto
+    // `fic_info(id)`, NOT `works(id)`, so every join here goes through
+    // `fic_info`. Titles live there too, and `fic_info.work_id` bridges to the
+    // `works.id` that the merge path needs.
+    let rows = sqlx::query_as::<_, (String, String, Option<i32>, String, String, Option<i32>, f64)>(
+        r#"SELECT
+            a.work_id                        AS source_url_id,
+            fa.title                         AS source_title,
+            fa.work_id                       AS source_work_id,
+            b.work_id                        AS target_url_id,
+            fb.title                         AS target_title,
+            fb.work_id                       AS target_work_id,
+            1 - (a.embedding <=> b.embedding) AS similarity
         FROM rec_embeddings a
         JOIN rec_embeddings b ON a.model = b.model AND a.work_id < b.work_id
-        JOIN works wa ON wa.id = a.work_id
-        JOIN works wb ON wb.id = b.work_id
-        WHERE 1 - (a.embedding <=> b.embedding) > $1
+        JOIN fic_info fa ON fa.id = a.work_id
+        JOIN fic_info fb ON fb.id = b.work_id
+        WHERE fa.work_id IS NOT NULL
+          AND fb.work_id IS NOT NULL
+          AND 1 - (a.embedding <=> b.embedding) > $1
           AND NOT EXISTS (
             SELECT 1 FROM work_proposals wp
             WHERE wp.action_type = 'merge'
               AND wp.status = 'pending'
-              AND ((wp.source_work_id = a.work_id AND wp.target_work_id = b.work_id)
-                OR (wp.source_work_id = b.work_id AND wp.target_work_id = a.work_id))
+              AND ((wp.source_work_id = fa.work_id AND wp.target_work_id = fb.work_id)
+                OR (wp.source_work_id = fb.work_id AND wp.target_work_id = fa.work_id))
           )
         ORDER BY similarity DESC
         LIMIT $2"#,
@@ -55,12 +75,16 @@ pub async fn candidate_pairs(
     Ok(rows
         .into_iter()
         .map(
-            |(src_id, src_title, tgt_id, tgt_title, sim)| EmbeddingCandidate {
-                source_work_id: src_id,
-                target_work_id: tgt_id,
-                source_title: src_title,
-                target_title: tgt_title,
-                similarity: sim,
+            |(src_url, src_title, src_work, tgt_url, tgt_title, tgt_work, sim)| {
+                EmbeddingCandidate {
+                    source_url_id: src_url,
+                    target_url_id: tgt_url,
+                    source_work_id: src_work,
+                    target_work_id: tgt_work,
+                    source_title: src_title,
+                    target_title: tgt_title,
+                    similarity: sim,
+                }
             },
         )
         .collect())
@@ -78,8 +102,18 @@ pub async fn run_dedupe(
     threshold: f64,
     limit: usize,
 ) -> (usize, usize, usize) {
-    let Ok(candidates) = candidate_pairs(db, threshold, limit).await else {
-        return (0, 0, 0);
+    // A failure here used to be swallowed into a silent (0, 0, 0), which made
+    // this whole feature look like a healthy no-op: candidate_pairs could not
+    // execute against the real schema and every run reported "no duplicates".
+    // Keep the tolerant return for the caller, but never fail silently.
+    let candidates = match candidate_pairs(db, threshold, limit).await {
+        Ok(c) => c,
+        Err(err) => {
+            tracing::error!(
+                "embedding dedupe: candidate_pairs failed, reporting no duplicates: {err}"
+            );
+            return (0, 0, 0);
+        }
     };
     if candidates.is_empty() {
         return (0, 0, 0);
@@ -89,14 +123,27 @@ pub async fn run_dedupe(
     let mut proposed = 0usize;
 
     for c in &candidates {
+        // `fic_info.work_id` is nullable; the query filters those rows out, so
+        // this only trips if that filter is ever weakened.
+        let (Some(source_work_id), Some(target_work_id)) =
+            (c.source_work_id, c.target_work_id)
+        else {
+            tracing::debug!(
+                "embedding dedupe: skipping unlinked pair {} / {}",
+                c.source_url_id,
+                c.target_url_id
+            );
+            continue;
+        };
+
         if c.similarity >= AUTO_MERGE_THRESHOLD {
             // High confidence: auto-merge directly
-            if let Ok(()) = queries::execute_merge(db, c.source_work_id, c.target_work_id).await {
+            if let Ok(()) = queries::execute_merge(db, source_work_id, target_work_id).await {
                 auto_merged += 1;
                 tracing::info!(
                     "Auto-merged work {} into {} (similarity={:.3})",
-                    c.source_work_id,
-                    c.target_work_id,
+                    source_work_id,
+                    target_work_id,
                     c.similarity
                 );
             }
@@ -106,8 +153,8 @@ pub async fn run_dedupe(
                 db,
                 proposer_id,
                 "merge",
-                Some(c.source_work_id),
-                Some(c.target_work_id),
+                Some(source_work_id),
+                Some(target_work_id),
                 None,
                 Some(serde_json::json!({
                     "reason": "embedding similarity detected",
@@ -131,8 +178,10 @@ mod tests {
     #[test]
     fn candidate_serializes() {
         let c = EmbeddingCandidate {
-            source_work_id: 1,
-            target_work_id: 2,
+            source_url_id: "slug-1".into(),
+            target_url_id: "slug-2".into(),
+            source_work_id: Some(1),
+            target_work_id: Some(2),
             source_title: "Title A".into(),
             target_title: "Title B".into(),
             similarity: 0.97,
@@ -145,15 +194,19 @@ mod tests {
     fn threshold_filters_correctly() {
         let candidates = vec![
             EmbeddingCandidate {
-                source_work_id: 1,
-                target_work_id: 2,
+                source_url_id: "slug-1".into(),
+                target_url_id: "slug-2".into(),
+                source_work_id: Some(1),
+                target_work_id: Some(2),
                 source_title: "A".into(),
                 target_title: "B".into(),
                 similarity: 0.98,
             },
             EmbeddingCandidate {
-                source_work_id: 3,
-                target_work_id: 4,
+                source_url_id: "slug-3".into(),
+                target_url_id: "slug-4".into(),
+                source_work_id: Some(3),
+                target_work_id: Some(4),
                 source_title: "C".into(),
                 target_title: "D".into(),
                 similarity: 0.92,
@@ -167,7 +220,8 @@ mod tests {
             .collect();
 
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].source_work_id, 1);
+        assert_eq!(filtered[0].source_work_id, Some(1));
+        assert_eq!(filtered[0].source_url_id, "slug-1");
     }
 
     #[test]

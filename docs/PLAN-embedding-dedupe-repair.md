@@ -274,3 +274,42 @@ outstanding bug.
   `fic_info.work_id` bridge; it does not redesign the model.
 - Any change to `rec_embeddings`' schema. The schema is right; the query was
   wrong.
+
+## Addendum, 2026-09-26 (after execution)
+
+All five steps held as written.
+
+The query rewrite executed cleanly against the real schema on the first run,
+returning 0 rows because no embeddings existed yet rather than an error. That
+distinction - empty result vs `operator does not exist: integer = character
+varying` - is the whole finding.
+
+Three things the plan did not predict, all in the test:
+
+1. **`fic_info` has two more NOT NULL columns than the obvious ones.**
+   `information_schema` shows `status` and `source` are NOT NULL with no
+   default, and the error only appears at runtime. Real rows carry
+   `status = 'complete'`, `source = 'ao3'`, so the seed uses those rather than
+   invented values. The same lesson as `tag_types`: take the values from real
+   data, not from imagination.
+
+2. **`[f64]` does not implement `Join`.** The `vec384` helper must build
+   `Vec<String>`. A compile error, and the only one in this change.
+
+3. **The struct change broke the module's own `#[cfg(test)]` tests.** Four
+   in-file fixtures plus one assertion constructed `EmbeddingCandidate` with
+   `source_work_id: 1`, and `cargo build` does not compile `#[cfg(test)]` code -
+   so `cargo build` was clean while `cargo test --lib` failed with 10 errors.
+   This is the third time in this repository that a green build concealed a
+   broken test build, and the plan's own gate caught it.
+
+### Verified
+
+- `candidate_pairs` executes against the real schema
+- `embedding_dedupe_api`: **2 passed, 0 failed** - and the second test proves a
+  real auto-merge now happens, asserting `fic_info.work_id` is repointed
+- `run_dedupe` logs instead of silently returning `(0, 0, 0)`
+- 935 unit tests pass, 0 fail
+- all 56 suites compile
+- `git status --short`: exactly two files, `src/services/embedding_dedupe.rs`
+  and `tests/embedding_dedupe_api.rs`

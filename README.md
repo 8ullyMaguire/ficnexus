@@ -285,11 +285,18 @@ are alone in the database.
 
 **25 integration suites still fail.** Most are role/level gate assertions left
 over from the `role` → `trust_level` refactor, which need per-test judgement
-rather than a bulk fix. One is blocked by a known production bug:
-`src/services/embedding_dedupe.rs` joins `rec_embeddings.work_id` (`varchar`) to
-`works.id` (`integer`), so `candidate_pairs` throws on every call. See
+rather than a bulk fix. See [`docs/specs/db-gated-suites.md`](./docs/specs/db-gated-suites.md) and
 [`docs/specs/missing-reference-data.md`](./docs/specs/missing-reference-data.md)
-§5.2 and [`docs/specs/db-gated-suites.md`](./docs/specs/db-gated-suites.md).
+for the history.
+
+One previously-blocking production bug is now fixed: `candidate_pairs` in
+`src/services/embedding_dedupe.rs` joined `rec_embeddings.work_id` (a
+`varchar` slug) to `works.id` (an `integer`), so it had never once returned. Its
+only caller swallowed the error into a silent `(0, 0, 0)`, which made a dead
+feature look like a healthy no-op. The query now goes through `fic_info`, which
+is what the whole recommender stack keys off, bridging to `works.id` via
+`fic_info.work_id` for the merge path. See
+[`docs/specs/embedding-dedupe-repair.md`](./docs/specs/embedding-dedupe-repair.md).
 
 # Frontend (SvelteKit / vitest)
 cd frontend
