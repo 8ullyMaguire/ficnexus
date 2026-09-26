@@ -749,7 +749,12 @@ pub async fn moderate_post(
 
     // F7: positive mod received → the post author gains +1 exp (capped +3/day).
     if delta > 0 {
-        let _ = crate::db::queries::update_reputation_and_promote(&state.db, author_id, 1, "mod_received").await;
+        let _ = crate::services::leveling::award_mod_received_exp(
+            &state.db,
+            author_id,
+            state.config.forum_exp_mod_received,
+        )
+        .await;
     }
 
     Ok(Json(json!({
@@ -879,7 +884,12 @@ pub async fn moderate_batch(
         .await;
 
         if delta > 0 {
-            let _ = crate::db::queries::update_reputation_and_promote(&state.db, author_id, 1, "mod_received").await;
+            let _ = crate::services::leveling::award_mod_received_exp(
+            &state.db,
+            author_id,
+            state.config.forum_exp_mod_received,
+        )
+        .await;
         }
 
         results.push(json!({ "post_id": post_id, "score_after": score_after }));
@@ -2666,6 +2676,40 @@ pub async fn create_topic(
     .await?;
     tx.commit().await?;
 
+    // F7 site-wide leveling: creating a topic earns exp. The value comes from
+    // Config (FORUM_EXP_TOPIC_CREATE, default 2) so it is tunable without a
+    // rebuild - see docs/specs/f7-leveling.md R1/R6.
+    //
+    // Only `topic_create` is granted. The OP post is inserted in the same
+    // transaction above but is the SAME row conceptually, so granting
+    // `post_create` here too would make a first topic worth 4 exp and
+    // `f7_level_exp_from_topic_and_post` would assert the wrong total.
+    //
+    // `let _ =` follows the convention used everywhere else in this codebase:
+    // exp is a best-effort side effect and must never fail the post.
+    if state.config.forum_exp_topic_create > 0 {
+        // Log the error instead of discarding it. Two real bugs (a wrong
+        // column name, then a smallint decoded as i32) were invisible for
+        // several iterations because this was a bare `if let Ok(..)`, and a
+        // silent exp grant is indistinguishable from exp that never happened.
+        let exp_result = crate::services::leveling::award_exp(
+            &state.db,
+            user_id,
+            state.config.forum_exp_topic_create,
+            "topic_create",
+        )
+        .await;
+        match exp_result {
+            Ok(gained) if gained > 0 => {
+                let _ =
+                    crate::services::leveling::notify_level_up(&state.db, user_id, gained as i16)
+                        .await;
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!("F7 exp grant failed for user {user_id}: {e}"),
+        }
+    }
+
     // Insert marginalia link if this topic is a marginalia discussion
     if is_marginalia {
         let passage_hash = payload
@@ -2957,6 +3001,32 @@ pub async fn create_post(
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+
+    // F7 site-wide leveling: a reply earns exp. Separate from `topic_create`
+    // because a reply is its own row - see docs/specs/f7-leveling.md R2/R6.
+    // Value comes from Config (FORUM_EXP_POST_CREATE, default 2).
+    if state.config.forum_exp_post_create > 0 {
+        // Log the error instead of discarding it. Two real bugs (a wrong
+        // column name, then a smallint decoded as i32) were invisible for
+        // several iterations because this was a bare `if let Ok(..)`, and a
+        // silent exp grant is indistinguishable from exp that never happened.
+        let exp_result = crate::services::leveling::award_exp(
+            &state.db,
+            user_id,
+            state.config.forum_exp_post_create,
+            "post_create",
+        )
+        .await;
+        match exp_result {
+            Ok(gained) if gained > 0 => {
+                let _ =
+                    crate::services::leveling::notify_level_up(&state.db, user_id, gained as i16)
+                        .await;
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!("F7 exp grant failed for user {user_id}: {e}"),
+        }
+    }
 
     // Notifications (outside the tx — best-effort per contract; each insert
     // is independent and failures must not fail the reply).

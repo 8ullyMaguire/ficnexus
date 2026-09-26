@@ -18,9 +18,15 @@ pub async fn update_reputation_and_promote(
         .execute(pool)
         .await?;
 
-    // Record reputation event
+    // Record reputation event.
+    //
+    // The column is `points`, not `delta`. The old INSERT named `delta`, which
+    // no migration ever created, so this statement failed on EVERY call - and
+    // because every caller in the codebase uses `let _ = ...` (admin.rs
+    // work_publish, social.rs, forum.rs mod_received), the failure was
+    // swallowed and reputation silently never moved anywhere in the product.
     sqlx::query(
-        "INSERT INTO reputation_events (user_id, event_type, delta)
+        "INSERT INTO reputation_events (user_id, event_type, points)
          VALUES ($1, $2, $3)",
     )
     .bind(user_id)

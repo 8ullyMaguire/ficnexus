@@ -138,3 +138,70 @@ code.
 Until those are settled, these two tests stay red and `forum_api` will not be
 fully green. That is the correct outcome, and it is recorded rather than
 hidden.
+
+## Addendum, 2026-09-26 (after implementing steps 1-3)
+
+Three things the plan got wrong, and one that was worse than anything it
+predicted.
+
+### The plan assumed `update_reputation_and_promote` was usable. It is not.
+
+`users` has both `exp` and `reputation`, and they are different things. The F7
+tests read `users.exp`; `update_reputation_and_promote` updates
+`users.reputation`. Reusing it, as the plan proposed, moves the wrong column and
+every F7 test still reads 0. Built `src/services/leveling.rs` instead, with its
+own `award_exp`.
+
+### Worse: that function is broken on every call in the product
+
+```
+$ psql -c '\d reputation_events'
+ id | user_id | event_type | points | reference_type | reference_id | created_at
+
+$ psql -c "INSERT INTO reputation_events (user_id,event_type,delta) ..."
+ERROR:  column "delta" of relation "reputation_events" does not exist
+```
+
+It inserts into `delta`; the column is `points`. Every call fails - and every
+caller uses `let _ = ...` (`admin.rs` work_publish and work_complete_bonus,
+`social.rs:329`, `forum.rs:750`), so the error was discarded at each site.
+**Reputation has never moved anywhere in the product.** Fixed the column name.
+
+This is independent of F7 and probably the most valuable thing found this
+session.
+
+### `users.level` is smallint, and I decoded it as i32
+
+`award_exp` read `SELECT level ... ` into `Option<i32>`, which fails to decode.
+The caller was `if let Ok(gained) = ...`, so the failure was silent: no exp, no
+error, no log. Now `i16` throughout, matching the column.
+
+**The general lesson, and it is the second time this session:** `if let Ok(..)`
+and `let _ = ..` on a side effect make a failure indistinguishable from the
+thing never having happened. Both of the bugs above hid behind one. The call
+sites now log the error:
+
+```rust
+Err(e) => tracing::warn!("F7 exp grant failed for user {user_id}: {e}"),
+```
+
+### The curve was not missing, I had not read it
+
+The spec's first draft called the level curve undetermined and blocked on an
+owner. Wrong - I had read `forum_exp_topic_create` and `forum_exp_post_create`
+but not the rest of the block. `forum_exp_per_level` defaults to 100 and
+`forum_exp_mod_daily_cap` to 3, both asserted in `src/config.rs:1729-1733`. The
+threshold is 100 exp per level, and the test asserting 2 exp stays level 0 is
+exactly right. No owner decision is needed for the curve.
+
+Only the two **gate assignments** (`f7_level_gate_admin`, `f7_level_gate_curator`)
+remain genuinely undecided, because "which level gates which route" is not in
+the config.
+
+### No new table
+
+The daily cap needed a count of grants already issued today. Rather than invent
+`forum_exp_events`, `award_exp` records each grant in the existing
+`reputation_events` with an `event_type` of `forum_exp:<reason>`, and the cap
+counts those. No migration, and exp grants stay distinguishable from reputation
+moves.

@@ -6,6 +6,7 @@ pub mod content_scan;
 pub mod customization;
 pub mod embedding_dedupe;
 pub mod extensions;
+pub mod leveling;
 pub mod mailer;
 pub mod ollama;
 pub mod pow;
