@@ -207,3 +207,24 @@ The session note is a durable record, so put the counts in the **vault**
 - [ ] any regression found is documented, not silently fixed
 - [ ] committed in two parts, tagged
 - [ ] vault log has the counts
+
+## Addendum, 2026-09-26 (after execution)
+
+The plan's step 6 predicted: *"Expect to iterate this step. That is normal, not
+a sign the plan is wrong."* It under-counted.
+
+- Baseline: 10 of 56 suites failed, 22 errors, 3 classes. **Actual: 48 files
+  changed**, because cargo surfaces errors in waves — clearing the first suite's
+  errors is what reveals the next suite's.
+- The wave loop ran 11 iterations. A broad regex pass was tried and had to be
+  backed out: it renamed test *locals* named `role`, orphaning `.bind(role)` in
+  six suites. Fixed per-site instead.
+- `users.role` is still a real column, so DB seeding helpers keep a `role`
+  parameter. Only JWT fixtures move to `trust_level`.
+- The endpoint was genuinely removed, not moved: `my_level` is absent from
+  `src/` and the server registers no `/api/users/me/level`. The XP curve it
+  served (`exp`, `exp_to_next`, level progress) is absent from `src/` entirely.
+  Dead route registration and its single-purpose test removed.
+
+Final: **0 compile errors across all 56 suites**, `cargo build` unchanged, 48
+files changed, all under `tests/`. No production code touched.
