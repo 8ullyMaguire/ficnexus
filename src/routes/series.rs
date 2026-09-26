@@ -247,9 +247,16 @@ pub async fn get_author(
     .fetch_one(&state.db)
     .await?;
 
-    // Author profile (avatar, bio, badge_text) — matched by canonical name.
-    let author_profile = sqlx::query_as::<_, (Option<String>, Option<String>, Option<String>)>(
-        r#"SELECT avatar_url, bio, badge_text
+    // Author profile (avatar, bio) — matched by canonical name.
+    //
+    // badge_text was selected here and no migration ever created the column, so
+    // this endpoint returned 500 for every author: the column is resolved before
+    // any row is examined. Dropped rather than added — it was read in one place
+    // and written in one place (routes/authors.rs update_author_profile, also
+    // broken), with no UI, no test and no other consumer. The separate
+    // "badges" field below is the real, working badge surface.
+    let author_profile = sqlx::query_as::<_, (Option<String>, Option<String>)>(
+        r#"SELECT avatar_url, bio
            FROM author_profiles
            WHERE canonical_name = $1
            ORDER BY updated_at DESC LIMIT 1"#,
@@ -362,7 +369,6 @@ pub async fn get_author(
             "name": canonical_name,
             "avatar_url": author_profile.as_ref().map(|p| p.0.clone()).unwrap_or(None),
             "bio": author_profile.as_ref().map(|p| p.1.clone()).unwrap_or(None),
-            "badge_text": author_profile.as_ref().map(|p| p.2.clone()).unwrap_or(None),
             "badges": badges,
             "favorite_tags": favorite_tags,
             "socials": socials,

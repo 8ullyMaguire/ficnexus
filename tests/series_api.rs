@@ -411,3 +411,53 @@ async fn author_detail_unknown_author_returns_empty() {
 
     cleanup(&db).await;
 }
+
+/// Regression: the author page must not select a column that does not exist.
+///
+/// `get_author` selected `author_profiles.badge_text`, which no migration ever
+/// created, so the endpoint returned 500 for *every* author — the column is
+/// resolved before any row is examined, so an author with no profile row at all
+/// still 500'd. Both existing author tests caught it, but neither says why, and
+/// `author_detail_aggregates_works_and_stats` reads like a test about work
+/// aggregation rather than about a schema/code mismatch.
+///
+/// This asserts the page renders for an author who HAS a profile row, which is
+/// the case the old code could not serve, and pins the profile fields that do
+/// exist so a future phantom column is caught here rather than in production.
+#[ignore]
+#[tokio::test]
+async fn author_page_renders_with_a_profile_row() {
+    let _guard = db_guard();
+    let db = pool().await;
+    cleanup(&db).await;
+
+    sqlx::query(
+        "INSERT INTO author_profiles (canonical_name, bio, avatar_url)
+         VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind("SeriesApiTest Profiled")
+    .bind("a bio that must survive the round trip")
+    .bind("https://example.invalid/avatar.png")
+    .execute(&db)
+    .await
+    .expect("seed author_profiles failed");
+
+    let router = app().await;
+    let (status, body) = get_json(&router, "/api/authors/SeriesApiTest%20Profiled").await;
+
+    assert_eq!(status, StatusCode::OK, "author page with a profile row: {body}");
+    assert_eq!(body["err"], 0);
+    assert_eq!(body["author"]["name"], "SeriesApiTest Profiled");
+    // The two profile fields that exist must actually come back.
+    assert_eq!(
+        body["author"]["bio"], "a bio that must survive the round trip",
+        "bio not returned: {body}"
+    );
+    assert_eq!(
+        body["author"]["avatar_url"], "https://example.invalid/avatar.png",
+        "avatar_url not returned: {body}"
+    );
+
+    cleanup(&db).await;
+}

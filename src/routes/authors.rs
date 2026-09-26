@@ -184,7 +184,11 @@ pub async fn update_author_profile(
     let canonical_name = payload.get("canonical_name").and_then(|v| v.as_str());
     let bio = payload.get("bio").and_then(|v| v.as_str());
     let avatar_url = payload.get("avatar_url").and_then(|v| v.as_str());
-    let badge_text = payload.get("badge_text").and_then(|v| v.as_str());
+    // badge_text is accepted and ignored. It was written to author_profiles
+    // here, but no migration ever created that column, so any curator setting
+    // a badge got a 500. The field has no column, no reader (get_author no
+    // longer selects it) and no UI. Callers still sending it are unaffected
+    // rather than broken, which is why this ignores instead of rejecting.
 
     if let Some(name) = canonical_name {
         sqlx::query(
@@ -209,13 +213,8 @@ pub async fn update_author_profile(
             .execute(&state.db)
             .await?;
     }
-    if let Some(badge) = badge_text {
-        sqlx::query("UPDATE author_profiles SET badge_text = $1, updated_at = NOW() WHERE id = $2")
-            .bind(badge)
-            .bind(id)
-            .execute(&state.db)
-            .await?;
-    }
+    // badge_text is intentionally not written: the column does not exist. See
+    // the note where the payload fields are read.
 
     Ok(Json(json!({"err": 0, "msg": "Profile updated"})))
 }
