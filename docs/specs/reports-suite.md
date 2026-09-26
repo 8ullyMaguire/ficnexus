@@ -58,11 +58,18 @@ leak is cleaned at source, so the table does not grow without bound.
 
 ### 2.3 The missing FK is not fixed here
 
-`user_reports.reporter_id` has a foreign key to `users(id)`, and the leaked rows
-show `reporter_id: null`, so the FK is nullable and the users were deleted
-without cascading. Whether `reporter_id` should be `NOT NULL` is a product
-question — reports about deleted users may be a legitimate state — and is out of
-scope. What matters is that the rows are not left behind by a test.
+`user_reports.reporter_id` is nullable, the leaked rows show `reporter_id:
+null`, and `information_schema` reports **no foreign key on the column at all**
+(checked `pg_constraint` directly, not just the column list). Deleting the user
+sets it NULL rather than cascading.
+
+So cleanup cannot be written as "delete the reporter's reports" — the predicate
+matches nothing once the user is gone. The working cleanup keys on `target_id`,
+which the test still has in scope, and must run **before** the users are deleted.
+
+Whether `reporter_id` should be `NOT NULL` is a product question — reports about
+deleted users may be a legitimate state — and is out of scope. What matters is
+that the rows are not left behind by a test.
 
 ## 3. Cause 2 — the trust-gate fixture, for the third time
 
@@ -124,8 +131,10 @@ than against a length.
 **R2.** The test must pass whether the table holds 1 row or 16. Proven by running
 it against a database that already has leaked rows.
 
-**R3.** `forum_api` cleans up the `user_reports` rows it creates, so repeated
-runs do not grow the table without bound.
+**R3.** `forum_api` cleans up the `user_reports` rows it creates, keyed on
+`target_id` and run before the users are deleted, so repeated runs do not grow
+the table without bound. Proven by counting rows before and after two
+consecutive runs, not by reading the SQL.
 
 **R4.** The report-filing tests seed `users.trust_level` at 1 or above. The
 database row is what the gate reads.
@@ -146,11 +155,42 @@ here and the minimum stays 1.
   certainly wrong for an audit trail.
 - The admin list endpoint. It is correct.
 
+**R7.** The new identity assertions are proven to have teeth by mutating the
+production code they cover, not by rewriting them. Neutering
+`resolve_report`'s `UPDATE ... SET status = $1` to `SET status = status` — still
+returning 200 and the requested status — must make the suite fail.
+
 ## 6. Acceptance
 
-1. All three `reports_api` tests pass against the current, already-polluted
+1. All four `reports_api` tests pass against the current, already-polluted
    database — not only against a freshly provisioned one. That is the difference
    between R2 being satisfied and merely appearing to be.
 2. `SELECT count(*) FROM user_reports` stops growing across two consecutive runs
    of `forum_api`.
-3. 935 unit tests pass; all 57 suites compile.
+3. The resolve assertion fails when resolve is neutered.
+4. 935 unit tests pass; all 57 suites compile.
+
+## 7. Outcome
+
+All met, with one addition to R2's scope. There were **three** count
+assertions, not one: `len() == 1` for the open list, `len() == 2` for
+`status=all`, and `len() == 0` after the resolve. Each is satisfied by any table
+state with the right number of rows. The resolve one is the dangerous case — "no
+open left" passes with resolve completely broken, as long as some other report is
+there instead.
+
+The leak fix took three attempts, all of which looked correct:
+
+| attempt | why it deleted nothing |
+|---|---|
+| `WHERE reporter_id = $1` | column is nullable with no FK; deleting the user nulls it, so the predicate can never match afterwards |
+| `WHERE target_id = ANY($1)` as `Vec<String>` | `target_id` is `integer` |
+| `WHERE target_id = ANY($1)` as `Vec<i32>` | works — count holds at 23 |
+
+`.ok()` made "matched zero rows" silent in all three. Verified by row count
+before and after, twice, rather than by reading the SQL.
+
+The mutation pass has one trap worth recording: the first attempt replaced the
+assertion with `filter(..).count() == 0`, which is **semantically identical**,
+and came back green under mutation. It proved nothing because it mutated no
+behaviour. Mutating the production `UPDATE` is what produced the real red.
