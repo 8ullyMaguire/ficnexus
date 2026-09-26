@@ -44,9 +44,7 @@ pub(crate) async fn admin_list(
     auth: AuthUser,
     Query(q): Query<GalleryQuery>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
     let rows = extensions::gallery_all(&state.db, q.kind.as_deref(), q.q.as_deref(), 200).await?;
     Ok(Json(json!({ "err": 0, "items": rows })))
 }
@@ -152,9 +150,7 @@ pub(crate) async fn admin_verify(
     auth: AuthUser,
     Path(id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
     let now_verified: Option<bool> = sqlx::query_scalar(
         "UPDATE extensions SET is_verified = NOT is_verified, updated_at = NOW()
          WHERE id = $1 RETURNING is_verified",

@@ -83,9 +83,7 @@ pub async fn list_notices(
     State(state): State<Arc<AppState>>,
     auth: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
     let rows: Vec<Value> = sqlx::query_as::<
         _,
         (
@@ -148,9 +146,7 @@ pub async fn action_notice(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
     let work_url_id: Option<String> = sqlx::query_scalar(
         "SELECT work_url_id FROM copyright_notices WHERE id = $1 AND status = 'pending'",
     )
@@ -204,9 +200,7 @@ pub async fn reject_notice(
     auth: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
     let n = sqlx::query(
         "UPDATE copyright_notices SET status = 'rejected', resolved_at = NOW() WHERE id = $1 AND status = 'pending'",
     )

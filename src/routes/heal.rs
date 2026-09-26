@@ -68,9 +68,7 @@ pub async fn heal_handler(
     user: AuthUser,
     Query(params): Query<HealQuery>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let domain = params
         .domain
@@ -205,9 +203,7 @@ pub async fn list_extractions_handler(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     let rows = crate::heal::extract::list_extractions(&state.db, false, 100)
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
@@ -236,9 +232,7 @@ pub async fn trust_extraction_handler(
     user: AuthUser,
     axum::extract::Path(id): axum::extract::Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     let trusted = crate::heal::extract::mark_trusted(&state.db, id)
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;
@@ -257,9 +251,7 @@ pub async fn replay_pending_handler(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let pending = sqlx::query_as::<_, crate::heal::store::PendingExportRow>(
         r#"SELECT id, url, format, client_ip::text, client_id, status, attempts,

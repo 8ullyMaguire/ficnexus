@@ -113,9 +113,7 @@ pub async fn ingest_docs(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let path = state
         .config

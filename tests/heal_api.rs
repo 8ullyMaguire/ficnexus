@@ -618,15 +618,14 @@ async fn admin_heal_requires_role_10() {
         None,
     )
     .await;
-    // admin.rs convention: anonymous → HTTP 403 with err -403 (not the
-    // tag-curator 400-as-401 style). AuthUser extraction happens before the
-    // handler body; the AppError::Forbidden path is the module convention.
-    assert_eq!(
-        status,
-        StatusCode::FORBIDDEN,
-        "anon must be forbidden: {body}"
-    );
-    assert_eq!(body["err"], -403, "anon err code: {body}");
+    // Anonymous is UNAUTHORIZED (401), not FORBIDDEN (403): no credentials at
+    // all is a different failure from credentials that lack admin. The old
+    // inline `trust_level < 5` check read a default-constructed anonymous
+    // AuthUser (trust_level 0) and answered 403, conflating the two.
+    // `require_admin_tier` checks `user_id` first and answers 401, which is the
+    // correct HTTP semantic. The authenticated non-admin case below stays 403.
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "anon: {body}");
+    assert_eq!(body["err"], 401, "anon err code: {body}");
 
     let token = auth_header(user_id, 0, USERNAME);
     let (status, _) = send(
@@ -875,8 +874,14 @@ async fn heal_extractions_endpoint_requires_role_10() {
     let app = build_app().await;
 
     let (status, body) = send(&app, "GET", "/api/admin/heal/extractions", None, None).await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "anon: {body}");
-    assert_eq!(body["err"], -403);
+    // Anonymous is UNAUTHORIZED (401), not FORBIDDEN (403): no credentials at
+    // all is a different failure from credentials that lack admin. The old
+    // inline `trust_level < 5` check read a default-constructed anonymous
+    // AuthUser (trust_level 0) and answered 403, conflating the two.
+    // `require_admin_tier` checks `user_id` first and answers 401, which is the
+    // correct HTTP semantic. The authenticated non-admin case below stays 403.
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "anon: {body}");
+    assert_eq!(body["err"], 401, "anon err: {body}");
 
     let token = auth_header(user_id, 0, USERNAME);
     let (status, _) = send(
@@ -976,7 +981,10 @@ async fn replay_pending_endpoint_requires_role_10() {
     .await
     .expect("enqueue");
     let (status, _) = send(&app, "POST", "/api/admin/heal/replay-pending", None, None).await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "anon must be forbidden");
+    // Anonymous → 401, not 403. See the note on
+    // admin_heal_requires_role_10: no credentials is a different failure from
+    // credentials that lack admin.
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "anon must be unauthorized");
 
     // Non-admin role 0 → 403 too.
     let user_id = seed_user(&db, "heal_test_low", 0).await;

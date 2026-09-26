@@ -39,9 +39,7 @@ pub async fn auto_tag_fic(
     user: AuthUser,
     Json(req): Json<AutoTagRequest>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     let url_id = req.url_id.trim().to_string();
     if url_id.is_empty() {
         return Err(AppError::BadRequest("url_id is required".to_string()));
@@ -82,9 +80,7 @@ pub async fn auto_tag_backfill(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let embedded = match auto_tagger::backfill_tag_embeddings(&state.db, &state.ollama).await {
         Ok(n) => n,

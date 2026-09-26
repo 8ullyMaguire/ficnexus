@@ -118,9 +118,7 @@ pub async fn resolve_bounty_handler(
     Path(pot_id): Path<i32>,
     Json(req): Json<ResolveBountyReq>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
     let resolver_id = auth
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".into()))?;

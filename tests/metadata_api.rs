@@ -432,10 +432,10 @@ async fn metadata_endpoint_requires_role_10() {
     .await;
     assert_eq!(
         status,
-        StatusCode::FORBIDDEN,
-        "anonymous must be forbidden: {body}"
+        StatusCode::UNAUTHORIZED,
+        "anonymous must be unauthorized: {body}"
     );
-    assert_eq!(body["err"], -403, "anonymous body: {body}");
+    assert_eq!(body["err"], 401, "anonymous body: {body}");
 }
 
 /// Empty title and empty payload are rejected; missing work is 404.

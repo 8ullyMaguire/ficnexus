@@ -303,7 +303,13 @@ async fn run_scan_requires_admin() {
         )
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    // An anonymous request is UNAUTHORIZED (401), not FORBIDDEN (403): there are
+    // no credentials at all, which is a different failure from credentials that
+    // are present but lack admin. The old inline `trust_level < 5` check read a
+    // default-constructed anonymous AuthUser (trust_level 0) and answered 403,
+    // which conflated the two. `require_admin_tier` checks `user_id` first and
+    // answers 401, which is the correct HTTP semantic.
 
     cleanup(&db, ADMIN_USER, URL_ID).await;
 }

@@ -46,9 +46,7 @@ pub async fn bulk_refresh(
     user: AuthUser,
     Json(req): Json<BulkRequest>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let url_ids: Vec<String> = req.url_ids.into_iter().take(50).collect();
     if url_ids.is_empty() {
@@ -71,9 +69,7 @@ pub async fn bulk_auto_tag(
     user: AuthUser,
     Json(req): Json<BulkRequest>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let url_ids: Vec<String> = req.url_ids.into_iter().take(50).collect();
     if url_ids.is_empty() {
@@ -97,9 +93,7 @@ pub async fn search_fics_for_admin(
     user: AuthUser,
     Query(params): Query<FicSearchQuery>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let q = params.q.unwrap_or_default();
     let limit = params.limit.unwrap_or(50).min(100);

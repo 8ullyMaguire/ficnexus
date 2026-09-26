@@ -57,9 +57,7 @@ pub async fn admin_trust(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin only".into()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
     let distribution: Vec<(i16, i64)> = sqlx::query_as(
         "SELECT trust_level, COUNT(*) FROM users GROUP BY trust_level ORDER BY trust_level",
     )
@@ -82,9 +80,7 @@ pub async fn admin_set_trust(
     Path(user_id): Path<i32>,
     Json(body): Json<SetTrustBody>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin only".into()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
     let reason = body.reason.unwrap_or_else(|| "admin override".into());
     let level = trust::set_trust_level(
         &state.db,
@@ -106,9 +102,7 @@ pub async fn admin_digest(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin only".into()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
     let contested: Vec<(i64, String, String, String)> = sqlx::query_as(
         "SELECT id, target_type, status, auto_status FROM user_reports
          WHERE auto_status IN ('auto_hidden','needs_admin') OR status = 'open'

@@ -198,9 +198,7 @@ pub async fn endpoint_usage_handler(
     if auth.user_id.is_none() {
         return Err(AppError::Unauthorized("Login required".to_string()));
     }
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".to_string()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
     let days: i32 = params
         .get("days")
         .and_then(|v| v.parse().ok())
@@ -235,9 +233,7 @@ pub async fn admin_analytics_handler(
     if auth.user_id.is_none() {
         return Err(AppError::Unauthorized("Login required".to_string()));
     }
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".to_string()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
 
     let daily = queries::get_daily_unique_visitors(&state.db, 30).await?;
     let weekly = queries::get_weekly_unique_visitors(&state.db, 12).await?;

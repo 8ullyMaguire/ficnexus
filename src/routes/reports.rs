@@ -305,9 +305,7 @@ pub async fn list_reports(
     user: AuthUser,
     Query(params): Query<ReportQuery>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let status = params.status.trim();
     if !matches!(status, "open" | "resolved" | "dismissed" | "all") {
@@ -628,9 +626,7 @@ pub async fn list_ban_appeals(
     auth: AuthUser,
     Path(ban_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
 
     let appeals = sqlx::query_as::<_, BanAppealEntry>(
         "SELECT id, ban_id, user_id, reason, status, reviewed_by, reviewed_at, reviewer_note, created_at
@@ -667,9 +663,7 @@ pub async fn review_ban_appeal(
     Path((ban_id, appeal_id)): Path<(i64, i64)>,
     Json(body): Json<ReviewBanAppealBody>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
 
     let new_status = match body.action.as_str() {
         "approved" => "approved",
