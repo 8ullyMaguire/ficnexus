@@ -420,10 +420,12 @@ mod tests {
 
     #[test]
     fn staff_is_admin_or_level50() {
-        let mk = |role: i16, level: i16| AuthUser {
+        // is_staff() is `level >= 50 || trust_level >= 5`, so the parameter the
+        // test varies as "admin" is trust_level, not the removed legacy role.
+        let mk = |trust_level: i16, level: i16| AuthUser {
             user_id: Some(1),
             username: Some("a".to_string()),
-            role,
+            trust_level,
             level,
         };
         assert!(is_staff(&mk(10, 1)));

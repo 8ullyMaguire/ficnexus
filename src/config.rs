@@ -553,8 +553,6 @@ impl Config {
             forum_mod_actions_per_day: 0,
             forum_min_post_len: 0,
             forum_post_delay_secs: 0,
-            forum_curator_level: 0,
-            forum_admin_level: 0,
             forum_exp_per_level: 0,
             forum_exp_topic_create: 0,
             forum_exp_post_create: 0,

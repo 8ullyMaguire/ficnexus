@@ -138,7 +138,7 @@ mod tests {
         let auth = crate::routes::auth::AuthUser {
             user_id: Some(7),
             username: Some("u".into()),
-            role: 0,
+            trust_level: 0,
             level: 0,
         };
         assert!(require_logged_in(&auth).is_ok());
@@ -149,7 +149,7 @@ mod tests {
         let auth = crate::routes::auth::AuthUser {
             user_id: Some(3),
             username: Some("mod".into()),
-            role: 5,
+            trust_level: 5,
             level: 50,
         };
         let (id, name) = actor_from_auth(&auth);

@@ -419,7 +419,12 @@ mod tests {
             follows: vec![],
             updated_at: Some("2026-09-04T00:00:00Z".into()),
         };
-        let header = make_set_cookie(&library, "test-secret").expect("set-cookie header");
+        // Signed and verified with the same secret. This previously signed with
+        // the literal "test-secret" while verifying with TEST_SECRET
+        // ("test-secret-key"), so the HMAC could never match and the roundtrip
+        // assertion was unreachable. The test had never run, because the test
+        // build did not compile.
+        let header = make_set_cookie(&library, TEST_SECRET).expect("set-cookie header");
         let s = header.to_str().unwrap();
         // Format check
         assert!(s.starts_with(&format!("{COOKIE_NAME}=")));

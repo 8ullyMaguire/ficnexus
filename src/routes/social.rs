@@ -1084,7 +1084,7 @@ mod tests {
         let user = User {
             id: 42,
             username: "alice".into(),
-            role: 1,
+            trust_level: 1,
             reputation: 100,
             email: Some("alice@example.com".into()),
             level: 0,
@@ -1095,7 +1095,7 @@ mod tests {
         let claims = verify_token(&token, secret).unwrap();
         assert_eq!(claims.sub, 42);
         assert_eq!(claims.username, "alice");
-        assert_eq!(claims.role, 1);
+        assert_eq!(claims.trust_level, 1);
     }
 
     #[test]
@@ -1104,7 +1104,7 @@ mod tests {
         let claims = super::super::auth::Claims {
             sub: 1,
             username: "test".into(),
-            role: 0,
+            trust_level: 0,
             level: 0,
             exp: 1, // Jan 1 1970 — expired
             iat: 1,

@@ -732,7 +732,7 @@ mod tests {
         let user = AuthUser {
             user_id: Some(1),
             username: Some("reader".into()),
-            role: 0,
+            trust_level: 0,
             level: 0,
         };
         assert!(user.trust_level < 3, "Reader should not pass curator check");
@@ -740,7 +740,7 @@ mod tests {
         let curator = AuthUser {
             user_id: Some(2),
             username: Some("curator".into()),
-            role: 5,
+            trust_level: 5,
             level: 50,
         };
         assert!(curator.trust_level >= 5, "Curator should pass curator check");
@@ -748,7 +748,7 @@ mod tests {
         let admin = AuthUser {
             user_id: Some(3),
             username: Some("admin".into()),
-            role: 10,
+            trust_level: 10,
             level: 100,
         };
         assert!(admin.trust_level >= 10, "Admin should pass admin check");
@@ -760,7 +760,7 @@ mod tests {
         let admin = AuthUser {
             user_id: Some(3),
             username: Some("admin".into()),
-            role: 10,
+            trust_level: 10,
             level: 100,
         };
         assert!(admin.trust_level >= 10);
@@ -768,7 +768,7 @@ mod tests {
         let curator = AuthUser {
             user_id: Some(2),
             username: Some("curator".into()),
-            role: 5,
+            trust_level: 5,
             level: 50,
         };
         assert!(!(curator.trust_level >= 10));

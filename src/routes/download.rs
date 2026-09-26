@@ -885,7 +885,7 @@ mod tests {
         let header_user = AuthUser {
             user_id: Some(7),
             username: Some("header-user".into()),
-            role: 1,
+            trust_level: 1,
             level: 10,
         };
         let resolved = resolve_batch_user(&header_user, Some("bogus-token"), "test-secret");
