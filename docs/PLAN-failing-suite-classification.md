@@ -187,3 +187,75 @@ Tag `failing-suite-classification-2026-09-26`. Sync to
 Every step is confined to test files except step 1's `Drop` impl, which is also
 test-side. No migration and no production code is touched in this plan, so
 reverting the commits restores the previous state exactly.
+
+## Addendum, 2026-09-26 (after execution of steps 1 and 2)
+
+Steps 1 and 2 are done. Steps 3-6 are not, and are recorded honestly below
+rather than marked complete.
+
+### Step 1 (class D) - fixed, but not for the reason the plan gave
+
+The plan said the fix was to drop `public` from the search path. **That was
+wrong, and it was wrong because the plan trusted the error message.**
+
+`001_initial.sql` is a pg_dump and hardcodes the schema in the object names -
+1156 `public.` references in that one file, e.g.
+
+    CREATE FUNCTION public.update_fic_tag_score() RETURNS trigger
+
+Search path cannot redirect an explicitly qualified name. The per-test
+`test_*` schema could never have been populated, which also means the schema
+leak was a symptom, not the cause.
+
+The real cause: `scripts/provision_test_db.sh` applies migrations with `psql -f`
+and never records versions in `_sqlx_migrations`, so the table has 0 rows. The
+test's own `sqlx::migrate::Migrator` therefore saw an empty ledger and replayed
+all 41 files into an already-migrated database. The first file that creates an
+object failed with 42723, which panicked while holding the shared `DB_LOCK`, so
+the mutex stayed poisoned and the other six tests died with `PoisonError`.
+
+**Six of the seven `integration` failures were one bug.** Only
+`test_check_fic_blacklist` was ever a real failure.
+
+The test no longer migrates at all - provisioning belongs to the provisioner,
+and a second migration path is how the two drifted apart. Isolation comes from
+`truncate_all`, which is what the tests actually relied on. `cleanup()` now
+truncates rather than dropping, because after this change the schema it was
+handed is `public` and `DROP SCHEMA public CASCADE` would have been
+catastrophic.
+
+Verified: `db_tests` 7/7, whole suite 31/31, 181 tables still in `public`, no
+new `test_*` schema.
+
+### Step 2 (class A) - fixed, and two latent bugs came with it
+
+The trust-gate diagnosis in the spec was correct. Fixing it exposed two further
+problems that had been hiding behind the 403s:
+
+1. **A process-wide `OnceLock<PgPool>` shared by every test** while each test
+   built its own `AppState` holding pooled connections. Later tests waited on
+   the 60s acquire timeout, and *which* test failed varied per run. The pool is
+   now per-caller. 6/6 in 0.9s, stable over three consecutive runs, versus 60s
+   of timeouts.
+2. **`#[tokio::test]` on a current-thread runtime** while `app()` builds a
+   `RedisBucketLimiter` whose shadowban probe calls `block_in_place`, which
+   panics there. `admin_api` already documents this exact requirement and uses
+   `flavor = "multi_thread"`; `uploads_api` had never been converted.
+
+`seed_user` also opens a dedicated connection rather than using the shared
+pool, so seeding never competes with a live `AppState`.
+
+The trust gate and `PUBLISH_MIN_TRUST` are untouched. The one test that exists
+to prove the gate rejects now asserts a flat 403; it previously accepted 200
+*or* 403, which passed whether or not the gate worked.
+
+### Not yet done
+
+- **Step 3 (class C)** `rec_curator` still seeds `works` and still violates
+  `rec_user_signals_work_id_fkey`. The fix is already understood from
+  `embedding_dedupe` - seed `fic_info` with `status = 'complete'`,
+  `source = 'ao3'` - and is mechanical.
+- **Step 4 (class B)** `forum_api` flood control and the 8-character minimum.
+- **Step 5 (class E)** the two genuine behaviour questions. Deliberately
+  untouched.
+- **Step 6 (full re-measure)** not run since these commits.
