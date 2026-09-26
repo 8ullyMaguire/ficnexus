@@ -1,7 +1,7 @@
-# Real DB-suite baseline
+# Baseline — DB integration suites
 
-First trustworthy measurement in this cycle, taken 2026-09-26 after
-`provision_test_db.sh` was fixed (see `docs/specs/forum-api-isolation.md`).
+Current as of 2026-09-26, after the F7 level gate, the F3 edit-window trim, and
+two harness fixes (`provision_test_db.sh` drop + Redis flush).
 
 ## How to reproduce
 
@@ -11,33 +11,30 @@ First trustworthy measurement in this cycle, taken 2026-09-26 after
     export CARGO_TARGET_DIR=~/.cargo-target/ficnexus
     bash scripts/run_db_suites.sh
 
-`run_db_suites.sh` now re-provisions before every suite and takes an flock on
-`/tmp/ficnexus_test_db.lock`. Do not touch the test database while it runs.
+The script re-provisions the database **and flushes Redis** before every suite,
+and holds an flock on `/tmp/ficnexus_test_db.lock`. Do not touch either store
+while it runs — a concurrent `provision_test_db.sh` in another shell drops the
+database out from under the run, which happened once and invalidated a full
+sweep.
 
 ## Totals
 
-Updated 2026-09-26 after the F7 level gate.
-
-| | before F7 gate | now |
+| | before fixes | now |
 |---|---:|---:|
 | suites | 57 | 57 |
 | pass | 38 | **39** |
 | fail | 19 | **18** |
 | no-result | 0 | 0 |
-| tests passing | 325 | **328** |
-| tests failing | 43 | **40** |
+| tests passing | 325 | **329** |
+| tests failing | 43 | **39** |
 
-`forum_api` 41/8 → **43/6**: the two F7 gate tests, and nothing else.
-`ask_archive_api` 6/1 → 7/0 incidentally — not caused by this work, noted so
-the next reader does not attribute it to the gate.
-
-Unit library (no database): **935 passed, 0 failed, 3 ignored**.
+Unit library (no external state): **935 passed, 0 failed, 3 ignored**.
 
 ## Failing suites
 
 | suite | pass | fail |
 |---|---:|---:|
-| forum_api | 43 | 6 |
+| forum_api | 44 | 5 |
 | requests_api | 6 | 5 |
 | search_api | 37 | 4 |
 | rss_api | 4 | 3 |
@@ -56,23 +53,44 @@ Unit library (no database): **935 passed, 0 failed, 3 ignored**.
 | tags_api | 2 | 1 |
 | user_export_api | 2 | 1 |
 
+## The five remaining `forum_api` failures
+
+```
+admin_creates_category_and_list_returns_it
+anonymous_gets_401_on_all_f3_routes
+topic_list_returns_seeded_topic_with_counts
+trust_grant_detail_stays_readable
+trust_metamod_vote_gone
+```
+
+Both F7 gate tests and both F3 edit tests are green. What is left is a mix of
+global-count assertions that see rows other suites left behind, and the 401-sweep
+test.
+
 ## Reading a number correctly
 
-`forum_api` is **8 failures** under `run_db_suites.sh` and **12** when run by
-hand. That is not instability — the runner exports
-`FORUM_POST_DELAY_SECS=0` to disable the 10s flood-control window, and four
-flood-control tests fail without it. Quote the runner's number, or quote the
-hand-run number *and* say which one you used.
+`forum_api` is **5 failures** under `run_db_suites.sh` and **more** when run by
+hand: the runner exports `FORUM_POST_DELAY_SECS=0` to disable the 10s
+flood-control window, and those tests fail without it. Quote the runner's
+number, or say which one you used.
 
 `admin_api` is 13/1: the one failure is `admin_users_search_role_ban`, the stale
 fixture already documented in the admin-flag spec.
 
-The six remaining `forum_api` failures are the flood-control tests the runner's
-`FORUM_POST_DELAY_SECS=0` does not cover, plus the two edit-window and trust-queue
-tests still awaiting the owner's trim decision.
+## Numbers before 2026-09-26 are void
 
-## What was wrong with the earlier numbers
+Every earlier figure — 7, 11, 12, 23, 24/31, 42/49, 38/19, 39/18 — was measured
+against a **42-table-short database** (a silently-failing `DROP DATABASE`) and/or
+with a **warm Redis** whose cached responses short-circuited the handlers under
+test. Do not compare against them; see `docs/specs/forum-api-isolation.md`.
 
-Everything quoted for the DB suites before the provisioning fix (7, 11, 12, 23,
-42/49, 24/31) came from a database that was 42 tables short. They are not
-comparable to this table and should not be cited.
+## What the two harness bugs were
+
+1. `psql -c "DROP ..." -c "CREATE ..."` reports only the last statement's status,
+   so the drop failed silently whenever a session was still connected, the
+   script re-applied migrations onto the old schema, and it still printed
+   `SCHEMA OK`. Measured: 138 tables against a claimed 180.
+2. Redis survived the database rebuild, and `ask.rs:284` returns a cached
+   response *before* `log_ask_analytics()`. Five stale keys made
+   `ask_archive_api` report 0/7, then 6/1, then 6/1 on identical runs; deleting
+   them gave 7/0 with no code change.

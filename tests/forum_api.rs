@@ -1506,7 +1506,7 @@ async fn f3_follow_state_get_reads_current_state() {
 
 #[tokio::test]
 #[ignore]
-async fn f3_edit_topic_author_window_and_mod() {
+async fn f3_edit_topic_author_any_time_and_mod_proposes() {
     let _g = db_guard();
     let db = pool().await;
     let u1 = "fr3_edit_author";
@@ -1520,8 +1520,7 @@ async fn f3_edit_topic_author_window_and_mod() {
         .ok();
     let cid = seed_category(&db, "fr3-edit", "Edit").await;
     let tid = seed_topic(&db, cid, id1, "fr3 edit topic").await;
-    // Age the topic past the 15-minute window (the window check for topic
-    // edits reads the topic's created_at).
+    // Age the topic, to pin that age is irrelevant to who may edit it.
     sqlx::query("UPDATE forum_topics SET created_at = NOW() - INTERVAL '1 hour' WHERE id = $1")
         .bind(tid)
         .execute(&db)
@@ -1542,17 +1541,27 @@ async fn f3_edit_topic_author_window_and_mod() {
     let token_author = auth_header(id1, u1, 0);
     let token_mod = auth_header(id2, u2, 5);
 
-    // Author after window → 403.
+    // An author may edit their own topic at any age - there is no edit window.
+    //
+    // This case used to assert 403 once the topic was older than 15 minutes,
+    // and had been red since the window was dropped from update_topic: the
+    // handler reads created_at but never compares it. The owner confirmed the
+    // window is not wanted, so the assertion now pins the real rule instead of
+    // a feature that does not exist.
     let (s, b) = patch_json(
         &app,
         &format!("/api/forum/topics/{tid}"),
         Some(&token_author),
-        json!({ "title": "Renamed" }),
+        json!({ "title": "Renamed by author" }),
     )
     .await;
-    assert_eq!(s, StatusCode::FORBIDDEN, "author expired: {b}");
+    assert_eq!(s, StatusCode::OK, "author may edit an aged topic: {b}");
 
-    // Mod can edit any time.
+    // A moderator is NOT the author, so update_topic files an edit *proposal*
+    // rather than applying the change: `if !is_author` is the branch that
+    // inserts into forum_edit_proposals. The test used to assert a direct
+    // edit and read the row back, which only ever worked because the author
+    // case above had aborted the test before reaching it.
     let (s, b) = patch_json(
         &app,
         &format!("/api/forum/topics/{tid}"),
@@ -1560,18 +1569,37 @@ async fn f3_edit_topic_author_window_and_mod() {
         json!({ "title": "Mod rename", "body": "Mod body" }),
     )
     .await;
-    assert_eq!(s, StatusCode::OK, "mod edit: {b}");
-    assert_eq!(b["err"], 0, "mod edit: {b}");
+    assert_eq!(s, StatusCode::OK, "mod edit proposal: {b}");
+    assert_eq!(b["err"], 0, "mod edit proposal: {b}");
+    assert_eq!(
+        b["status"], "pending",
+        "a non-author edit must be proposed, not applied: {b}"
+    );
+    let proposal_id: i64 = sqlx::query_scalar(
+        "SELECT id FROM forum_edit_proposals WHERE target_type = 'topic' AND target_id = $1
+         AND author_id = $2 ORDER BY id DESC LIMIT 1",
+    )
+    .bind(tid)
+    .bind(id2)
+    .fetch_one(&db)
+    .await
+    .expect("proposal row");
+    assert_eq!(
+        b["proposal_id"].as_i64(),
+        Some(proposal_id),
+        "proposal_id in the response must be the row: {b}"
+    );
+    // The topic itself is untouched until the proposal is approved.
     let (title, body): (String, String) =
         sqlx::query_as("SELECT title, body FROM forum_topics WHERE id = $1")
             .bind(tid)
             .fetch_one(&db)
             .await
             .expect("topic row");
-    assert_eq!(title, "Mod rename");
-    assert_eq!(body, "Mod body");
+    assert_eq!(title, "Renamed by author", "a proposal must not edit the topic");
+    assert_ne!(body, "Mod body", "a proposal must not edit the topic body");
 
-    // Fresh topic: author can edit within the window; body-only update OK.
+    // Fresh topic: author body-only update is OK.
     let tid2 = seed_topic(&db, cid2, id1, "fr3 fresh topic").await;
     // Re-fresh the fresh topic's timestamps (the aged-topic cleanup above
     // must not leak onto it; seed_topic on a fresh category is new, but
@@ -1625,6 +1653,11 @@ async fn f3_edit_topic_author_window_and_mod() {
     assert_eq!(s, StatusCode::OK, "mod can always edit: {b}");
 
     // Cleanup
+    sqlx::query("DELETE FROM forum_edit_proposals WHERE target_type = 'topic' AND target_id = $1")
+        .bind(tid)
+        .execute(&db)
+        .await
+        .ok();
     sqlx::query("DELETE FROM forum_categories WHERE id = $1")
         .bind(cid)
         .execute(&db)

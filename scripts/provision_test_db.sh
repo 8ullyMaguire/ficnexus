@@ -87,3 +87,28 @@ if [ "$n" -lt "$EXPECTED_TABLES" ]; then
   exit 1
 fi
 echo "$APP"
+
+
+# ── Redis ────────────────────────────────────────────────────────────────
+# A fresh Postgres is not a fresh environment. Redis survives the database
+# drop, and several handlers short-circuit on cached values before they reach
+# the code a test is trying to exercise:
+#
+#   src/search/ask.rs:284  if let Some(cached) = get_cached_ask_response(...)
+#       { return Ok(Json(cached_response)); }
+#
+# That early return happens BEFORE log_ask_analytics(), so ask_archive_api's
+# analytics assertions see no row and the suite reports failures that depend on
+# whether a previous run happened to populate the cache. Measured: 0 passed / 7
+# failed, then 6/1, then 6/1 on three identical fresh runs - and 7/0 the moment
+# the keys were deleted.
+#
+# Skip with FLUSH_REDIS=0 when a test deliberately needs a warm cache.
+if [ "${FLUSH_REDIS:-1}" = "1" ]; then
+  if command -v redis-cli >/dev/null 2>&1; then
+    redis-cli -n 0 FLUSHDB >/dev/null 2>&1 \
+      || echo "WARN: could not flush redis (db 0); cached values may leak between runs" >&2
+  else
+    echo "WARN: redis-cli not found; not flushing the test cache" >&2
+  fi
+fi
