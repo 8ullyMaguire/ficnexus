@@ -1226,3 +1226,92 @@ async fn notifications_flow() {
     // Cleanup
     cleanup(&db, &[u1, u2], &[]).await;
 }
+
+/// The six granular toggles the settings page binds checkboxes to, driven
+/// through the real GET and PUT round trip.
+///
+/// `notifications_flow` above asserts only the seven fields that existed in
+/// migration 001. The six AO3-style toggles had no coverage at all, which is
+/// how a 500 on this endpoint shipped: nothing failed until the suite happened
+/// to call GET /preferences, and nothing would have failed if it had not.
+///
+/// This pins the round trip that the UI depends on -- write FALSE, read it
+/// back -- rather than just the defaults, because the defaults come from the
+/// column DEFAULT and would pass even if the UPDATE were broken.
+#[ignore]
+#[tokio::test]
+async fn granular_notification_toggles_round_trip() {
+    let _g = db_guard();
+    let db = pool().await;
+    let u = "socialt_notif_granular";
+    cleanup(&db, &[u], &[]).await;
+    let id = seed_user(&db, u, 0).await;
+    let app = app().await;
+    let token = auth_header(id, u, 0);
+
+    // Defaults: TRUE, matching every other toggle in this table.
+    let (s, b) = get_json(&app, "/api/notifications/preferences", Some(&token)).await;
+    assert_eq!(s, StatusCode::OK, "granular prefs get: {b}");
+    for f in [
+        "comments_on_work",
+        "replies_to_comments",
+        "kudos_on_work",
+        "bookmarks_on_work",
+        "follows",
+        "mentions",
+    ] {
+        assert_eq!(b["preferences"][f], true, "{f} should default true: {b}");
+    }
+
+    // Turn three off, leave the rest, the way the settings page would.
+    let req = Request::builder()
+        .method("PUT")
+        .uri("/api/notifications/preferences")
+        .header("content-type", "application/json")
+        .header("authorization", &token)
+        .body(Body::from(
+            json!({
+                "comments_on_work": false,
+                "kudos_on_work": false,
+                "mentions": false
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    let status = resp.status();
+    let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let put: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(status, StatusCode::OK, "granular prefs put: {put}");
+
+    // Read back. This is the assertion that matters: it can only pass if the
+    // INSERT ... ON CONFLICT DO UPDATE actually persisted the new values.
+    let (s, b) = get_json(&app, "/api/notifications/preferences", Some(&token)).await;
+    assert_eq!(s, StatusCode::OK, "granular prefs re-get: {b}");
+    for f in ["comments_on_work", "kudos_on_work", "mentions"] {
+        assert_eq!(b["preferences"][f], false, "{f} should have persisted FALSE: {b}");
+    }
+    for f in ["replies_to_comments", "bookmarks_on_work", "follows"] {
+        assert_eq!(
+            b["preferences"][f], true,
+            "{f} was not in the PUT and must be untouched: {b}"
+        );
+    }
+
+    // And the row on disk agrees, so the test is not passing on a cached
+    // response shape.
+    let row: (bool, bool, bool, bool, bool, bool) = sqlx::query_as(
+        "SELECT comments_on_work, replies_to_comments, kudos_on_work,
+                bookmarks_on_work, follows, mentions
+         FROM notification_preferences WHERE user_id = $1",
+    )
+    .bind(id)
+    .fetch_one(&db)
+    .await
+    .expect("read the persisted preference row");
+    assert_eq!(row, (false, true, false, true, true, false), "row on disk: {row:?}");
+
+    cleanup(&db, &[u], &[]).await;
+}
