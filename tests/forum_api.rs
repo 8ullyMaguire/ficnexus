@@ -53,11 +53,17 @@ fn init_tracing() {
 
 /// Build a router with the forum endpoints and a real AppState.
 async fn app() -> Router {
+    app_with(fichub::config::Config::from_env()).await
+}
+
+/// Build the test app with an explicit config. Gate tests use this to set a
+/// level threshold explicitly: a test that relies on the default of 0 proves
+/// nothing, because 0 means the level axis is inert.
+async fn app_with(config: fichub::config::Config) -> Router {
     init_tracing();
     use fichub::server::AppState;
     use std::sync::Arc;
 
-    let config = fichub::config::Config::from_env();
     let db = pool().await;
 
     let redis_client =
@@ -3533,13 +3539,19 @@ async fn f7_level_gate_curator() {
             .await
             .expect("op post id");
 
+    // Threshold pinned explicitly. Relying on the default would make this test
+    // pass vacuously: 0 means the level axis is inert, so the 403 below would
+    // come from somewhere else entirely.
+    let mut cfg = fichub::config::Config::from_env();
+    cfg.forum_mod_min_level = 50;
+
     // Curator at level 50 (14+ days old): can moderate.
     sqlx::query("UPDATE users SET level = 50, exp = 5000, created_at = NOW() - INTERVAL '30 days' WHERE id = $1")
         .bind(cur_id)
         .execute(&db)
         .await
         .ok();
-    let app = app().await;
+    let app = app_with(cfg).await;
     let token = auth_header(cur_id, u_cur, 5);
     let (s, b) = post_json(
         &app,
@@ -3552,20 +3564,51 @@ async fn f7_level_gate_curator() {
     assert_eq!(b["err"], 0, "level 50 moderate err: {b}");
 
     // Level 49: forbidden.
+    //
+    // Two defects in this test made it red for the wrong reason, and both had
+    // to be fixed before it could pass:
+    //
+    // D2 - it moderated the SAME post twice, so the second call returned 409
+    //      ("You already moderated this post", the only 409 in forum.rs) before
+    //      the gate was ever reached. The forbidden case now uses its own post.
+    // D1 - it called `auth_header(cur_id, u_cur, 5)`, and that helper maps its
+    //      third argument through 10->100, 5->50, 1->1. The "level 49" token
+    //      actually carried level 50. It must use auth_header_level.
     sqlx::query("UPDATE users SET level = 49, exp = 4900 WHERE id = $1")
         .bind(cur_id)
         .execute(&db)
         .await
         .ok();
-    let token2 = auth_header(cur_id, u_cur, 5);
+    sqlx::query(
+        "INSERT INTO forum_posts (topic_id, author_id, body, score, created_at)
+         VALUES ($1, $2, 'fr7 gate second target', 0, NOW())",
+    )
+    .bind(tid)
+    .bind(author_id)
+    .execute(&db)
+    .await
+    .ok();
+    let post2_id: i64 = sqlx::query_scalar(
+        "SELECT id FROM forum_posts WHERE topic_id = $1 AND body = 'fr7 gate second target'",
+    )
+    .bind(tid)
+    .fetch_one(&db)
+    .await
+    .expect("second op post id");
+    assert_ne!(post2_id, post_id, "the level-49 case needs a distinct post");
+    let token2 = auth_header_level(cur_id, u_cur, 5, 49);
     let (s, b) = post_json(
         &app,
-        &format!("/api/forum/posts/{post_id}/moderate"),
+        &format!("/api/forum/posts/{post2_id}/moderate"),
         Some(&token2),
         json!({ "reason": "Insightful" }),
     )
     .await;
-    assert_eq!(s, StatusCode::FORBIDDEN, "level 49 forbidden: {b}");
+    assert_eq!(
+        s,
+        StatusCode::FORBIDDEN,
+        "level 49 must be rejected by the gate, not by duplicate moderation: {b}"
+    );
 
     // Cleanup
     sqlx::query("DELETE FROM forum_categories WHERE id = $1")
@@ -3686,13 +3729,18 @@ async fn f7_level_gate_admin() {
         .await
         .ok();
 
+    // Threshold pinned explicitly: at the default of 0 the level axis is inert
+    // and the 403 below would not be proving anything about level 100.
+    let mut cfg = fichub::config::Config::from_env();
+    cfg.forum_category_min_level = 100;
+
     // Level 99 (not 100): cannot create category (token must carry level 99).
     sqlx::query("UPDATE users SET level = 99, exp = 9900 WHERE id = $1")
         .bind(uid)
         .execute(&db)
         .await
         .ok();
-    let app = app().await;
+    let app = app_with(cfg).await;
     let token = auth_header_level(uid, u, 10, 99);
     let (s, b) = post_json(
         &app,
@@ -3719,6 +3767,29 @@ async fn f7_level_gate_admin() {
     .await;
     assert_eq!(s, StatusCode::OK, "level 100 create: {b}");
     assert_eq!(b["err"], 0, "create err: {b}");
+
+    // An /api/admin/* administrator is not automatically a forum category
+    // admin. `is_admin` guards admin.rs; this gate is trust + level, and the
+    // owner decided the two axes are independent. Without this case the
+    // "independent" half of that decision is untested.
+    sqlx::query("UPDATE users SET level = 0, exp = 0, is_admin = true WHERE id = $1")
+        .bind(uid)
+        .execute(&db)
+        .await
+        .ok();
+    let token3 = auth_header_level(uid, u, 10, 0);
+    let (s, b) = post_json(
+        &app,
+        "/api/forum/categories",
+        Some(&token3),
+        json!({ "slug": "fr7-adm-flag", "title": "F7 Adm Flag" }),
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::FORBIDDEN,
+        "is_admin must not bypass the forum level gate: {b}"
+    );
 
     // Cleanup
     sqlx::query("DELETE FROM forum_categories WHERE slug = 'fr7-adm'")
