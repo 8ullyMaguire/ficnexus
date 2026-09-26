@@ -26,12 +26,30 @@ async fn pool() -> sqlx::PgPool {
     sqlx::PgPool::connect(&url).await.expect("connect pool")
 }
 
+/// A real embedding client.
+///
+/// This used to point at `http://127.0.0.1:1` on the stated assumption that
+/// "tests never call it". `recommend_tags` calls `ollama.embed()` on the fic
+/// description unconditionally, so both tests in this file died on
+///
+///     Embed(OllamaError("request failed: error sending request for url
+///                           (http://127.0.0.1:1/api/embeddings)"))
+///
+/// after seeding succeeded. The comment described an assumption that the code
+/// contradicted, and nothing caught it because the suite had never passed.
+///
+/// Reads OLLAMA_URL / OLLAMA_EMBED_MODEL, the same variables src/config.rs:976
+/// reads, so the test exercises the configured service instead of a fixture.
+///
+/// Needs a local Ollama serving the embed model. Where there is none, these
+/// tests cannot pass — that is a real environment requirement, not a test
+/// defect, and the runner has no skip mechanism for it.
 fn ollama() -> fichub::services::ollama::OllamaClient {
-    fichub::services::ollama::OllamaClient::new(
-        "http://127.0.0.1:1".into(), // port 1: never reachable — tests never call it
-        "nomic-embed-text".into(),
-        reqwest::Client::new(),
-    )
+    let url = std::env::var("OLLAMA_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+    let model = std::env::var("OLLAMA_EMBED_MODEL")
+        .unwrap_or_else(|_| "nomic-embed-text".to_string());
+    fichub::services::ollama::OllamaClient::new(url.into(), model.into(), reqwest::Client::new())
 }
 
 /// Seed a fic_info row (idempotent). Description drives the similarity test.
@@ -70,18 +88,28 @@ async fn seed_tag(pool: &sqlx::PgPool, name: &str, type_id: i16) -> i32 {
 /// vector. The tag's embedding is its own name repeated — the fic
 /// description is seeded with the same words, so cosine similarity
 /// approaches 1.0 (well above the 0.75 threshold).
-async fn seed_tag_embedding(pool: &sqlx::PgPool, tag_id: i32, name: &str) {
-    let dims: Vec<f32> = name
-        .split_whitespace()
-        .flat_map(|w| {
-            let mut v = vec![0.0f32; 768];
-            for i in 0..v.len() {
-                v[i] = w.as_bytes()[i % w.len()] as f32 / 255.0;
-            }
-            v
-        })
-        .collect();
-    let emb = fichub::services::auto_tagger::vec_to_sql(&dims);
+/// Embed `text` with the configured model and store it on the tag.
+///
+/// This used to synthesise a vector from the tag name's bytes. The comment
+/// claimed that would make it "≈ 1.0" similar to the fic's description, which
+/// is not a property anything can have: a byte-derived vector is
+/// uncorrelated with a 768-dimension embedding of prose, so similarity lands
+/// near zero and the suggestion is correctly filtered out. The test asserted a
+/// claim about embeddings that was never true, and could not pass.
+///
+/// Embedding the *same* text `recommend_tags` embeds is the only way to get the
+/// similarity the test is about — similarity 1.0, identical vectors.
+async fn seed_tag_embedding(pool: &sqlx::PgPool, tag_id: i32, text: &str) {
+    let emb = ollama()
+        .embed(text)
+        .await
+        .expect("embed tag text");
+    assert_eq!(
+        emb.len(),
+        768,
+        "embed model must return 768 dims to match tag_embeddings.embedding"
+    );
+    let emb = fichub::services::auto_tagger::vec_to_sql(&emb);
     sqlx::query("INSERT INTO tag_embeddings (tag_id, embedding) VALUES ($1, $2::vector) ON CONFLICT (tag_id) DO NOTHING")
         .bind(tag_id)
         .bind(&emb)
@@ -111,11 +139,13 @@ async fn recommend_tags_inserts_machine_suggestion() {
     let description = "a haunting slow burn time loop romance with enemies to lovers";
     seed_fic(&db, url_id, description).await;
 
-    // Tag whose embedding is derived from the same words as the description
-    // → similarity ≈ 1.0, far above the 0.75 threshold.
+    // recommend_tags embeds `title + ". " + description`, so the tag is seeded
+    // with an embedding of exactly that string → identical vector → similarity
+    // 1.0, far above the 0.75 threshold. seed_fic sets no title, so the text is
+    // just the description.
     let tag_name = "time loop slow burn";
     let tag = seed_tag(&db, tag_name, 4).await;
-    seed_tag_embedding(&db, tag, tag_name).await;
+    seed_tag_embedding(&db, tag, description).await;
 
     let suggestions = fichub::services::auto_tagger::recommend_tags(&db, &ollama(), url_id)
         .await

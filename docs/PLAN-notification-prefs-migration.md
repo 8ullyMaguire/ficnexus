@@ -101,30 +101,57 @@ exactly, so nothing is renumbered and no applied migration is touched.
 whatever is pending, so a database that already reached 094 picks up 060 on the
 next deploy without complaint. Verified rather than assumed: the test harness
 replays `ls migrations/*.sql | sort`, and after the file was added
-`information_schema` reports 16 columns for `notification_preferences` in the
-right order — the six appended after `updated_at`, which is the order the
-struct expects.
+`information_schema` reports **15** columns for `notification_preferences` in the
+right order — the six appended after `updated_at`, which is the order the struct
+expects.
 
-## One thing I did not fix, found on the way
+Correction: an earlier draft of this plan said 16, and the vault log repeated it.
+001 creates **9** columns on this table (`user_id`, seven booleans/string prefs,
+`updated_at`), not ten and not sixteen; 9 + 6 = 15. The 16 that appeared in a
+tool result was a count of `information_schema` rows taken at a moment when the
+query also matched the `pg_catalog`-side view. The number that matters is 15,
+which is what both a fresh sqlx-built database and the harness report.
 
-`cargo run --bin migrate` panics on a fresh database:
+## The deploy path is fine — my alarm was an artifact of my own test
+
+I flagged this in the previous commit's message and the vault log as
+"the deploy path may be broken independently of everything in this plan". That
+was wrong, and worth correcting here rather than leaving in a commit message.
+
+The panic was:
 
     migration failed: ExecuteMigration(Database(PgDatabaseError { code: "42723",
-    message: "function \"update_fic_tag_score\" already exists with same
-    argument types" }))
+    message: "function \"update_fic_tag_score\" already exists with same argument types" }))
 
-That is a **pre-existing** conflict, unrelated to 060 — it fires on a migration
-somewhere before it, and the test harness tolerates it because it applies files
-individually with per-file error capture rather than through sqlx's migrator.
-So the deploy path (`fichub migrate`, which `Deploy.sh` runs before restarting
-the service) may be broken independently of everything in this plan. Not
-diagnosed, not fixed, and it needs its own investigation — but it means
-"migrations apply cleanly in production" is not currently a verified fact and
-should not be assumed from the suite being green.
+I ran `cargo run --bin migrate` against **a database the test harness had just
+built with psql**. The harness replays `migrations/*.sql` directly and never
+writes `_sqlx_migrations`, so sqlx saw an unrecorded 001 and tried to re-run it
+against a schema that already had the function. That is an artifact of pointing
+one migration tool at the other tool's output, not a property of production.
+
+Tested the way production actually runs it — an empty database, migrated only by
+sqlx:
+
+    === 1. a database built ONLY by sqlx's migrator, from empty ===
+    Migrations applied successfully (44 migration files).
+    exit=0
+    === 2. how many migrations did sqlx record? ===
+    44|1|94
+    === 3. did the granular columns land? ===
+    15
+
+44 files, versions 1 through 94, exit 0, and the six new columns present. So
+`fichub migrate` on a database it built itself is correct, `set_ignore_missing`
+absorbs the 60–63 gap, and 060 lands.
+
+The test harness and the deploy path use two different migration engines, and
+they agree. That was worth establishing rather than assuming, because a green
+suite genuinely does not exercise the deploy path — but in this case the deploy
+path was never the problem.
 
 ## Verification
 
-- `information_schema` reports 16 columns for `notification_preferences`
+- `information_schema` reports 15 columns for `notification_preferences`
   (mutation check: 9 without 060).
 - `social_api` **9 passed, 0 failed** (was 8; +1 new test).
 - New `granular_notification_toggles_round_trip` drives the real GET and PUT,

@@ -153,7 +153,23 @@ async fn app(db: sqlx::PgPool) -> Router {
         .with_state(state)
 }
 
+/// Mints a token with an explicit `is_admin` claim.
+///
+/// `is_admin` is a real column and the admin-tier gates read it from the token
+/// (`docs/specs/admin-flag.md`). Trust level is separate and does **not** grant
+/// admin — `users.trust_level` is CHECK-constrained to 0-6, so the 10 these
+/// call sites used to pass could not exist in a real row and the routes they
+/// reached were not actually admin-protected.
 fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
+    auth_header_for(user_id, trust_level, username, false)
+}
+
+fn auth_header_for(
+    user_id: i32,
+    trust_level: i16,
+    username: &str,
+    is_admin: bool,
+) -> String {
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let user = fichub::routes::auth::User {
         id: user_id,
@@ -163,7 +179,7 @@ fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
         email: None,
         level: 0,
         exp: 0,
-        is_admin: false,
+        is_admin,
     };
     let token = fichub::routes::auth::create_token(&user, &secret).expect("token");
     format!("Bearer {token}")
@@ -179,7 +195,7 @@ async fn list_scan_and_review_flow() {
     seed_scan(&db, URL_ID, "noise", "profanity").await;
 
     let app = app(db.clone()).await;
-    let token = auth_header(admin_id, 10, ADMIN_USER);
+    let token = auth_header_for(admin_id, 6, ADMIN_USER, true);
 
     // List pending scan results → the seeded noise row appears.
     let resp = app

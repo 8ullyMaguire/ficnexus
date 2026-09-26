@@ -136,7 +136,23 @@ async fn build_app() -> Router {
 }
 
 /// JWT for the given user id + role (real token, real JWT_SECRET from env).
+/// Mints a token with an explicit `is_admin` claim.
+///
+/// `is_admin` is a real column and the admin-tier gates read it from the token
+/// (`docs/specs/admin-flag.md`). Trust level is separate and does **not** grant
+/// admin — `users.trust_level` is CHECK-constrained to 0-6, so the 10 these
+/// call sites used to pass could not exist in a real row, and the routes they
+/// reached were not actually admin-protected.
 fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
+    auth_header_for(user_id, trust_level, username, false)
+}
+
+fn auth_header_for(
+    user_id: i32,
+    trust_level: i16,
+    username: &str,
+    is_admin: bool,
+) -> String {
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let user = fichub::routes::auth::User {
         id: user_id,
@@ -146,7 +162,7 @@ fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
         email: None,
         level: 0,
         exp: 0,
-        is_admin: false,
+        is_admin,
     };
     let token = fichub::routes::auth::create_token(&user, &secret).expect("token creation");
     format!("Bearer {token}")
@@ -432,7 +448,7 @@ async fn admin_heal_diagnose_only_returns_failures() {
     cleanup(&db).await;
     let admin_id = seed_user(&db, USERNAME, 10).await;
     let app = build_app().await;
-    let token = auth_header(admin_id, 10, USERNAME);
+    let token = auth_header_for(admin_id, 6, USERNAME, true);
 
     seed_failure(&db, URL_A, DOMAIN, "parse", "fpadmindx01", None).await;
     seed_failure(&db, URL_B, DOMAIN, "parse", "fpadmindx02", None).await;
@@ -479,7 +495,7 @@ async fn agent_unavailable_records_failed_run() {
     cleanup(&db).await;
     let admin_id = seed_user(&db, USERNAME, 10).await;
     let _app = build_app().await;
-    let token = auth_header(admin_id, 10, USERNAME);
+    let token = auth_header_for(admin_id, 6, USERNAME, true);
 
     // Force config: enabled, no key → agent::remote_configured false.
     let service = fichub::heal::HealService::new(db.clone(), fichub::config::Config::from_env());
@@ -542,7 +558,7 @@ async fn agent_ollama_unreachable_noop() {
     let db = pool().await;
     cleanup(&db).await;
     let admin_id = seed_user(&db, USERNAME, 10).await;
-    let token = auth_header(admin_id, 10, USERNAME);
+    let token = auth_header_for(admin_id, 6, USERNAME, true);
 
     // SAFETY: test-only env mutation, single-threaded suite.
     unsafe {
@@ -883,7 +899,7 @@ async fn trust_extraction_endpoint_roundtrip() {
     cleanup(&db).await;
     let admin_id = seed_user(&db, USERNAME, 10).await;
     let app = build_app().await;
-    let token = auth_header(admin_id, 10, USERNAME);
+    let token = auth_header_for(admin_id, 6, USERNAME, true);
 
     let failure_id = seed_failure(&db, URL_A, DOMAIN, "parse", "fpm2trustep01", None).await;
     let meta = fichub::heal::extract::parse_agent_metadata_json(
@@ -947,7 +963,7 @@ async fn replay_pending_endpoint_requires_role_10() {
     cleanup(&db).await;
     let admin_id = seed_user(&db, USERNAME, 10).await;
     let app = build_app().await;
-    let token = auth_header(admin_id, 10, USERNAME);
+    let token = auth_header_for(admin_id, 6, USERNAME, true);
 
     let id = fichub::heal::extract::enqueue_pending_export(
         &db,

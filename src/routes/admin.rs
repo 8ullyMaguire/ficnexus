@@ -45,9 +45,7 @@ pub async fn mod_queue(
     user: AuthUser,
     Query(params): Query<PageParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let per_page = params.per_page.unwrap_or(20).max(1).min(100);
     let offset = ((params.page.unwrap_or(1).max(1)) - 1) * per_page;
@@ -105,9 +103,7 @@ pub async fn approve_upload(
     user: AuthUser,
     Path(work_id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     // Get uploader_id before making visible
     let uploader: Option<(i32,)> =
@@ -185,9 +181,7 @@ pub async fn reject_upload(
     user: AuthUser,
     Path(work_id): Path<i32>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     // Delete the fic permanently
     sqlx::query("DELETE FROM works WHERE id = $1")
@@ -219,9 +213,7 @@ pub async fn scraper_health(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     // Group by source_url (domain), not fic_info.source — request_log has its own field
     let rows = sqlx::query_as::<_, (String, i64, i64, f64)>(
@@ -276,9 +268,7 @@ pub async fn admin_users(
     user: AuthUser,
     Query(params): Query<AdminUserParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let per_page = params.per_page.unwrap_or(20).max(1).min(100);
     let offset = ((params.page.unwrap_or(1).max(1)) - 1) * per_page;
@@ -439,9 +429,7 @@ pub async fn toggle_ban(
     Path(user_id): Path<i32>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let banned: bool = payload
         .get("is_banned")
@@ -489,9 +477,7 @@ pub async fn rep_award_handler(
     auth: AuthUser,
     Json(req): Json<RepAwardReq>,
 ) -> Result<Json<Value>, AppError> {
-    if auth.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&auth, &state)?;
     let admin_id = auth
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
@@ -549,9 +535,7 @@ pub async fn admin_list_translations(
     user: AuthUser,
     Query(params): Query<TranslationListParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let per_page = params.per_page.unwrap_or(20).max(1).min(100);
     let offset = ((params.page.unwrap_or(1).max(1)) - 1) * per_page;
@@ -624,9 +608,7 @@ pub async fn admin_approve_translation(
     user: AuthUser,
     Path(translation_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let admin_id = user
         .user_id
@@ -671,9 +653,7 @@ pub async fn admin_reject_translation(
     user: AuthUser,
     Path(translation_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let admin_id = user
         .user_id
@@ -719,9 +699,7 @@ pub async fn admin_edit_translation(
     Path(translation_id): Path<i64>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let title = payload
         .get("title")
@@ -775,9 +753,7 @@ pub async fn admin_rating_checks(
     user: AuthUser,
     Query(params): Query<PageParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let per_page = params.per_page.unwrap_or(20).max(1).min(100);
     let offset = ((params.page.unwrap_or(1).max(1)) - 1) * per_page;
@@ -848,9 +824,7 @@ pub async fn admin_verify_rating(
     Path(work_id): Path<i32>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let admin_id = user
         .user_id
@@ -922,9 +896,7 @@ pub async fn admin_fix_tag_score(
     Path(tag_id): Path<i32>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let admin_id = user
         .user_id
@@ -1154,9 +1126,7 @@ pub async fn admin_bot_unshadowban(
     user: AuthUser,
     Path(client_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     if client_id.is_empty() || client_id == "anon" {
         return Err(AppError::BadRequest("invalid client_id".to_string()));
     }
@@ -1182,9 +1152,7 @@ pub async fn admin_search_analytics(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     // Top zero-result queries (last 7 days), by frequency.
     let zero_result = sqlx::query_as::<_, (String, i64)>(
@@ -1262,9 +1230,7 @@ pub async fn admin_realtime(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     // Exports + searches in the last 5 minutes (request_log etypes).
     let (exports_5m, searches_5m): (i64, i64) = sqlx::query_as(
@@ -1339,9 +1305,7 @@ pub async fn admin_roadmap_consensus(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     // Leaderboard: ranked by Elo, with vote counters + suggestion count.
     let leaderboard = sqlx::query_as::<_, (i32, String, f64, i32, i32, i32, i64, String)>(
@@ -1697,9 +1661,7 @@ pub async fn update_work_metadata(
     Path(work_id): Path<i32>,
     Json(body): Json<WorkMetadataBody>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     // Validate: at least one field must be present, and a provided title
     // must not be empty.
@@ -1791,9 +1753,7 @@ pub async fn list_content_scan(
     user: AuthUser,
     Query(params): Query<ContentScanParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     let per_page = params.per_page.unwrap_or(50).max(1).min(200);
     let offset = ((params.page.unwrap_or(1).max(1)) - 1) * per_page;
     let status_filter = params
@@ -1845,9 +1805,7 @@ pub async fn run_content_scan(
     user: AuthUser,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     let limit = body
         .get("limit")
         .and_then(|v| v.as_u64())
@@ -1941,9 +1899,7 @@ pub async fn search_mining(
     user: AuthUser,
     Query(params): Query<SearchMiningParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     let days = params.days.unwrap_or(30).max(1).min(365);
     let limit = params.limit.unwrap_or(50).max(1).min(200);
 
@@ -1982,9 +1938,7 @@ pub async fn run_embedding_dedupe(
     user: AuthUser,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     let threshold = body
         .get("threshold")
         .and_then(|v| v.as_f64())
@@ -2017,9 +1971,7 @@ pub async fn admin_approve_chapter_translation_version(
     user: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     let admin_id = user
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
@@ -2040,9 +1992,7 @@ pub async fn admin_reject_chapter_translation_version(
     user: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     let admin_id = user
         .user_id
         .ok_or_else(|| AppError::Unauthorized("Login required".into()))?;
@@ -2063,9 +2013,7 @@ pub async fn admin_backfill_tags(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     // Get works that have fic_info but no fic_tags
     let works_without_tags: Vec<(String, i32)> = sqlx::query_as(
@@ -2113,9 +2061,7 @@ pub async fn admin_backfill_bodies(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     // Get works that have fic_info but may not have cached body content
     let works: Vec<(String, String, i32)> = sqlx::query_as(

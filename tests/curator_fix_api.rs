@@ -136,7 +136,23 @@ async fn build_app() -> Router {
         .with_state(state)
 }
 
+/// Mints a token with an explicit `is_admin` claim.
+///
+/// `is_admin` is a real column and the admin-tier gates read it from the token
+/// (`docs/specs/admin-flag.md`). Trust level is separate and does **not** grant
+/// admin — `users.trust_level` is CHECK-constrained to 0-6, so the 10 these
+/// call sites used to pass could not exist in a real row, and the routes they
+/// reached were not actually admin-protected.
 fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
+    auth_header_for(user_id, trust_level, username, false)
+}
+
+fn auth_header_for(
+    user_id: i32,
+    trust_level: i16,
+    username: &str,
+    is_admin: bool,
+) -> String {
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let user = fichub::routes::auth::User {
         id: user_id,
@@ -146,7 +162,7 @@ fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
         email: None,
         level: 0,
         exp: 0,
-        is_admin: false,
+        is_admin,
     };
     let token = fichub::routes::auth::create_token(&user, &secret).expect("token creation");
     format!("Bearer {token}")
@@ -201,7 +217,7 @@ async fn fix_applies_after_quorum_of_other_curators() {
                 .method("POST")
                 .uri("/api/curator/content/curatorfix_aaa1/propose")
                 .header("content-type", "application/json")
-                .header("authorization", auth_header(u1, 10, "curatorfix_admin1"))
+                .header("authorization", auth_header_for(u1, 6, "curatorfix_admin1", true))
                 .body(Body::from(
                     r#"{"body_html":"<p>correct body</p>","reason":"wrong scrape"}"#,
                 ))
@@ -224,7 +240,7 @@ async fn fix_applies_after_quorum_of_other_curators() {
                 .method("POST")
                 .uri(format!("/api/curator/content/proposals/{proposal_id}/vote"))
                 .header("content-type", "application/json")
-                .header("authorization", auth_header(u1, 10, "curatorfix_admin1"))
+                .header("authorization", auth_header_for(u1, 6, "curatorfix_admin1", true))
                 .body(Body::from(r#"{"vote":1}"#))
                 .unwrap(),
         )
@@ -252,7 +268,7 @@ async fn fix_applies_after_quorum_of_other_curators() {
                 .method("POST")
                 .uri(format!("/api/curator/content/proposals/{proposal_id}/vote"))
                 .header("content-type", "application/json")
-                .header("authorization", auth_header(u2, 10, "curatorfix_admin2"))
+                .header("authorization", auth_header_for(u2, 6, "curatorfix_admin2", true))
                 .body(Body::from(r#"{"vote":1}"#))
                 .unwrap(),
         )
@@ -272,7 +288,7 @@ async fn fix_applies_after_quorum_of_other_curators() {
                 .method("POST")
                 .uri(format!("/api/curator/content/proposals/{proposal_id}/vote"))
                 .header("content-type", "application/json")
-                .header("authorization", auth_header(u3, 10, "curatorfix_admin3"))
+                .header("authorization", auth_header_for(u3, 6, "curatorfix_admin3", true))
                 .body(Body::from(r#"{"vote":1}"#))
                 .unwrap(),
         )
@@ -315,7 +331,7 @@ async fn downvotes_reject_and_list_shows_status() {
                 .method("POST")
                 .uri("/api/curator/content/curatorfix_bbb1/propose")
                 .header("content-type", "application/json")
-                .header("authorization", auth_header(u1, 10, "curatorfix_r1"))
+                .header("authorization", auth_header_for(u1, 6, "curatorfix_r1", true))
                 .body(Body::from(
                     r#"{"body_html":"<p>bad body</p>","reason":"test"}"#,
                 ))
@@ -339,7 +355,7 @@ async fn downvotes_reject_and_list_shows_status() {
                     .method("POST")
                     .uri(format!("/api/curator/content/proposals/{proposal_id}/vote"))
                     .header("content-type", "application/json")
-                    .header("authorization", auth_header(uid, 10, name))
+                    .header("authorization", auth_header_for(uid, 6, name, true))
                     .body(Body::from(r#"{"vote":-1}"#))
                     .unwrap(),
             )
@@ -363,7 +379,7 @@ async fn downvotes_reject_and_list_shows_status() {
             Request::builder()
                 .method("GET")
                 .uri("/api/curator/content/proposals?status=rejected")
-                .header("authorization", auth_header(u2, 10, "curatorfix_r2"))
+                .header("authorization", auth_header_for(u2, 6, "curatorfix_r2", true))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -416,7 +432,7 @@ async fn metadata_proposal_applies_after_quorum() {
                 .method("POST")
                 .uri("/api/curator/metadata/propose")
                 .header("content-type", "application/json")
-                .header("authorization", auth_header(u1, 10, "meta_test_admin1"))
+                .header("authorization", auth_header_for(u1, 6, "meta_test_admin1", true))
                 .body(Body::from(format!(
                     r#"{{"work_id":{work_id},"field":"title","old_value":"Old Title","new_value":"New Correct Title","reason":"meta_test title fix"}}"#
                 )))
@@ -440,7 +456,7 @@ async fn metadata_proposal_applies_after_quorum() {
                     "/api/curator/metadata/proposals/{proposal_id}/vote"
                 ))
                 .header("content-type", "application/json")
-                .header("authorization", auth_header(u2, 10, "meta_test_admin2"))
+                .header("authorization", auth_header_for(u2, 6, "meta_test_admin2", true))
                 .body(Body::from(r#"{"vote":1}"#))
                 .unwrap(),
         )
@@ -462,7 +478,7 @@ async fn metadata_proposal_applies_after_quorum() {
                     "/api/curator/metadata/proposals/{proposal_id}/vote"
                 ))
                 .header("content-type", "application/json")
-                .header("authorization", auth_header(u3, 10, "meta_test_admin3"))
+                .header("authorization", auth_header_for(u3, 6, "meta_test_admin3", true))
                 .body(Body::from(r#"{"vote":1}"#))
                 .unwrap(),
         )
