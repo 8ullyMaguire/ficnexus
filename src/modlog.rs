@@ -140,6 +140,7 @@ mod tests {
             username: Some("u".into()),
             trust_level: 0,
             level: 0,
+            is_admin: false,
         };
         assert!(require_logged_in(&auth).is_ok());
     }
@@ -151,6 +152,7 @@ mod tests {
             username: Some("mod".into()),
             trust_level: 5,
             level: 50,
+            is_admin: false,
         };
         let (id, name) = actor_from_auth(&auth);
         assert_eq!(id, Some(3));

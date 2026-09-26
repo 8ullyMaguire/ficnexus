@@ -622,23 +622,34 @@ mod tests {
 /// every administrator. JWT issuance copies `users.trust_level` into the claim
 /// at `src/routes/auth.rs:145-162`; the claim is what routes authorize on.
 ///
-/// The threshold comes from `Config` (`ADMIN_MIN_TRUST`, default 10) rather than
-/// a literal. Until 2026-09-26 this boundary was inlined as `trust_level < 5` in
-/// 77 handlers across 17 route files, which is how moderators could reach
-/// /api/admin/stats, the bot list, the moderation queue, the auto-tag queue and
-/// the blacklists. See `docs/specs/admin-tier-separation.md`.
+/// Gate an administrator-tier route on the `is_admin` flag.
 ///
-/// Note this is *not* `users.role`, which is a separate legacy column that no
-/// admin route consults (it is set to 1 by subsystem approval in
-/// `src/routes/subsystems.rs:526`).
+/// **Why a flag and not a trust level.** `users.trust_level` is
+/// `CHECK (trust_level BETWEEN 0 AND 6)` (migrations/013_trust_levels.sql:25) and
+/// JWT issuance mints the claim from that column (`src/routes/auth.rs`), so the
+/// highest claim a real login can hold is 6. A trust threshold of 10 - which is
+/// what the tests asserted, and what this function briefly required - is
+/// therefore unreachable in production: only hand-minted test tokens pass. The
+/// owner chose a separate capability instead. See `docs/specs/admin-flag.md` and
+/// `docs/specs/admin-tier-unreachable.md`.
+///
+/// The claim is baked in at token issue, so a demoted administrator's existing
+/// token keeps working until it expires (30 days). `POST /api/auth/refresh`
+/// re-reads the row, so a refresh is the way to cut that short. That is
+/// pre-existing token behaviour, not something this change introduces.
+///
+/// This is *not* `users.role`, which is a separate legacy column holding a
+/// second trust ladder (0/1/5/10) that no admin route consults. It is written
+/// only by subsystem approval in `src/routes/subsystems.rs:526` and read only as
+/// profile data for display.
 pub fn require_admin_tier(
     auth: &crate::routes::auth::AuthUser,
-    state: &crate::server::AppState,
+    _state: &crate::server::AppState,
 ) -> Result<i32, AppError> {
     let uid = auth
         .user_id
         .ok_or_else(|| AppError::Unauthorized("login required".to_string()))?;
-    if auth.trust_level < state.config.admin_min_trust {
+    if !auth.is_admin {
         return Err(AppError::Forbidden("Admin access required".to_string()));
     }
     Ok(uid)

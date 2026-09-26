@@ -1129,6 +1129,7 @@ fn suggest_auth_header(user_id: i32) -> String {
         email: None,
         level: 0,
         exp: 0,
+        is_admin: false,
     };
     let token = fichub::routes::auth::create_token(&user, &secret).expect("token creation");
     format!("Bearer {token}")

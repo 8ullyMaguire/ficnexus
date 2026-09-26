@@ -154,6 +154,7 @@ fn auth_header(user_id: i32, username: &str) -> String {
         email: None,
         level: 2,
         exp: 0,
+        is_admin: false,
     };
     let token = fichub::routes::auth::create_token(&user, &secret).expect("token creation");
     format!("Bearer {token}")
@@ -875,6 +876,7 @@ async fn changelog_public_read_and_curator_write() {
         email: None,
         level: 50,
         exp: 0,
+        is_admin: false,
     };
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let token = fichub::routes::auth::create_token(&curator_user, &secret).expect("token");
@@ -980,6 +982,7 @@ async fn feature_move_updates_status_and_category() {
         email: None,
         level: 50,
         exp: 0,
+        is_admin: false,
     };
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let token = fichub::routes::auth::create_token(&curator_user, &secret).expect("token");
@@ -1057,6 +1060,7 @@ async fn changelog_filter_by_kind() {
         email: None,
         level: 50,
         exp: 0,
+        is_admin: false,
     };
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let token = fichub::routes::auth::create_token(&curator_user, &secret).expect("token");

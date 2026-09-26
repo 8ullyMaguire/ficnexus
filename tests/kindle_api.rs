@@ -137,6 +137,7 @@ fn token_for(user_id: i32, username: &str) -> String {
             email: None,
             level: 0,
             exp: 0,
+            is_admin: false,
         },
         &secret,
     )

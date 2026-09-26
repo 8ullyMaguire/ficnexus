@@ -218,6 +218,7 @@ fn auth_header(user_id: i32, username: &str) -> String {
         email: Some("test@example.com".into()),
         level: 100,
         exp: 0,
+        is_admin: false,
     };
     let token = auth::create_token(&user, &secret).expect("create_token should succeed");
     format!("Bearer {}", token)

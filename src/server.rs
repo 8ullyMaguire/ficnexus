@@ -2089,6 +2089,10 @@ fn chunk_customization_redirects() -> impl Into<Router<Arc<AppState>>> {
             axum::routing::put(crate::routes::admin::set_user_role),
         )
         .route(
+            "/api/admin/users/{id}/is_admin",
+            axum::routing::put(crate::routes::admin::set_user_admin),
+        )
+        .route(
             "/api/admin/reputation/award",
             axum::routing::post(crate::routes::admin::rep_award_handler),
         )

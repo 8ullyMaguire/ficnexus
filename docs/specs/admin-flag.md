@@ -133,3 +133,59 @@ column is not a promotion path, for the reason given in option A.
    `admin_users_search_role_ban` fixture, documented in
    `admin-tier-separation.md` §3.
 3. 935 unit tests pass; all 57 suites compile.
+
+## 7. Outcome
+
+Implemented as specified. Decisions and findings during the work:
+
+**The compiler found a real bug, not just a checklist.** Two production sites
+construct `User`/`Claims` and the build refused them — but the second was
+`refresh_handler` in `social.rs`, which **re-mints a full access token from the
+refresh token**. Had it been patched mechanically with `is_admin: false`, every
+administrator would have lost admin the first time they refreshed. It reads the
+user row, so the fix is to select `is_admin` there: a demotion then takes effect
+on the next refresh, which is strictly better than the access-token path.
+
+**Two mechanical-sweep casualties, caught by reading the diff.**
+`activitypub/actors.rs` and `services/achievements.rs` had `format!("User {}",
+id)` corrupted, and `comments.rs` had a field injected into a `CommentUser`
+struct *definition*. Reverted; the lesson is in the skill.
+
+**`cargo fmt` reformatted 54 files** including `crates/`, for a change touching
+8. Undone by saving the real files, `git checkout`, and restoring. Never run it
+on a targeted change.
+
+**A fourth unreachable-TL10 site, in a unit test.** `authors.rs`'s
+`test_auto_approve_only_admin` built `AuthUser { trust_level: 10 }` and asserted
+`admin.trust_level >= 10` — comparing a literal to itself, calling no production
+code, so it passed whatever the handler did. The handler says `>= 5` and the
+test's comment said 10. Rewritten as
+`test_auto_approve_threshold_is_five`, asserting against a named constant and
+adding the below-threshold case it never had.
+
+**`set_user_role` also moved to the flag (R7).** It gated on
+`trust_level < 5`, which under option C would mean no administrator could use
+it — an administrator cannot hold trust 10. Leaving it would have made the
+promotion path unreachable, which was the objection to option A.
+
+**The promotion endpoint refuses self-demotion.** `PUT
+/api/admin/users/{id}/is_admin` is gated on `require_admin_tier`, and returns 400
+if an administrator revokes their own flag. Without that, the last administrator
+can lock every admin route with no in-product way back. The trade-off is
+explicit and deliberate: a deployment with zero administrators must seed the
+first one directly, because a self-escalating path would be worse. Same property
+the old trust gate had.
+
+The response includes a `note` field saying the change takes effect on the
+target's next login or refresh, because the claim is baked in at issue and a
+caller who grants admin and immediately sees a 403 would otherwise conclude the
+endpoint is broken.
+
+**`is_admin` round-trip is asserted in the unit tests.** `test_create_and_verify_token`
+now sets `is_admin: true` and asserts both `claims.is_admin` and
+`auth_user_from_token_with_secret(...).is_admin` — a token that dropped the claim
+would silently lock out every administrator while every other assertion passed.
+
+**`Config::admin_min_trust` is gone** — struct field, `from_env` read, default,
+and the unit assertion (R6). Zero references remain. A config field nothing reads
+is worse than no field, because it looks configurable.

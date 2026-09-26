@@ -367,6 +367,7 @@ async fn honeypot_comment_silently_rejected() {
             email: None,
             level: 0,
             exp: 0,
+            is_admin: false,
         },
         &secret,
     )
@@ -457,6 +458,7 @@ async fn too_fast_comment_silently_rejected() {
             email: None,
             level: 0,
             exp: 0,
+            is_admin: false,
         },
         &secret,
     )
@@ -550,6 +552,7 @@ async fn normal_comment_created() {
             email: None,
             level: 0,
             exp: 0,
+            is_admin: false,
         },
         &secret,
     )

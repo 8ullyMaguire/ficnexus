@@ -174,6 +174,7 @@ fn auth_header(user_id: i32, username: &str) -> String {
         email: None,
         level: 10,
         exp: 1000,
+        is_admin: false,
     };
     let token = fichub::routes::auth::create_token(&user, &secret).expect("token creation");
     format!("Bearer {token}")

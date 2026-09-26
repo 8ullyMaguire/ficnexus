@@ -207,6 +207,7 @@ fn auth_header_level(user_id: i32, username: &str, trust_level: i16, level: i16)
         email: None,
         level,
         exp: i64::from(level) * 100,
+        is_admin: false,
     };
     let token = fichub::routes::auth::create_token(&user, &secret).expect("token creation");
     format!("Bearer {token}")

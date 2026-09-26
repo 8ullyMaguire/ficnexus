@@ -334,13 +334,7 @@ pub struct Config {
     /// Trust tier that may reach administrator-tier endpoints: /api/admin/stats,
     /// /api/admin/bots, the moderation queue, the auto-tag queue, blacklists.
     ///
-    /// Distinct from the forum moderation tiers above: those gate queue and
-    /// resolve actions (TL4/TL5), this gates the admin surface itself (TL10).
-    /// 77 routes across 17 files inline-checked `trust_level < 5` until
-    /// 2026-09-26, which is how a moderator could read admin stats and drive
-    /// the blacklists — see docs/specs/admin-tier-separation.md.
-    /// (env: ADMIN_MIN_TRUST, default 10)
-    pub admin_min_trust: i16,
+
     /// Max moderation actions per user per UTC day (anti-abuse cap).
     /// (env: FORUM_MOD_ACTIONS_PER_DAY, default 50)
     pub forum_mod_actions_per_day: i32,
@@ -560,7 +554,6 @@ impl Config {
             forum_meta_cooldown_days: 0,
             forum_mod_min_trust: 0,
             forum_resolve_min_trust: 0,
-            admin_min_trust: 10,
             forum_mod_actions_per_day: 0,
             forum_min_post_len: 0,
             forum_post_delay_secs: 0,
@@ -1193,13 +1186,6 @@ impl Config {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(5);
-        // Default 10, deliberately NOT the 5 that was inline-hardcoded. A
-        // default preserving the old behaviour would make this a no-op until a
-        // deployment opted in, which is not a fix.
-        let admin_min_trust = std::env::var("ADMIN_MIN_TRUST")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(10);
         let forum_mod_actions_per_day = std::env::var("FORUM_MOD_ACTIONS_PER_DAY")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -1418,7 +1404,6 @@ impl Config {
             forum_meta_cooldown_days,
             forum_mod_min_trust,
             forum_resolve_min_trust,
-            admin_min_trust,
             forum_mod_actions_per_day,
             forum_min_post_len,
             forum_post_delay_secs,
@@ -1745,7 +1730,6 @@ mod tests {
         assert_eq!(config.forum_resolve_min_trust, 5);
         // Admin tier defaults to 10, not the 5 that was inline-hardcoded in 77
         // places. See docs/specs/admin-tier-separation.md.
-        assert_eq!(config.admin_min_trust, 10);
         assert_eq!(config.forum_mod_actions_per_day, 50);
         // F7 site-wide leveling defaults (SPEC §10)
                         assert_eq!(config.forum_exp_per_level, 100);

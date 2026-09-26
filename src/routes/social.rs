@@ -223,8 +223,11 @@ pub async fn refresh_handler(
         return Err(AppError::Unauthorized("Refresh token expired".into()));
     }
 
-    let user = sqlx::query_as::<_, (i32, String, i16, i32, Option<String>, i16, i64)>(
-        "SELECT id, username, trust_level, reputation, email, level, exp FROM users WHERE id = $1",
+    // Reads `is_admin` from the database rather than copying it off the refresh
+    // token, so a demotion takes effect on the next refresh instead of lasting
+    // until the old access token expires.
+    let user = sqlx::query_as::<_, (i32, String, i16, i32, Option<String>, i16, i64, bool)>(
+        "SELECT id, username, trust_level, reputation, email, level, exp, is_admin FROM users WHERE id = $1",
     )
     .bind(claims.sub)
     .fetch_optional(&state.db)
@@ -239,6 +242,7 @@ pub async fn refresh_handler(
         email: user.4,
         level: user.5,
         exp: user.6,
+        is_admin: user.7,
     };
 
     let token = auth::create_token(&user, &secret)?;
@@ -1089,6 +1093,7 @@ mod tests {
             email: Some("alice@example.com".into()),
             level: 0,
             exp: 0,
+            is_admin: false,
         };
         let secret = "test-secret";
         let token = create_token(&user, secret).unwrap();
@@ -1106,6 +1111,7 @@ mod tests {
             username: "test".into(),
             trust_level: 0,
             level: 0,
+            is_admin: false,
             exp: 1, // Jan 1 1970 — expired
             iat: 1,
         };

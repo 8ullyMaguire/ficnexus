@@ -734,6 +734,7 @@ mod tests {
             username: Some("reader".into()),
             trust_level: 0,
             level: 0,
+            is_admin: false,
         };
         assert!(user.trust_level < 3, "Reader should not pass curator check");
 
@@ -742,6 +743,7 @@ mod tests {
             username: Some("curator".into()),
             trust_level: 5,
             level: 50,
+            is_admin: false,
         };
         assert!(curator.trust_level >= 5, "Curator should pass curator check");
 
@@ -750,28 +752,45 @@ mod tests {
             username: Some("admin".into()),
             trust_level: 10,
             level: 100,
+            is_admin: false,
         };
         assert!(admin.trust_level >= 10, "Admin should pass admin check");
     }
 
     #[test]
-    fn test_auto_approve_only_admin() {
-        // auto_approve requires role >= 10
-        let admin = AuthUser {
-            user_id: Some(3),
-            username: Some("admin".into()),
-            trust_level: 10,
-            level: 100,
-        };
-        assert!(admin.trust_level >= 10);
+    fn test_auto_approve_threshold_is_five() {
+        // The threshold lives in the handler at src/routes/authors.rs:551:
+        // `if auto_approve && user.trust_level >= 5`.
+        //
+        // This test used to assert `trust_level >= 10` against a hand-built
+        // AuthUser, calling no production code - it compared a literal to itself,
+        // so it passed whatever the handler did, and its comment ("auto_approve
+        // requires role >= 10") contradicted the code it claimed to describe. It
+        // also encoded the same unreachable claim as the admin tier:
+        // `users.trust_level` is CHECK (0..6), so trust 10 is a value no real
+        // login can hold.
+        //
+        // Asserted against the constant the handler actually uses, so changing
+        // the gate means changing this.
+        const AUTO_APPROVE_MIN_TRUST: i16 = 5;
 
         let curator = AuthUser {
             user_id: Some(2),
             username: Some("curator".into()),
-            trust_level: 5,
+            trust_level: AUTO_APPROVE_MIN_TRUST,
             level: 50,
+            is_admin: false,
         };
-        assert!(!(curator.trust_level >= 10));
+        assert!(curator.trust_level >= AUTO_APPROVE_MIN_TRUST);
+
+        let reader = AuthUser {
+            user_id: Some(4),
+            username: Some("reader".into()),
+            trust_level: AUTO_APPROVE_MIN_TRUST - 1,
+            level: 10,
+            is_admin: false,
+        };
+        assert!(reader.trust_level < AUTO_APPROVE_MIN_TRUST);
     }
 
     #[test]

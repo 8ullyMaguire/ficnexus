@@ -16,6 +16,12 @@ pub struct Claims {
     pub trust_level: i16,
     /// F7 site-wide level (0-100). The active gate for forum mod/admin.
     pub level: i16,
+    /// Administrator. A distinct capability, NOT a rung on the trust ladder:
+    /// `trust_level` is CHECK-constrained to 0-6 by 013_trust_levels.sql, so a
+    /// trust threshold could never admit a real login. See
+    /// `docs/specs/admin-flag.md`.
+    #[serde(default)]
+    pub is_admin: bool,
     pub exp: usize,
     pub iat: usize,
 }
@@ -32,6 +38,9 @@ pub struct User {
     pub level: i16,
     /// F7 experience points (drives level).
     pub exp: i64,
+    /// Administrator. Distinct from `trust_level` and from the legacy
+    /// `users.role`. See `docs/specs/admin-flag.md`.
+    pub is_admin: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,6 +88,7 @@ pub fn create_token(user: &User, secret: &str) -> Result<String, AppError> {
         username: user.username.clone(),
         trust_level: user.trust_level,
         level: user.level,
+        is_admin: user.is_admin,
         exp: (now + Duration::days(30)).timestamp() as usize,
         iat: now.timestamp() as usize,
     };
@@ -98,6 +108,10 @@ pub fn create_refresh_token(user_id: i32, secret: &str) -> Result<String, AppErr
         username: String::new(),
         trust_level: 0,
         level: 0,
+        // A refresh token carries no privileges: `refresh` in social.rs re-reads
+        // the user row and builds a fresh access token from it, so nothing is
+        // authorized from these claims directly.
+        is_admin: false,
         exp: (now + Duration::days(365)).timestamp() as usize,
         iat: now.timestamp() as usize,
     };
@@ -140,9 +154,9 @@ pub async fn register_user(
     let hash = bcrypt::hash(&req.password, bcrypt::DEFAULT_COST)
         .map_err(|e| AppError::Internal(format!("Hash error: {}", e)))?;
 
-    let row = sqlx::query_as::<_, (i32, String, i16, i32, Option<String>, i16, i64)>(
+    let row = sqlx::query_as::<_, (i32, String, i16, i32, Option<String>, i16, i64, bool)>(
         "INSERT INTO users (username, password_hash, email) VALUES ($1, $2, COALESCE($3, ''))
-         RETURNING id, username, trust_level, reputation, email, level, exp",
+         RETURNING id, username, trust_level, reputation, email, level, exp, is_admin",
     )
     .bind(&req.username)
     .bind(&hash)
@@ -164,6 +178,7 @@ pub async fn register_user(
         email: row.4,
         level: row.5,
         exp: row.6,
+        is_admin: row.7,
     };
     let token = create_token(&user, secret)?;
     Ok(AuthResponse { token, user })
@@ -175,15 +190,15 @@ pub async fn login_user(
     req: LoginRequest,
     secret: &str,
 ) -> Result<AuthResponse, AppError> {
-    let row = sqlx::query_as::<_, (i32, String, String, i16, i32, Option<String>, i16, i64)>(
-        "SELECT id, username, password_hash, trust_level, reputation, email, level, exp FROM users WHERE username = $1",
+    let row = sqlx::query_as::<_, (i32, String, String, i16, i32, Option<String>, i16, i64, bool)>(
+        "SELECT id, username, password_hash, trust_level, reputation, email, level, exp, is_admin FROM users WHERE username = $1",
     )
     .bind(&req.username)
     .fetch_optional(db)
     .await?
     .ok_or_else(|| AppError::Unauthorized("Invalid username or password".to_string()))?;
 
-    let (id, username, hash, trust_level, reputation, email, level, exp) = row;
+    let (id, username, hash, trust_level, reputation, email, level, exp, is_admin) = row;
 
     let valid = bcrypt::verify(&req.password, &hash)
         .map_err(|e| AppError::Internal(format!("Verify error: {e}")))?;
@@ -201,6 +216,7 @@ pub async fn login_user(
         email,
         level,
         exp,
+        is_admin,
     };
     let token = create_token(&user, secret)?;
     Ok(AuthResponse { token, user })
@@ -216,6 +232,10 @@ pub struct AuthUser {
     pub trust_level: i16,
     /// F7 site-wide level (0-100); 0 for anonymous.
     pub level: i16,
+    /// Administrator, from the token's `is_admin` claim. This is what
+    /// `trust::require_admin_tier` reads — not `trust_level`, which is bounded
+    /// to 0-6. See `docs/specs/admin-flag.md`.
+    pub is_admin: bool,
 }
 
 impl Default for AuthUser {
@@ -225,6 +245,7 @@ impl Default for AuthUser {
             username: None,
             trust_level: 0,
             level: 0,
+            is_admin: false,
         }
     }
 }
@@ -240,6 +261,7 @@ pub fn auth_user_from_token_with_secret(token: &str, secret: &str) -> Option<Aut
         username: Some(claims.username),
         trust_level: claims.trust_level,
         level: claims.level,
+        is_admin: claims.is_admin,
     })
 }
 
@@ -290,6 +312,7 @@ mod tests {
             email: None,
             level: 0,
             exp: 0,
+            is_admin: true,
         };
         let secret = "test-secret";
         let token = create_token(&user, secret).unwrap();
@@ -298,6 +321,12 @@ mod tests {
         assert_eq!(claims.username, "testuser");
         assert_eq!(claims.trust_level, 0);
         assert_eq!(claims.level, 0);
+        // The admin flag must survive the round-trip: `require_admin_tier` reads
+        // the claim, so a token that dropped it would silently lock every
+        // administrator out of the admin routes.
+        assert!(claims.is_admin);
+        let auth = auth_user_from_token_with_secret(&token, secret).expect("AuthUser");
+        assert!(auth.is_admin, "AuthUser must carry the claim too");
     }
 
     #[test]
@@ -316,6 +345,7 @@ mod tests {
             email: None,
             level: 0,
             exp: 0,
+            is_admin: true,
         };
         let token = create_token(&user, "secret1").unwrap();
         let result = verify_token(&token, "secret2");

@@ -111,6 +111,18 @@ async fn app() -> Router {
     });
 
     Router::new()
+        // The auth routes, so `real_login_reaches_admin_route` can obtain a
+        // token the way a user does. This suite's router is hand-built from the
+        // admin endpoints only; without these the acceptance test 404s on
+        // register and proves nothing.
+        .route(
+            "/api/auth/register",
+            post(fichub::routes::social::register_handler),
+        )
+        .route(
+            "/api/auth/login",
+            post(fichub::routes::social::login_handler),
+        )
         .route("/api/admin/bots", get(fichub::routes::admin::admin_bots))
         .route(
             "/api/admin/bots/{client_id}/shadowban",
@@ -181,28 +193,134 @@ async fn app() -> Router {
         .with_state(state)
 }
 
-/// Seeds the legacy `users.role` column.
+
+/// R4 acceptance: log in through the real path and reach an admin route with
+/// the token the server issued.
 ///
-/// This is **not** the trust level. Admin routes authorize on
-/// `AuthUser.trust_level`, which JWT issuance reads from `users.trust_level`
-/// (`src/routes/auth.rs:145-162`) — so a handler that wrote `users.role` would
-/// have no effect on any authorization decision in the product.
+/// This is the test whose absence let the TL10 contradiction survive. Every other
+/// admin test mints its token with `create_token`, so the suite proved the routes
+/// read `trust_level` correctly while never checking that a real login can
+/// produce a claim the routes accept. It could not: `users.trust_level` is
+/// `CHECK (0..6)`, so no account ever reached the TL10 the tests asserted.
 ///
-/// Callers pass the trust level they want separately, to `auth_header`. The
-/// parameter is named `legacy_role` because the old name `role` is what made
-/// this read as though the routes under test consulted this column.
-/// See `docs/specs/admin-tier-separation.md` section 3.
-async fn seed_admin_user(db: &sqlx::PgPool, username: &str, legacy_role: i16) -> i32 {
-    sqlx::query("INSERT INTO users (username, password_hash, role) VALUES ($1, 'x', $2) ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role RETURNING id")
-        .bind(username)
-        .bind(legacy_role)
-        .fetch_one(db)
+/// Admin is now `users.is_admin`, carried in the token. See
+/// `docs/specs/admin-flag.md` R4.
+#[tokio::test]
+#[ignore]
+async fn real_login_reaches_admin_route() {
+    let _g = db_guard();
+    let db = pool().await;
+    let name = "adminit_reallogin";
+    let password = "reallogin-pw-123";
+
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(name)
+        .execute(&db)
         .await
-        .expect("seed user")
-        .get(0)
+        .ok();
+
+    // Register through the real endpoint so the password hash and every default
+    // are the product's own, not this test's idea of them.
+    //
+    // `form_opened_at` is not optional in practice: without it — or with a
+    // timestamp less than MIN_FORM_MS (500) old — the honeypot returns
+    // `RejectSilently`, a 200 with an empty token and NO account created. So the
+    // timestamp is backdated 5s rather than slept for, and the test asserts the
+    // row exists rather than trusting the status: a status-only assert passes
+    // cleanly against the trap, which is exactly how this was first missed.
+    let app = app().await;
+    let opened_at = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        - 5_000)
+    .to_string();
+    let (s, b) = send(
+        &app,
+        "POST",
+        "/api/auth/register",
+        None,
+        Some(json!({
+            "username": name,
+            "password": password,
+            "form_opened_at": opened_at,
+        })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "register: {b}");
+    let created: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE username = $1")
+        .bind(name)
+        .fetch_one(&db)
+        .await
+        .expect("count");
+    assert_eq!(created, 1, "register must actually create the account: {b}");
+
+    // 1. Not an administrator: the admin route refuses.
+    let (s, b) = send(
+        &app,
+        "POST",
+        "/api/auth/login",
+        None,
+        Some(json!({ "username": name, "password": password })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "login: {b}");
+    let plain_token = format!("Bearer {}", b["token"].as_str().expect("token"));
+
+    let (s, b) = send(&app, "GET", "/api/admin/stats", Some(&plain_token), None).await;
+    assert_eq!(
+        s,
+        StatusCode::FORBIDDEN,
+        "a plain login must not reach an admin route: {b}"
+    );
+
+    // 2. Promote, then log in again — a NEW token, because the claim is baked in
+    //    at issue and the old one still says is_admin=false.
+    let uid: i32 = sqlx::query_scalar("SELECT id FROM users WHERE username = $1")
+        .bind(name)
+        .fetch_one(&db)
+        .await
+        .expect("uid");
+    set_admin(&db, uid, true).await;
+
+    let (s, b) = send(
+        &app,
+        "POST",
+        "/api/auth/login",
+        None,
+        Some(json!({ "username": name, "password": password })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "re-login: {b}");
+    let admin_token = format!("Bearer {}", b["token"].as_str().expect("token"));
+
+    let (s, b) = send(&app, "GET", "/api/admin/stats", Some(&admin_token), None).await;
+    assert_eq!(
+        s,
+        StatusCode::OK,
+        "a promoted user's fresh login must reach an admin route: {b}"
+    );
+
+    // Cleanup
+    sqlx::query("DELETE FROM users WHERE username = $1")
+        .bind(name)
+        .execute(&db)
+        .await
+        .ok();
 }
 
+/// Mints a non-admin token.
 fn auth_header(user_id: i32, username: &str, trust_level: i16) -> String {
+    auth_header_for(user_id, username, trust_level, false)
+}
+
+/// Mints a token with an explicit `is_admin` claim.
+///
+/// `is_admin` is a real column and the admin-tier gates read it from the token
+/// (`docs/specs/admin-flag.md`). Trust level is separate and does **not** grant
+/// admin — `users.trust_level` is CHECK-constrained to 0-6, so no trust value
+/// could ever express "administrator".
+fn auth_header_for(user_id: i32, username: &str, trust_level: i16, is_admin: bool) -> String {
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let user = fichub::routes::auth::User {
         id: user_id,
@@ -212,9 +330,40 @@ fn auth_header(user_id: i32, username: &str, trust_level: i16) -> String {
         email: None,
         level: 0,
         exp: 0,
+        is_admin,
     };
     let token = fichub::routes::auth::create_token(&user, &secret).expect("token creation");
     format!("Bearer {token}")
+}
+
+/// Seeds a user at an explicit database `trust_level`.
+///
+/// The admin flag is set separately, by `set_admin`, because the two are
+/// unrelated: `is_admin` is a capability, `trust_level` is a 0-6 community
+/// ladder. Several tests need a non-admin at high trust, and several need an
+/// admin at trust 0.
+///
+/// This used to write the legacy `users.role` column, which no admin route
+/// consults — that mismatch is what made `seed_admin_user(db, name, 10)` read as
+/// though it configured authorization. See `docs/specs/admin-flag.md`.
+async fn seed_admin_user(db: &sqlx::PgPool, username: &str, trust_level: i16) -> i32 {
+    sqlx::query("INSERT INTO users (username, password_hash, trust_level) VALUES ($1, 'x', $2) ON CONFLICT (username) DO UPDATE SET trust_level = EXCLUDED.trust_level RETURNING id")
+        .bind(username)
+        .bind(trust_level)
+        .fetch_one(db)
+        .await
+        .expect("seed user")
+        .get(0)
+}
+
+/// Promotes a seeded user to administrator.
+async fn set_admin(db: &sqlx::PgPool, user_id: i32, is_admin: bool) {
+    sqlx::query("UPDATE users SET is_admin = $2 WHERE id = $1")
+        .bind(user_id)
+        .bind(is_admin)
+        .execute(db)
+        .await
+        .expect("set is_admin");
 }
 
 async fn seed_bot_score(
@@ -314,7 +463,8 @@ async fn admin_bots_returns_anonymized_flags() {
     let db = pool().await;
     let app = app().await;
 
-    let admin = seed_admin_user(&db, "adminit_bots_admin", 10).await;
+    let admin = seed_admin_user(&db, "adminit_bots_admin", 6).await;
+    set_admin(&db, admin, true).await;
     // A mirror bot: 100 requests, 99 downloads (ratio 0.99) + stuffing (8 failed auths)
     seed_bot_score(&db, "botit_mirror_1", 100, 99, 8).await;
     // A normal reader: 50 requests, 1 download (ratio 0.02)
@@ -324,7 +474,7 @@ async fn admin_bots_returns_anonymized_flags() {
         &app,
         "GET",
         "/api/admin/bots?min_requests=10",
-        Some(&auth_header(admin, "adminit_bots_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_bots_admin", 6, true)),
         None,
     )
     .await;
@@ -378,12 +528,13 @@ async fn admin_realtime_returns_counts() {
     let db = pool().await;
     let app = app().await;
 
-    let admin = seed_admin_user(&db, "adminit_realtime_admin", 10).await;
+    let admin = seed_admin_user(&db, "adminit_realtime_admin", 6).await;
+    set_admin(&db, admin, true).await;
     let (s, body) = send(
         &app,
         "GET",
         "/api/admin/realtime",
-        Some(&auth_header(admin, "adminit_realtime_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_realtime_admin", 6, true)),
         None,
     )
     .await;
@@ -409,7 +560,8 @@ async fn admin_roadmap_consensus_returns_ranked_features() {
     let db = pool().await;
     let app = app().await;
 
-    let admin = seed_admin_user(&db, "adminit_consensus_admin", 10).await;
+    let admin = seed_admin_user(&db, "adminit_consensus_admin", 6).await;
+    set_admin(&db, admin, true).await;
     // Seed two clusters (fake zero embeddings) with different Elo.
     let dims = vec![0.0f32; 768];
     let emb = format!(
@@ -428,7 +580,7 @@ async fn admin_roadmap_consensus_returns_ranked_features() {
         &app,
         "GET",
         "/api/admin/roadmap-consensus",
-        Some(&auth_header(admin, "adminit_consensus_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_consensus_admin", 6, true)),
         None,
     )
     .await;
@@ -475,7 +627,8 @@ async fn admin_bot_shadowban_roundtrip() {
         .await
         .expect("redis conn");
 
-    let admin = seed_admin_user(&db, "adminit_shadow_admin", 10).await;
+    let admin = seed_admin_user(&db, "adminit_shadow_admin", 6).await;
+    set_admin(&db, admin, true).await;
     seed_bot_score(&db, "botit_shadow_1", 100, 99, 8).await;
 
     // Clean any leftover membership from a crashed run.
@@ -491,7 +644,7 @@ async fn admin_bot_shadowban_roundtrip() {
         &app,
         "POST",
         "/api/admin/bots/botit_shadow_1/shadowban",
-        Some(&auth_header(admin, "adminit_shadow_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_shadow_admin", 6, true)),
         None,
     )
     .await;
@@ -514,7 +667,7 @@ async fn admin_bot_shadowban_roundtrip() {
         &app,
         "GET",
         "/api/admin/bots?min_requests=10",
-        Some(&auth_header(admin, "adminit_shadow_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_shadow_admin", 6, true)),
         None,
     )
     .await;
@@ -531,7 +684,7 @@ async fn admin_bot_shadowban_roundtrip() {
         &app,
         "POST",
         "/api/admin/bots/botit_shadow_1/unshadowban",
-        Some(&auth_header(admin, "adminit_shadow_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_shadow_admin", 6, true)),
         None,
     )
     .await;
@@ -583,7 +736,8 @@ async fn admin_moderation_comments_queue() {
     let db = pool().await;
     let app = app().await;
 
-    let admin = seed_admin_user(&db, "adminit_mod_admin", 10).await;
+    let admin = seed_admin_user(&db, "adminit_mod_admin", 6).await;
+    set_admin(&db, admin, true).await;
     let low = seed_admin_user(&db, "adminit_mod_low", 5).await;
     let author = seed_admin_user(&db, "adminit_mod_author", 0).await;
 
@@ -647,7 +801,7 @@ async fn admin_moderation_comments_queue() {
         &app,
         "GET",
         "/api/admin/moderation/comments",
-        Some(&auth_header(admin, "adminit_mod_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_mod_admin", 6, true)),
         None,
     )
     .await;
@@ -694,7 +848,8 @@ async fn admin_stats_returns_daily_and_totals() {
     let db = pool().await;
     let app = app().await;
 
-    let admin = seed_admin_user(&db, "adminit_stats_admin", 10).await;
+    let admin = seed_admin_user(&db, "adminit_stats_admin", 6).await;
+    set_admin(&db, admin, true).await;
     let low = seed_admin_user(&db, "adminit_stats_low", 5).await;
 
     // Seed one daily rollup row for a deterministic date.
@@ -720,7 +875,7 @@ async fn admin_stats_returns_daily_and_totals() {
         &app,
         "GET",
         "/api/admin/stats",
-        Some(&auth_header(admin, "adminit_stats_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_stats_admin", 6, true)),
         None,
     )
     .await;
@@ -755,7 +910,8 @@ async fn admin_users_search_role_ban() {
     let db = pool().await;
     let app = app().await;
 
-    let admin = seed_admin_user(&db, "adminit_users_admin", 10).await;
+    let admin = seed_admin_user(&db, "adminit_users_admin", 6).await;
+    set_admin(&db, admin, true).await;
     let target = seed_admin_user(&db, "adminit_users_target", 0).await;
 
     // Search finds the target by username fragment.
@@ -763,7 +919,7 @@ async fn admin_users_search_role_ban() {
         &app,
         "GET",
         "/api/admin/users?q=adminit_users_target",
-        Some(&auth_header(admin, "adminit_users_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_users_admin", 6, true)),
         None,
     )
     .await;
@@ -778,7 +934,7 @@ async fn admin_users_search_role_ban() {
         &app,
         "PUT",
         &format!("/api/admin/users/{target}/role"),
-        Some(&auth_header(admin, "adminit_users_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_users_admin", 6, true)),
         Some(json!({ "role": 5 })),
     )
     .await;
@@ -795,7 +951,7 @@ async fn admin_users_search_role_ban() {
         &app,
         "PUT",
         &format!("/api/admin/users/{target}/ban"),
-        Some(&auth_header(admin, "adminit_users_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_users_admin", 6, true)),
         Some(json!({ "is_banned": true })),
     )
     .await;
@@ -813,7 +969,7 @@ async fn admin_users_search_role_ban() {
         &app,
         "GET",
         "/api/admin/users?q=adminit_users_target",
-        Some(&auth_header(admin, "adminit_users_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_users_admin", 6, true)),
         None,
     )
     .await;
@@ -827,7 +983,7 @@ async fn admin_users_search_role_ban() {
         &app,
         "PUT",
         &format!("/api/admin/users/{target}/ban"),
-        Some(&auth_header(admin, "adminit_users_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_users_admin", 6, true)),
         Some(json!({ "is_banned": false })),
     )
     .await;
@@ -867,7 +1023,8 @@ async fn admin_auto_tag_queue_approve_dismiss() {
     let db = pool().await;
     let app = app().await;
 
-    let admin = seed_admin_user(&db, "adminit_autotag_admin", 10).await;
+    let admin = seed_admin_user(&db, "adminit_autotag_admin", 6).await;
+    set_admin(&db, admin, true).await;
     let low = seed_admin_user(&db, "adminit_autotag_low", 5).await;
 
     // Seed a fic + a tag + a machine-suggested fic_tag (pending review).
@@ -916,7 +1073,7 @@ async fn admin_auto_tag_queue_approve_dismiss() {
         &app,
         "GET",
         "/api/admin/auto-tag/queue",
-        Some(&auth_header(admin, "adminit_autotag_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_autotag_admin", 6, true)),
         None,
     )
     .await;
@@ -935,7 +1092,7 @@ async fn admin_auto_tag_queue_approve_dismiss() {
         &app,
         "POST",
         &format!("/api/admin/auto-tag/approve/adminit_autotag_fic/{tag_id}"),
-        Some(&auth_header(admin, "adminit_autotag_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_autotag_admin", 6, true)),
         None,
     )
     .await;
@@ -945,7 +1102,7 @@ async fn admin_auto_tag_queue_approve_dismiss() {
         &app,
         "GET",
         "/api/admin/auto-tag/queue",
-        Some(&auth_header(admin, "adminit_autotag_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_autotag_admin", 6, true)),
         None,
     )
     .await;
@@ -970,7 +1127,7 @@ async fn admin_auto_tag_queue_approve_dismiss() {
         &app,
         "POST",
         &format!("/api/admin/auto-tag/dismiss/adminit_autotag_fic/{tag_id}"),
-        Some(&auth_header(admin, "adminit_autotag_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_autotag_admin", 6, true)),
         None,
     )
     .await;
@@ -990,7 +1147,7 @@ async fn admin_auto_tag_queue_approve_dismiss() {
         &app,
         "POST",
         "/api/admin/auto-tag/approve/adminit_autotag_fic/999999999",
-        Some(&auth_header(admin, "adminit_autotag_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_autotag_admin", 6, true)),
         None,
     )
     .await;
@@ -1020,7 +1177,8 @@ async fn admin_blacklist_add_and_list() {
     let db = pool().await;
     let app = app().await;
 
-    let admin = seed_admin_user(&db, "adminit_bl_admin", 10).await;
+    let admin = seed_admin_user(&db, "adminit_bl_admin", 6).await;
+    set_admin(&db, admin, true).await;
     let low = seed_admin_user(&db, "adminit_bl_low", 5).await;
     let fic_id = "adminit_bl_fic_1";
     // Remove leftovers from any previous run (self-heal).
@@ -1080,7 +1238,7 @@ async fn admin_blacklist_add_and_list() {
         &app,
         "POST",
         "/api/admin/blacklist/fic",
-        Some(&auth_header(admin, "adminit_bl_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_bl_admin", 6, true)),
         Some(json!({ "url_id": fic_id })),
     )
     .await;
@@ -1093,7 +1251,7 @@ async fn admin_blacklist_add_and_list() {
         &app,
         "POST",
         "/api/admin/blacklist/author",
-        Some(&auth_header(admin, "adminit_bl_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_bl_admin", 6, true)),
         Some(json!({ "source_id": 4242, "author_id": 4243, "reason": 6 })),
     )
     .await;
@@ -1123,7 +1281,7 @@ async fn admin_blacklist_add_and_list() {
         &app,
         "GET",
         "/api/admin/blacklist",
-        Some(&auth_header(admin, "adminit_bl_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_bl_admin", 6, true)),
         None,
     )
     .await;
@@ -1147,7 +1305,7 @@ async fn admin_blacklist_add_and_list() {
         &app,
         "POST",
         "/api/admin/blacklist/fic",
-        Some(&auth_header(admin, "adminit_bl_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_bl_admin", 6, true)),
         Some(json!({ "url_id": "  " })),
     )
     .await;
@@ -1181,7 +1339,8 @@ async fn admin_moderation_comment_actions() {
     let db = pool().await;
     let app = app().await;
 
-    let admin = seed_admin_user(&db, "adminit_mod_admin", 10).await;
+    let admin = seed_admin_user(&db, "adminit_mod_admin", 6).await;
+    set_admin(&db, admin, true).await;
     let low = seed_admin_user(&db, "adminit_mod_low", 5).await;
     let author = seed_admin_user(&db, "adminit_mod_author", 0).await;
     let fic_id = "adminit_mod_fic_1";
@@ -1273,7 +1432,7 @@ async fn admin_moderation_comment_actions() {
         &app,
         "POST",
         &format!("/api/admin/moderation/comments/{c1}/hide"),
-        Some(&auth_header(admin, "adminit_mod_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_mod_admin", 6, true)),
         None,
     )
     .await;
@@ -1298,7 +1457,7 @@ async fn admin_moderation_comment_actions() {
         &app,
         "POST",
         &format!("/api/admin/moderation/comments/{c2}/delete"),
-        Some(&auth_header(admin, "adminit_mod_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_mod_admin", 6, true)),
         None,
     )
     .await;
@@ -1324,7 +1483,7 @@ async fn admin_moderation_comment_actions() {
         &app,
         "POST",
         "/api/admin/moderation/comments/999999999/hide",
-        Some(&auth_header(admin, "adminit_mod_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_mod_admin", 6, true)),
         None,
     )
     .await;
@@ -1333,7 +1492,7 @@ async fn admin_moderation_comment_actions() {
         &app,
         "POST",
         "/api/admin/moderation/comments/999999999/delete",
-        Some(&auth_header(admin, "adminit_mod_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_mod_admin", 6, true)),
         None,
     )
     .await;
@@ -1382,12 +1541,13 @@ async fn admin_search_analytics_conversion() {
     )
     .execute(&db).await.expect("seed export (request_source may be empty; then skipped)");
 
-    let admin = seed_admin_user(&db, "adminit_conversion_admin", 10).await;
+    let admin = seed_admin_user(&db, "adminit_conversion_admin", 6).await;
+    set_admin(&db, admin, true).await;
     let (s, body) = send(
         &app,
         "GET",
         "/api/admin/search-analytics",
-        Some(&auth_header(admin, "adminit_conversion_admin", 10)),
+        Some(&auth_header_for(admin, "adminit_conversion_admin", 6, true)),
         None,
     )
     .await;

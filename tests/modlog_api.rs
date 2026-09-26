@@ -112,6 +112,7 @@ fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
         email: None,
         level: 0,
         exp: 0,
+        is_admin: false,
     };
     format!(
         "Bearer {}",

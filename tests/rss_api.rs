@@ -151,6 +151,7 @@ fn auth_token(user_id: i32) -> String {
         email: None,
         level: 0,
         exp: 0,
+        is_admin: false,
     };
     fichub::routes::auth::create_token(&user, &secret).expect("token creation")
 }

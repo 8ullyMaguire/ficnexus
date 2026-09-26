@@ -887,6 +887,7 @@ mod tests {
             username: Some("header-user".into()),
             trust_level: 1,
             level: 10,
+            is_admin: false,
         };
         let resolved = resolve_batch_user(&header_user, Some("bogus-token"), "test-secret");
         assert_eq!(resolved.user_id, Some(7));

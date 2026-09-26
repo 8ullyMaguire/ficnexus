@@ -427,6 +427,7 @@ mod tests {
             username: Some("a".to_string()),
             trust_level,
             level,
+            is_admin: false,
         };
         assert!(is_staff(&mk(10, 1)));
         assert!(is_staff(&mk(0, 60)));

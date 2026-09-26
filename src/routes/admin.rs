@@ -333,9 +333,12 @@ pub async fn set_user_role(
     Path(user_id): Path<i32>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    // Reads the admin flag, not a trust level. This route writes
+    // `users.trust_level`, but a trust level is not what grants access to the
+    // admin surface — `is_admin` is (`docs/specs/admin-flag.md`). Gating it on
+    // `trust_level < 5` would also mean an administrator could not use it, since
+    // no login can hold trust 10.
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let new_role: i16 = payload
         .get("trust_level")
@@ -361,6 +364,72 @@ pub async fn set_user_role(
     .await;
 
     Ok(Json(json!({"err": 0, "msg": "Role updated"})))
+}
+
+/// PUT /api/admin/users/{id}/is_admin — grant or revoke administrator.
+///
+/// The promotion path (R7 of `docs/specs/admin-flag.md`). Hand-editing
+/// `users.is_admin` is not a promotion path, and `set_user_role` cannot serve:
+/// it is named for a column that no authorization decision reads, which is the
+/// naming problem this change exists to fix.
+///
+/// Gated on `require_admin_tier`, so only an administrator can grant
+/// administrator. Note the consequence: a deployment with zero administrators
+/// has no in-product way to create the first one, and must seed it directly.
+/// That is intentional — a self-escalating path would be worse — and is the
+/// same property the old `trust_level >= 5` gate had.
+pub async fn set_user_admin(
+    State(state): State<Arc<AppState>>,
+    user: AuthUser,
+    Path(user_id): Path<i32>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let actor = crate::services::trust::require_admin_tier(&user, &state)?;
+
+    let is_admin = payload
+        .get("is_admin")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| AppError::BadRequest("is_admin field required (bool)".to_string()))?;
+
+    // An administrator demoting themselves can lock the last admin out of the
+    // product, with no in-product way back. Refuse rather than allow it.
+    if !is_admin && user_id == actor {
+        return Err(AppError::BadRequest(
+            "an administrator cannot revoke their own admin flag".to_string(),
+        ));
+    }
+
+    let updated = sqlx::query("UPDATE users SET is_admin = $1 WHERE id = $2")
+        .bind(is_admin)
+        .bind(user_id)
+        .execute(&state.db)
+        .await?;
+
+    if updated.rows_affected() == 0 {
+        return Err(AppError::NotFound("User not found".to_string()));
+    }
+
+    crate::modlog::record_json(
+        &state.db,
+        Some(actor),
+        user.username.clone(),
+        "set_user_admin",
+        "user",
+        &user_id.to_string(),
+        vec![("is_admin", json!(is_admin))],
+    )
+    .await;
+
+    Ok(Json(json!({
+        "err": 0,
+        "msg": "Administrator flag updated",
+        "user_id": user_id,
+        "is_admin": is_admin,
+        // The claim is baked in at token issue, so the target must log in again
+        // (or refresh) for the change to take effect. Say so in the response
+        // rather than leaving the caller to discover it.
+        "note": "takes effect on the target's next login or token refresh",
+    })))
 }
 
 /// PUT /api/admin/users/{id}/ban — toggle ban
