@@ -143,22 +143,38 @@ check_daily_cap(&state, user_id).await?;
 
 ### 4.3 Config
 
-Three new `i16` fields, all defaulting to 0, all read from the environment:
+**One of these already existed.** `forum_mod_min_level` was declared in
+`config.rs:298` with the env var `FORUM_MOD_MIN_LEVEL`, a default of **50**, and
+the comment *"F7: level threshold for curators (was role 5)"*. It was plumbed
+through `from_env`, through the `Default` impl, and through the struct
+construction — and **read by nothing**. A grep for readers outside `config.rs`
+returns zero hits.
 
-| field | env var | default | governs |
-|---|---|---:|---|
-| `forum_mod_min_level` | `FORUM_MOD_MIN_LEVEL` | 0 | ban list / ban lift |
-| `forum_category_min_level` | `FORUM_CATEGORY_MIN_LEVEL` | 0 | category create / edit |
-| `forum_curator_min_level` | `FORUM_CURATOR_MIN_LEVEL` | 0 | `/moderate` |
+So the plumbing for exactly this feature was already half-built and never
+connected. The plan originally specified three new fields; the correct answer is
+two, and the existing one is reused rather than shadowed under a new name.
 
-`0` means the level axis is inert, so **deploying this changes nobody's access**:
-the behaviour is identical until an operator sets a threshold. That is what makes
-this a config change on deploy rather than a code change, and it is reversible
-by clearing the variable.
+| field | env var | default | governs | status |
+|---|---|---:|---|---|
+| `forum_mod_min_level` | `FORUM_MOD_MIN_LEVEL` | 50 | `/moderate` | **existed, unwired** — now read |
+| `forum_category_min_level` | `FORUM_CATEGORY_MIN_LEVEL` | 0 | category create / edit | new |
+| `forum_ban_min_level` | `FORUM_BAN_MIN_LEVEL` | 0 | ban list / ban lift | new |
 
-The three thresholds are separate because the owner asked for level alongside
-trust, and one number cannot serve a ban list, a category, and a moderation
-action.
+**Naming note.** The two new fields are deliberately *not* called
+`forum_mod_*`. The existing `forum_mod_min_level` is the curator threshold and
+its `Default` impl is 0 while `from_env` is 50 — the two constructors disagree,
+which is pre-existing and left alone here, but it is the kind of thing that
+misleads the next reader. The ban gate is named `forum_ban_min_level` for the
+action it guards rather than for the tier it sits in.
+
+**The two new fields default to 0**, which means the level axis is inert for
+them: deploying this changes nobody's ability to list bans or edit categories.
+The curator gate is the exception — `FORUM_MOD_MIN_LEVEL` already defaulted to
+**50**, so wiring it up *does* change behaviour, and that is the one rollout
+risk in this work (see §7).
+
+Three separate thresholds exist because one number cannot serve a ban list, a
+category, and a moderation action.
 
 ## 5. Test changes
 
@@ -188,9 +204,27 @@ real defects (D1, D2). Delete it and the gate has no test at all.
 
 ## 7. Risk
 
-The one real risk is an operator setting `FORUM_CATEGORY_MIN_LEVEL=100` and
-locking out every existing category manager, who have trust 5 and level 0. That
-is why the default is 0 and why the thresholds are config rather than constants,
-and it is recorded here rather than defended in code. A sane rollout is: deploy
-with defaults, audit `SELECT count(*) FROM users WHERE trust_level >= 5 AND
-level < 100`, then set the variable.
+Two distinct risks, one of them real *on deploy* rather than on configuration.
+
+**Real now:** `FORUM_MOD_MIN_LEVEL` defaults to 50, so wiring it into
+`moderate_post` immediately requires level 50 to moderate. Anyone currently
+moderating with trust 5 and level below 50 loses the ability at the moment this
+ships. That is presumably the intent — the field was named and defaulted for
+exactly this — but it is a behaviour change, not a no-op, and it needs saying
+plainly rather than hiding behind "config-driven".
+
+Mitigation before deploy:
+
+```sql
+SELECT count(*) FROM users
+WHERE trust_level >= 4 AND level < 50 AND banned_until IS NULL;
+```
+
+If that returns anyone, either lower `FORUM_MOD_MIN_LEVEL`, or raise those
+users' level, before shipping. The test suite cannot tell you this — it seeds
+its own users.
+
+**On configuration:** the other two default to 0, so an operator setting
+`FORUM_CATEGORY_MIN_LEVEL=100` locks out every existing category manager (trust
+5, level 0). Recorded rather than defended in code, because the whole point of
+config is that the operator decides.

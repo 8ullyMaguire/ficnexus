@@ -331,6 +331,15 @@ pub struct Config {
     /// Trust tier that may resolve reports / fast-hide / lock / pin
     /// (default 5 = Community Moderator). (env: FORUM_RESOLVE_MIN_TRUST)
     pub forum_resolve_min_trust: i16,
+    // ── Forum LEVEL gates (2026-09) ────────────────────────────────────────
+    // Level is an axis independent of trust: both must pass. A default of 0
+    // makes the level axis inert, so shipping this changes nobody's access
+    // until an operator sets a threshold - it is a config change on deploy,
+    // not a code change, and clearing the variable reverts it.
+    /// Minimum forum level to manage bans. (env: FORUM_BAN_MIN_LEVEL)
+    pub forum_ban_min_level: i16,
+    /// Minimum forum level to create or edit categories. (env: FORUM_CATEGORY_MIN_LEVEL)
+    pub forum_category_min_level: i16,
     /// Trust tier that may reach administrator-tier endpoints: /api/admin/stats,
     /// /api/admin/bots, the moderation queue, the auto-tag queue, blacklists.
     ///
@@ -554,6 +563,8 @@ impl Config {
             forum_meta_cooldown_days: 0,
             forum_mod_min_trust: 0,
             forum_resolve_min_trust: 0,
+            forum_ban_min_level: 0,
+            forum_category_min_level: 0,
             forum_mod_actions_per_day: 0,
             forum_min_post_len: 0,
             forum_post_delay_secs: 0,
@@ -1186,6 +1197,18 @@ impl Config {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(5);
+        // Level thresholds default to 0 = inert. See the struct docs: the
+        // level axis only bites once an operator sets one deliberately.
+        // `forum_mod_min_level` already existed (default 50) and is the
+        // curator threshold - see its own declaration; it is not redefined.
+        let forum_ban_min_level = std::env::var("FORUM_BAN_MIN_LEVEL")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let forum_category_min_level = std::env::var("FORUM_CATEGORY_MIN_LEVEL")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
         let forum_mod_actions_per_day = std::env::var("FORUM_MOD_ACTIONS_PER_DAY")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -1404,6 +1427,8 @@ impl Config {
             forum_meta_cooldown_days,
             forum_mod_min_trust,
             forum_resolve_min_trust,
+            forum_ban_min_level,
+            forum_category_min_level,
             forum_mod_actions_per_day,
             forum_min_post_len,
             forum_post_delay_secs,
@@ -1728,6 +1753,11 @@ mod tests {
         // Forum trust moderation defaults (replaces points/metamod, 2026-09)
         assert_eq!(config.forum_mod_min_trust, 4);
         assert_eq!(config.forum_resolve_min_trust, 5);
+        // The level axis must be inert by default; a non-zero default would
+        // silently lock people out on deploy.
+        assert_eq!(config.forum_ban_min_level, 0);
+        assert_eq!(config.forum_category_min_level, 0);
+        assert_eq!(config.forum_mod_min_level, 50, "curator threshold is 50");
         // Admin tier defaults to 10, not the 5 that was inline-hardcoded in 77
         // places. See docs/specs/admin-tier-separation.md.
         assert_eq!(config.forum_mod_actions_per_day, 50);

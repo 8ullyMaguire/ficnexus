@@ -206,12 +206,38 @@ fn public_reader_id(auth: &AuthUser, state: &AppState) -> Result<i32, AppError> 
     Ok(auth.user_id.unwrap_or(0))
 }
 
-fn require_admin(auth: &AuthUser) -> Result<i32, AppError> {
+/// Trust is the base requirement for every forum admin action. Level is an
+/// *additional, independent* axis: both must pass. The owner decided level and
+/// trust are independent gates rather than one progression, so neither implies
+/// the other and neither is sufficient alone.
+///
+/// `is_admin` is deliberately not an alternative path here. This is the forum
+/// gate, governed by forum participation; the `/api/admin/*` tier is a separate
+/// surface guarded by `require_admin_tier` in `admin.rs`. Letting the flag in
+/// here would make "who can create a category" depend on a flag unrelated to
+/// the forum.
+fn require_admin_at_level(auth: &AuthUser, min_level: i16) -> Result<i32, AppError> {
     let uid = require_user(auth)?;
     if auth.trust_level < 5 {
         return Err(AppError::Forbidden("Admin access required".to_string()));
     }
+    if auth.level < min_level {
+        return Err(AppError::Forbidden(
+            "Forum level too low for this action".to_string(),
+        ));
+    }
     Ok(uid)
+}
+
+/// Ban management: list bans, lift a ban. Threshold `forum_ban_min_level`.
+fn require_forum_moderator(auth: &AuthUser, state: &AppState) -> Result<i32, AppError> {
+    require_admin_at_level(auth, state.config.forum_ban_min_level)
+}
+
+/// Category create/edit: the strictest forum action. Threshold
+/// `forum_category_min_level`.
+fn require_forum_category_admin(auth: &AuthUser, state: &AppState) -> Result<i32, AppError> {
+    require_admin_at_level(auth, state.config.forum_category_min_level)
 }
 
 /// Validate a category slug: lowercase alphanumeric + hyphens, 3-60 chars.
@@ -684,6 +710,16 @@ pub async fn moderate_post(
         ));
     };
     require_trust_queue(&state, &auth).await?;
+    // Level is a second, independent axis. Checked before the daily cap so a
+    // level rejection is reported as a permission failure rather than masked
+    // by an exhausted action budget. `require_trust_queue` itself is left
+    // alone: it guards several routes, and widening it would lock out
+    // moderators well beyond /moderate.
+    if auth.level < state.config.forum_mod_min_level {
+        return Err(AppError::Forbidden(
+            "Forum level too low to moderate".to_string(),
+        ));
+    }
     check_daily_cap(&state, user_id).await?;
     let (author_id, _score, mod_count) = load_moddable_post(&state.db, post_id).await?;
     if author_id == user_id {
@@ -1294,7 +1330,7 @@ pub async fn admin_delete_ban(
     State(state): State<Arc<AppState>>,
     Path(ban_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    let actor_id = require_admin(&auth)?;
+    let actor_id = require_forum_moderator(&auth, &state)?;
     let deleted = sqlx::query("DELETE FROM forum_bans WHERE id = $1")
         .bind(ban_id)
         .execute(&state.db)
@@ -1322,7 +1358,7 @@ pub async fn admin_list_bans(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Value>, AppError> {
-    require_admin(&auth)?;
+    require_forum_moderator(&auth, &state)?;
     let rows: Vec<(
         i64,
         i32,
@@ -2075,7 +2111,7 @@ pub async fn create_category(
     State(state): State<Arc<AppState>>,
     Json(body): Json<CreateCategoryBody>,
 ) -> Result<Json<Value>, AppError> {
-    require_admin(&auth)?;
+    require_forum_category_admin(&auth, &state)?;
 
     let slug = validate_slug(&body.slug)?;
     let (title, description) = validate_category_fields(&body.title, &body.description)?;
@@ -2110,7 +2146,7 @@ pub async fn update_category(
     Path(id): Path<i64>,
     Json(body): Json<UpdateCategoryBody>,
 ) -> Result<Json<Value>, AppError> {
-    require_admin(&auth)?;
+    require_forum_category_admin(&auth, &state)?;
 
     // Load the current row so absent fields keep their existing values.
     let current: Option<(String, String, String, i32)> = sqlx::query_as(
