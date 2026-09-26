@@ -30,16 +30,20 @@ async fn pool() -> sqlx::PgPool {
 }
 
 /// Helper: create a test work and return its ID.
-async fn seed_work(pool: &sqlx::PgPool, title: &str, author: &str, words: i64) -> i32 {
+/// The `words` argument and the word_count/chapter_count/avg_words_per_chapter
+/// columns this used to insert do not exist: `works` has never had them, and no
+/// table in the schema does. Word counts live on `fic_info.word_count`, which
+/// this test does not exercise - it is about embedding dedupe. Nothing here
+/// read the values back, so they were dropped rather than invented.
+async fn seed_work(pool: &sqlx::PgPool, title: &str, author: &str) -> i32 {
     use sqlx::Row;
     let row = sqlx::query(
-        r#"INSERT INTO works (canonical_title, canonical_author, word_count, chapter_count, avg_words_per_chapter, created_at, updated_at)
-           VALUES ($1, $2, $3, 10, 500, NOW(), NOW())
+        r#"INSERT INTO works (canonical_title, canonical_author, created_at, updated_at)
+           VALUES ($1, $2, NOW(), NOW())
            RETURNING id"#,
     )
     .bind(title)
     .bind(author)
-    .bind(words)
     .fetch_one(pool)
     .await
     .expect("seed work");
@@ -77,8 +81,8 @@ async fn test_candidate_pairs_finds_similar_works() {
         .unwrap();
 
     // Create two works with similar embeddings (should be found)
-    let w1 = seed_work(&pool, "DedupeTest_SimilarA", "Author A", 100000).await;
-    let w2 = seed_work(&pool, "DedupeTest_SimilarB", "Author B", 100000).await;
+    let w1 = seed_work(&pool, "DedupeTest_SimilarA", "Author A").await;
+    let w2 = seed_work(&pool, "DedupeTest_SimilarB", "Author B").await;
 
     // Embeddings with high similarity (cosine ~0.99)
     seed_embedding(&pool, w1, "[0.1, 0.9]").await;
@@ -124,8 +128,8 @@ async fn test_run_dedupe_auto_merges_high_similarity() {
         .unwrap();
 
     // Create two works with identical embeddings (similarity = 1.0)
-    let w1 = seed_work(&pool, "DedupeTest_MergeA", "Author A", 100000).await;
-    let w2 = seed_work(&pool, "DedupeTest_MergeB", "Author A", 100000).await;
+    let w1 = seed_work(&pool, "DedupeTest_MergeA", "Author A").await;
+    let w2 = seed_work(&pool, "DedupeTest_MergeB", "Author A").await;
 
     seed_embedding(&pool, w1, "[1.0, 0.0]").await;
     seed_embedding(&pool, w2, "[1.0, 0.0]").await;

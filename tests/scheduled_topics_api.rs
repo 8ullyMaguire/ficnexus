@@ -470,15 +470,16 @@ async fn publish_scheduled_flips_and_notifies() {
 
     // Seed a topic scheduled for the past (simulate due topic).
     let topic_id: i64 = sqlx::query_scalar(
-        "INSERT INTO forum_topics (category_id, author_id, title, body, topic_slug, slug, scheduled_at)
-         VALUES ($1, $2, $3, $4, $5, $6, '2000-01-01T00:00:00Z'::timestamptz)
+        // `slug` does not exist on forum_topics; the column is `topic_slug`.
+        // The statement used to name both and bind the same value twice.
+        "INSERT INTO forum_topics (category_id, author_id, title, body, topic_slug, scheduled_at)
+         VALUES ($1, $2, $3, $4, $5, '2000-01-01T00:00:00Z'::timestamptz)
          RETURNING id",
     )
     .bind(cat_slug.as_str())
     .bind(uid)
     .bind(format!("Publishable {}", uniq("pt")))
     .bind(format!("publish body {}", uniq("pb")))
-    .bind(format!("pub-{}", uniq("slug")))
     .bind(format!("pub-{}", uniq("slug")))
     .fetch_one(&db)
     .await

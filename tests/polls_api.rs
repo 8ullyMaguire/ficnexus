@@ -248,8 +248,10 @@ async fn seed_topic(db: &sqlx::PgPool, author_id: i32, prefix: &str) -> i64 {
     .await
     .expect("seed category");
     let topic_id: i64 = sqlx::query_scalar(
-        "INSERT INTO forum_topics (category_id, author_id, title, body, topic_slug, slug) \
-         VALUES ($1, $2, 'poll test topic', 'body', $3, $3) RETURNING id",
+        // `slug` does not exist on forum_topics; the column is `topic_slug`.
+        // The statement used to name both and pass the same value twice.
+        "INSERT INTO forum_topics (category_id, author_id, title, body, topic_slug) \
+         VALUES ($1, $2, 'poll test topic', 'body', $3) RETURNING id",
     )
     .bind(cat_id)
     .bind(author_id)
