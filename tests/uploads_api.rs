@@ -59,6 +59,12 @@ fn ensure_env() {
     }
 }
 
+// NOTE: `RedisBucketLimiter`'s shadowban probe (`is_shadowbanned`) runs
+// `tokio::task::block_in_place`, which panics on the current-thread runtime, and
+// `app()` builds that limiter for every test. So every test here must be
+// `#[tokio::test(flavor = "multi_thread")]`, exactly as `admin_api` documents.
+// The pool is also sized explicitly above for the same reason: each AppState
+// holds connections for as long as its router lives.
 static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
@@ -67,14 +73,22 @@ fn db_guard() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(|e| e.into_inner())
 }
 
-static POOL: OnceLock<sqlx::PgPool> = OnceLock::new();
-
+/// A fresh pool per call.
+///
+/// This used to be a single process-wide `OnceLock<PgPool>` shared by every
+/// test. `app()` builds an `AppState` per test that holds pooled connections for
+/// as long as its router lives, and those routers are all still alive when the
+/// next test asks for a connection - so the later tests waited on the pool's
+/// 60s acquire timeout and failed in a non-deterministic order. A pool per
+/// caller means a test's connections are released with its own `AppState`.
 async fn pool() -> sqlx::PgPool {
     ensure_env();
-    POOL.get_or_init(|| {
-        let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
-        sqlx::PgPool::connect_lazy(&url).expect("connect to Postgres")
-    }).clone()
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    sqlx::postgres::PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&url)
+        .await
+        .expect("connect to Postgres")
 }
 
 use fichub::server::AppState;
@@ -155,6 +169,45 @@ fn app() -> impl std::future::Future<Output = Router> {
     }
 }
 
+/// Seed a user at an explicit trust level and return its id.
+///
+/// The upload routes gate on `assert_min_trust(..., PUBLISH_MIN_TRUST)`,
+/// which is 2 and which reads `users.trust_level` **from the database** - not
+/// from the JWT. The `trust_level` inside `auth_header`'s token is therefore
+/// irrelevant to that gate.
+///
+/// These tests used to hardcode `auth_header(1, ...)` and hope user 1 was
+/// trusted, which is true only on a database someone set up by hand. On a
+/// database from `scripts/provision_test_db.sh`, user 1 is
+/// `adminit_autotag_admin` with `trust_level = 0`, so every upload in this
+/// suite got 403 - including the tests that were never about authorization at
+/// all, like the size limit and MIME whitelist checks.
+async fn seed_user(name: &str, trust_level: i16) -> i32 {
+    use sqlx::Row;
+    // A dedicated connection, not the shared POOL. `app()` builds an AppState
+    // per test that holds pooled connections for as long as the router lives,
+    // and seeding after that point could wait for a free one until the pool's
+    // 60s acquire timeout. Opening one connection for the insert sidesteps the
+    // contention entirely and is what this helper needs anyway: a single row.
+    use sqlx::Connection;
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    let mut conn = sqlx::postgres::PgConnection::connect(&url)
+        .await
+        .unwrap_or_else(|e| panic!("seed_user {name}: connect: {e}"));
+    let row = sqlx::query(
+        r#"INSERT INTO users (username, password_hash, trust_level, level, created_at)
+           VALUES ($1, 'x', $2, 100, NOW())
+           ON CONFLICT (username) DO UPDATE SET trust_level = EXCLUDED.trust_level
+           RETURNING id"#,
+    )
+    .bind(name)
+    .bind(trust_level)
+    .fetch_one(&mut conn)
+    .await
+    .unwrap_or_else(|e| panic!("seed_user {name}: {e}"));
+    row.get("id")
+}
+
 fn auth_header(user_id: i32, username: &str) -> String {
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let user = auth::User {
@@ -206,7 +259,7 @@ async fn json_body(resp: axum::response::Response) -> Value {
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 /// POST /api/uploads without Authorization → expects 401 Unauthorized.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[ignore = "DB-gated"]
 async fn upload_anonymous_rejects() {
     let _guard = db_guard();
@@ -233,20 +286,17 @@ async fn upload_anonymous_rejects() {
 }
 
 /// POST /api/uploads with a low-trust user → expects 403 Forbidden.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[ignore = "DB-gated"]
 async fn upload_low_trust_rejects() {
     let _guard = db_guard();
     let router = app().await;
-    // level=10 is below PUBLISH_MIN_TRUST (2) but wait — level=10 IS TL2+.
-    // PUBLISH_MIN_TRUST is trust_level, not level. TL0 user with level=10.
-    // Actually assert_min_trust checks trust_level, not level. Seed a TL0 user.
-    // Use a user with trust_level=0 if possible; otherwise skip.
-    // For now, test with a user whose trust_level is below the threshold.
-    // The auth header sets level=10, trust_level=1 — trust_level comes from the DB.
-    // This test seeds a user with low trust and verifies the gate.
-    let user_id: i32 = 1;
-    let token = auth_header(user_id, "lowtrust");
+    // PUBLISH_MIN_TRUST is 2 and is read from `users.trust_level` in the
+    // database, so this test seeds a user one below the threshold and asserts a
+    // flat 403. The previous version hardcoded user 1 and accepted either 200
+    // or 403, which is not an assertion.
+    let user_id = seed_user("upl_lowtrust", 1).await; // TL1: below the gate
+    let token = auth_header(user_id, "upl_lowtrust");
 
     let payload = multipart_body("b2", "test.png", "image/png", png_1x1());
 
@@ -264,24 +314,25 @@ async fn upload_low_trust_rejects() {
         .await
         .expect("request should complete");
 
-    // User 1 is likely admin (trust_level >= 2), so this should succeed.
-    // If it fails with 403, that confirms the trust gate works.
-    // We accept either 200 (user is trusted) or 403 (trust gate).
-    let status = resp.status();
-    assert!(
-        status == StatusCode::OK || status == StatusCode::FORBIDDEN,
-        "expected 200 or 403, got {status}"
+    // A flat 403: this test exists to prove the gate rejects, so anything else
+    // is a failure. The previous version accepted 200 or 403, which passes
+    // whether or not the gate works.
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "TL1 user must be refused the upload"
     );
 }
 
 /// POST /api/uploads with a >10 MiB payload is rejected.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[ignore = "DB-gated"]
 async fn upload_size_limit_rejects_over_max() {
     use fichub::routes::uploads::MAX_UPLOAD_BYTES;
     let _guard = db_guard();
     let router = app().await;
-    let token = auth_header(1, "sizetest");
+    let uid = seed_user("upl_sizetest", 3).await; // TL3: clears PUBLISH_MIN_TRUST (2)
+    let token = auth_header(uid, "upl_sizetest");
 
     // Build a payload just over the limit
     let big_data = vec![0u8; MAX_UPLOAD_BYTES + 1];
@@ -303,19 +354,20 @@ async fn upload_size_limit_rejects_over_max() {
 
     // Either axum rejects with 413 (body limit) or handler returns 400 "too large"
     let status = resp.status();
-    assert!(
-        status == StatusCode::PAYLOAD_TOO_LARGE || status == StatusCode::BAD_REQUEST,
-        "expected 413 or 400, got {status}"
-    );
+    if status != StatusCode::PAYLOAD_TOO_LARGE && status != StatusCode::BAD_REQUEST {
+        let body = json_body(resp).await;
+        panic!("expected 413 or 400, got {status}: {body}");
+    }
 }
 
 /// Upload a non-image file → the MIME whitelist rejects it.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[ignore = "DB-gated"]
 async fn upload_mime_whitelist_rejects_text() {
     let _guard = db_guard();
     let router = app().await;
-    let token = auth_header(1, "mimetest");
+    let uid = seed_user("upl_mimetest", 3).await; // TL3: clears PUBLISH_MIN_TRUST (2)
+    let token = auth_header(uid, "mimetest");
 
     let payload = multipart_body("b4", "test.txt", "text/plain", &text_blob());
 
@@ -340,12 +392,13 @@ async fn upload_mime_whitelist_rejects_text() {
 }
 
 /// Happy-path round-trip: upload a PNG, fetch the public URL, compare bytes.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[ignore = "DB-gated"]
 async fn upload_png_happy_path_roundtrip() {
     let _guard = db_guard();
     let router = app().await;
-    let token = auth_header(1, "roundtripuser");
+    let uid = seed_user("upl_roundtrip", 3).await; // TL3: clears PUBLISH_MIN_TRUST (2)
+    let token = auth_header(uid, "upl_roundtrip");
     let body_png = png_1x1().to_vec();
 
     let payload = multipart_body("b5", "pixel.png", "image/png", &body_png);
@@ -395,7 +448,7 @@ async fn upload_png_happy_path_roundtrip() {
             Request::builder()
                 .method("DELETE")
                 .uri(format!("/api/uploads/{upload_id}"))
-                .header("Authorization", auth_header(1, "roundtripuser"))
+                .header("Authorization", auth_header(uid, "upl_roundtrip"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -405,14 +458,15 @@ async fn upload_png_happy_path_roundtrip() {
 }
 
 /// DELETE authz: owner can delete their own upload; a different user gets 403.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[ignore = "DB-gated"]
 async fn delete_authz_owner_ok_non_owner_forbidden() {
     let _guard = db_guard();
     let router = app().await;
 
     // Create an upload
-    let owner_token = auth_header(1, "deleteme");
+    let owner_uid = seed_user("upl_deleteme", 3).await; // TL3: clears PUBLISH_MIN_TRUST (2)
+    let owner_token = auth_header(owner_uid, "upl_deleteme");
     let payload = multipart_body("b6", "deltest.png", "image/png", png_1x1());
 
     let resp = router
