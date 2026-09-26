@@ -1,6 +1,22 @@
 # FicNexus — specification: the F7 permission gates need an owner decision
 
-Status: **blocked on product decision.** Written 2026-09-26.
+> **Superseded 2026-09-26** by `docs/specs/f7-level-gate.md`. The gap analysis
+> below is correct, but §2.2 and §3 are not:
+>
+> - `f7_level_gate_curator` does **not** exercise `require_admin`. It calls
+>   `/moderate`, whose gate is `require_trust_queue`. Editing `require_admin`
+>   could never have turned that test green.
+> - Its 409 is `"You already moderated this post"` — the test moderates one post
+>   twice, so the second call never reaches the gate. The forbidden case also
+>   minted a token carrying level 50, not 49.
+> - `forum_mod_min_level` already existed in config (default 50) and was read by
+>   nothing. This work wires it up rather than adding a new field.
+>
+> Kept because §1's account of what was left is still the best description of
+> the starting point.
+
+Status: **decided and implemented 2026-09-26** — see the superseded notice above.
+Originally: blocked on product decision. Written 2026-09-26.
 Companion to `docs/specs/f7-leveling.md` (which is implemented).
 
 ## 1. What is left
@@ -124,7 +140,7 @@ deploy rather than a code change, and it is reversible.
 
 ## 6. State
 
-These two tests stay red. `forum_api` will not be fully green, and
-`f7_level_gate_curator` in particular may not even be failing for the reason its
-name suggests — the 409 suggests it is not reaching the gate. That is recorded
-rather than hidden.
+These two tests were red. Both are now green: `f7_level_gate_curator` was
+indeed not failing for the reason its name suggested — the 409 was a duplicate
+moderation inside the test — and that is what the superseded notice above
+records. Implemented in `docs/PLAN-f7-level-gate.md`.

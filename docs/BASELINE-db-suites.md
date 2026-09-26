@@ -16,14 +16,20 @@ First trustworthy measurement in this cycle, taken 2026-09-26 after
 
 ## Totals
 
-| | |
-|---|---|
-| suites | 57 |
-| pass | 38 |
-| fail | 19 |
-| no-result | 0 |
-| tests passing | 325 |
-| tests failing | 43 |
+Updated 2026-09-26 after the F7 level gate.
+
+| | before F7 gate | now |
+|---|---:|---:|
+| suites | 57 | 57 |
+| pass | 38 | **39** |
+| fail | 19 | **18** |
+| no-result | 0 | 0 |
+| tests passing | 325 | **328** |
+| tests failing | 43 | **40** |
+
+`forum_api` 41/8 → **43/6**: the two F7 gate tests, and nothing else.
+`ask_archive_api` 6/1 → 7/0 incidentally — not caused by this work, noted so
+the next reader does not attribute it to the gate.
 
 Unit library (no database): **935 passed, 0 failed, 3 ignored**.
 
@@ -31,7 +37,7 @@ Unit library (no database): **935 passed, 0 failed, 3 ignored**.
 
 | suite | pass | fail |
 |---|---:|---:|
-| forum_api | 41 | 8 |
+| forum_api | 43 | 6 |
 | requests_api | 6 | 5 |
 | search_api | 37 | 4 |
 | rss_api | 4 | 3 |
@@ -43,7 +49,6 @@ Unit library (no database): **935 passed, 0 failed, 3 ignored**.
 | translation_review_api | 5 | 2 |
 | work_proposals_api | 0 | 2 |
 | admin_api | 13 | 1 |
-| ask_archive_api | 6 | 1 |
 | bookmark_csv_api | 4 | 1 |
 | comment_triage_api | 2 | 1 |
 | curator_fix_api | 2 | 1 |
@@ -61,6 +66,10 @@ hand-run number *and* say which one you used.
 
 `admin_api` is 13/1: the one failure is `admin_users_search_role_ban`, the stale
 fixture already documented in the admin-flag spec.
+
+The six remaining `forum_api` failures are the flood-control tests the runner's
+`FORUM_POST_DELAY_SECS=0` does not cover, plus the two edit-window and trust-queue
+tests still awaiting the owner's trim decision.
 
 ## What was wrong with the earlier numbers
 
