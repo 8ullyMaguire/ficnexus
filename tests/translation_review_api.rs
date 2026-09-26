@@ -4,14 +4,24 @@
 //!
 //! Conventions (same as tests/admin_api.rs):
 //! * Serialised via a global `Mutex` so tests never run concurrently.
-//! * Marked `#[ignore]`; run with:
-//!   `set -a; . /personal/documents/code/rust/fichub/.env; set +a; \
-//!    CARGO_INCREMENTAL=0 cargo test --test translation_review_api -- \
-//!        --include-ignored --test-threads=1`
+//! * Marked `#[ignore]`, because these tests share one database and must not
+//!   run concurrently. The canonical runner overrides the attribute:
+//!   `scripts/run_db_suites.sh` invokes every suite with
+//!   `--include-ignored --test-threads=1` and provisions a fresh database per
+//!   suite. To run just this one, use the same flags — a bare
+//!   `cargo test --test translation_review_api` reports 7 ignored and executes
+//!   nothing.
 //! * Self-heal: every test deletes its own seed rows (unique prefix) at the
 //!   START so reruns never collide.
-//! * All endpoints gate on JWT role >= 10 (admin) — anonymous callers get
-//!   HTTP 400 {err:401}, sub-admin roles HTTP 403 (Forbidden).
+//! * Every endpoint under test gates on `require_admin_tier`, which reads the
+//!   `is_admin` **claim from the JWT token**. Seeding `users.role = 10` does
+//!   not grant admin: `is_admin` is a separate boolean column, and
+//!   `users.trust_level` is CHECK-constrained to 0-6, so no trust value can
+//!   express "administrator". `auth_header(.., is_admin)` mints the claim and
+//!   `set_admin` persists the column, and a test that wants an admin does
+//!   both — see `docs/specs/admin-flag.md`.
+//! * Status codes: anonymous callers get **401** (`{err:401}`); authenticated
+//!   non-admins get **403** (`{err:-403}`).
 
 use std::sync::{Mutex, OnceLock};
 
@@ -161,7 +171,15 @@ async fn seed_user(db: &sqlx::PgPool, username: &str, role: i16) -> i32 {
         .get(0)
 }
 
-fn auth_header(user_id: i32, username: &str, trust_level: i16) -> String {
+/// Mints a bearer token.
+///
+/// `is_admin` is a parameter, not a constant, because every route under test
+/// gates on `require_admin_tier`, which reads `auth.is_admin` **from the token**
+/// (`docs/specs/admin-flag.md`). Seeding `users.role = 10` does not grant admin:
+/// `is_admin` is a separate boolean column, and `users.trust_level` is
+/// CHECK-constrained to 0-6, so no trust value can express "administrator".
+/// See `tests/admin_api.rs::auth_header_for`, which this mirrors.
+fn auth_header(user_id: i32, username: &str, trust_level: i16, is_admin: bool) -> String {
     let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let user = fichub::routes::auth::User {
         id: user_id,
@@ -171,10 +189,24 @@ fn auth_header(user_id: i32, username: &str, trust_level: i16) -> String {
         email: None,
         level: 0,
         exp: 0,
-        is_admin: false,
+        is_admin,
     };
     let token = fichub::routes::auth::create_token(&user, &secret).expect("token creation");
     format!("Bearer {token}")
+}
+
+/// Persists `is_admin` on the user row.
+///
+/// The token claim is what the gate reads, but the column is the source of
+/// truth, so a test that seeds an admin must set both or they will disagree
+/// with production. Mirrors `tests/admin_api.rs::set_admin`.
+async fn set_admin(db: &sqlx::PgPool, user_id: i32, is_admin: bool) {
+    sqlx::query("UPDATE users SET is_admin = $2 WHERE id = $1")
+        .bind(user_id)
+        .bind(is_admin)
+        .execute(db)
+        .await
+        .expect("set is_admin");
 }
 
 /// Seed a work + fic_info pair; returns (work_id, url_id). Idempotent.
@@ -352,6 +384,8 @@ async fn translation_review_full_flow() {
     let app = app().await;
 
     let admin = seed_user(&db, &format!("{PREFIX}_t_admin"), 10).await;
+    // role = 10 alone does not grant admin: set the flag column too.
+    set_admin(&db, admin, true).await;
     let translator = seed_user(&db, &format!("{PREFIX}_t_translator"), 0).await;
     let (work_id, _) = seed_work(
         &db,
@@ -362,7 +396,7 @@ async fn translation_review_full_flow() {
     .await;
     let tid = seed_translation(&db, work_id, "es", "Máquina", "Resumen máquina", translator).await;
 
-    let tok = auth_header(admin, &format!("{PREFIX}_t_admin"), 10);
+    let tok = auth_header(admin, &format!("{PREFIX}_t_admin"), 10, true);
 
     // Draft appears in the queue.
     let (s, body) = send(
@@ -453,6 +487,8 @@ async fn translation_review_reject() {
     let app = app().await;
 
     let admin = seed_user(&db, &format!("{PREFIX}_r_admin"), 10).await;
+    // role = 10 alone does not grant admin: set the flag column too.
+    set_admin(&db, admin, true).await;
     let translator = seed_user(&db, &format!("{PREFIX}_r_translator"), 0).await;
     let (work_id, _) = seed_work(
         &db,
@@ -463,7 +499,7 @@ async fn translation_review_reject() {
     .await;
     let tid = seed_translation(&db, work_id, "fr", "Machine", "Machine summary", translator).await;
 
-    let tok = auth_header(admin, &format!("{PREFIX}_r_admin"), 10);
+    let tok = auth_header(admin, &format!("{PREFIX}_r_admin"), 10, true);
 
     let (s, _) = send(
         &app,
@@ -506,7 +542,7 @@ async fn translation_review_reject() {
     .await;
 }
 
-/// Role gating: anonymous → 400 {err:401}, sub-admin → HTTP 403.
+/// Role gating: anonymous → 401, authenticated non-admin → 403.
 #[ignore]
 #[tokio::test(flavor = "multi_thread")]
 async fn translation_review_role_gate() {
@@ -516,15 +552,21 @@ async fn translation_review_role_gate() {
 
     let low = seed_user(&db, &format!("{PREFIX}_g_low"), 5).await;
 
+    // Anonymous is 401, not 403: there are no credentials at all, which is a
+    // different failure from "authenticated but not an admin". A 403 would
+    // tell the client to retry with different credentials when it sent none.
     let (s, body) = send(&app, "GET", "/api/admin/translations", None, None).await;
-    assert_eq!(s, StatusCode::FORBIDDEN);
-    assert_eq!(body["err"].as_i64(), Some(-403));
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["err"].as_i64(), Some(401));
+
+    // A real, authenticated non-admin is 403. `users.trust_level = 5` is well
+    // inside the CHECK constraint and still does not grant admin.
 
     let (s, _) = send(
         &app,
         "GET",
         "/api/admin/translations",
-        Some(&auth_header(low, &format!("{PREFIX}_g_low"), 5)),
+        Some(&auth_header(low, &format!("{PREFIX}_g_low"), 5, false)),
         None,
     )
     .await;
@@ -545,6 +587,8 @@ async fn rating_check_verify_flow() {
     let app = app().await;
 
     let admin = seed_user(&db, &format!("{PREFIX}_rc_admin"), 10).await;
+    // role = 10 alone does not grant admin: set the flag column too.
+    set_admin(&db, admin, true).await;
     // No rating anywhere (extra_meta is a plain genre list) → must land in the queue.
     let (work_id, _) = seed_work(
         &db,
@@ -571,7 +615,7 @@ async fn rating_check_verify_flow() {
         .await
         .expect("stamp verified work");
 
-    let tok = auth_header(admin, &format!("{PREFIX}_rc_admin"), 10);
+    let tok = auth_header(admin, &format!("{PREFIX}_rc_admin"), 10, true);
 
     let (s, body) = send(&app, "GET", "/api/admin/rating-checks", Some(&tok), None).await;
     assert_eq!(s, StatusCode::OK);
@@ -651,7 +695,9 @@ async fn rating_check_verify_validation() {
     let app = app().await;
 
     let admin = seed_user(&db, &format!("{PREFIX}_rv_admin"), 10).await;
-    let tok = auth_header(admin, &format!("{PREFIX}_rv_admin"), 10);
+    // role = 10 alone does not grant admin: set the flag column too.
+    set_admin(&db, admin, true).await;
+    let tok = auth_header(admin, &format!("{PREFIX}_rv_admin"), 10, true);
 
     let (s, body) = send(
         &app,
@@ -689,6 +735,8 @@ async fn char_score_fix_flow() {
     let app = app().await;
 
     let admin = seed_user(&db, &format!("{PREFIX}_cs_admin"), 10).await;
+    // role = 10 alone does not grant admin: set the flag column too.
+    set_admin(&db, admin, true).await;
     let (_, url_id) = seed_work(
         &db,
         "trv-cs",
@@ -699,7 +747,7 @@ async fn char_score_fix_flow() {
     // Scraper misordered: this character got score 1, should be 10 (main).
     let tag_id = seed_char_tag(&db, &url_id, "Trv Char Hermione", 1).await;
 
-    let tok = auth_header(admin, &format!("{PREFIX}_cs_admin"), 10);
+    let tok = auth_header(admin, &format!("{PREFIX}_cs_admin"), 10, true);
 
     let (s, body) = send(
         &app,
@@ -767,8 +815,10 @@ async fn char_score_fix_validation() {
     let app = app().await;
 
     let admin = seed_user(&db, &format!("{PREFIX}_cv_admin"), 10).await;
+    // role = 10 alone does not grant admin: set the flag column too.
+    set_admin(&db, admin, true).await;
     let low = seed_user(&db, &format!("{PREFIX}_cv_low"), 5).await;
-    let tok = auth_header(admin, &format!("{PREFIX}_cv_admin"), 10);
+    let tok = auth_header(admin, &format!("{PREFIX}_cv_admin"), 10, true);
 
     // Missing url_id → 400.
     let (s, _) = send(
@@ -801,12 +851,13 @@ async fn char_score_fix_validation() {
         Some(json!({"url_id":"x","score":1})),
     )
     .await;
-    assert_eq!(s, StatusCode::FORBIDDEN);
+    // Anonymous -> 401. See translation_review_role_gate for why this is not 403.
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
     let (s, _) = send(
         &app,
         "PUT",
         "/api/admin/characters/1/score",
-        Some(&auth_header(low, &format!("{PREFIX}_cv_low"), 5)),
+        Some(&auth_header(low, &format!("{PREFIX}_cv_low"), 5, false)),
         Some(json!({"url_id":"x","score":1})),
     )
     .await;
