@@ -15,9 +15,41 @@ cd "$(dirname "$0")/.."
 # were never testing the limiter, they were testing replies and search.
 export FORUM_POST_DELAY_SECS="${FORUM_POST_DELAY_SECS:-0}"
 
+# A fresh database per suite, not once for the run. Suites share users and
+# tables, so a suite's result depends on what ran before it; the whole point of
+# this script is a comparable number per suite. provision_test_db.sh now fails
+# loudly instead of leaving a stale schema behind (see the EXPECTED_TABLES
+# assertion and the DROP note in that script).
+#
+# Override with FRESH_DB=0 to reproduce the shared-database behaviour.
+if [ "${FRESH_DB:-1}" = "1" ]; then
+  echo "Re-provisioning the test database before each suite..."
+fi
+
+# flock: only one sweep at a time. Two concurrent runs -- or a sweep plus a
+# one-off `provision_test_db.sh` in another shell -- will otherwise drop the
+# database out from under each other, and every suite after that point fails
+# with "relation \"users\" does not exist". That happened here and produced a
+# sweep whose failures were all provisioning artifacts. Take the lock on the
+# same descriptor the loop uses so the guard covers the whole run.
+exec 9>/tmp/ficnexus_test_db.lock
+if ! flock -n 9; then
+  echo "Another ficnexus test run holds /tmp/ficnexus_test_db.lock." >&2
+  echo "Wait for it, or kill it. Running two at once invalidates both." >&2
+  exit 1
+fi
+
 : > /tmp/suite_results.txt
 pass=0; fail=0; noresult=0
 for t in tests/*.rs; do
+  if [ "${FRESH_DB:-1}" = "1" ]; then
+    bash scripts/provision_test_db.sh >/dev/null 2>&1 || {
+      echo "provision FAILED before ${n}; skipping"
+      echo "${n} PROVISION_FAILED" >> /tmp/suite_results.txt
+      noresult=$((noresult+1))
+      continue
+    }
+  fi
   n=$(basename "$t" .rs)
   out=$(CARGO_TARGET_DIR=~/.cargo-target/ficnexus timeout 300 \
         cargo test --test "$n" -- --include-ignored --test-threads=1 2>&1)
