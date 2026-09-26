@@ -153,12 +153,57 @@ four call sites. Do **not** add the columns to `works`: nothing in the schema or
 belonging to its own spec. `fic_info.word_count` is the real home, and this test
 is about embedding dedupe, not word counts.
 
-### 5.2 `forum_topics.slug` does not exist
+### 5.2 `embedding_dedupe::candidate_pairs` throws on every call
+
+**This is a production defect, not a test defect, and it is the most serious
+finding of this cycle. It is NOT fixed here** - see §6 and the note below.
+
+`src/services/embedding_dedupe.rs:23-51` runs:
+
+```sql
+FROM rec_embeddings a
+JOIN rec_embeddings b ON a.model = b.model AND a.work_id < b.work_id
+JOIN works wa ON wa.id = a.work_id
+```
+
+and decodes rows as `(i32, String, i32, String, f64)`.
+
+But `rec_embeddings.work_id` is `character varying(128)`, and its foreign key is
+`REFERENCES fic_info(id)`, not `works(id)`. `works.id` is `integer`. Proven
+against the real schema:
+
+```
+ERROR:  operator does not exist: integer = character varying
+LINE 5: JOIN works wa ON wa.id = a.work_id
+```
+
+So **every call to `candidate_pairs` fails at runtime**, and it cannot have ever
+succeeded. The test caught it only because it is one of the 56 suites that had
+never executed.
+
+Two separate problems, and the second is the deeper one:
+
+1. **The join is to the wrong table.** `rec_embeddings` hangs off `fic_info`,
+   not `works`. The whole query is built on a false premise about the schema.
+2. **The test expects 2-dim vectors**; the column is `vector(384)`. It seeds
+   `rec_embeddings(work_id: i32, ...)` where the real key is a `varchar`.
+
+Fixing the test to match the schema is *not* sufficient, and neither is casting.
+The question the owner needs to answer is whether `rec_embeddings` is supposed
+to key off `fic_info` (in which case the query must join `fic_info` and the
+`EmbeddingCandidate` type changes) or off `works` (in which case the schema and
+the FK are wrong). That is a product decision, not a test fix, and it is why
+this is recorded rather than patched.
+
+**Not fixed in this cycle.** Per the plan, production code changes are out of
+scope here; this needs its own spec and plan.
+
+### 5.3 `forum_topics.slug` does not exist
 
 The column is `topic_slug`. A partial unique index exists on it
 (`idx_forum_topics_slug`). The test SQL is simply wrong.
 
-### 5.3 `role`/level gate assertions
+### 5.4 `role`/level gate assertions
 
 Several suites assert that a privilege block works, using the old role
 vocabulary. These need per-test judgement: is the test stale, or did the refactor
@@ -172,7 +217,7 @@ behaviour.**
 2. Defects B and C fixed by idempotent data migrations.
 3. A schema-check script that proves all three on a database built purely from
    `migrations/` — with no test-side seeding, because that is the point.
-4. §5.1 and §5.2 fixed in tests, after establishing where the columns went.
+4. §5.1 and §5.3 fixed in tests, after establishing where the columns went.
 5. Suite counts re-measured and recorded, honestly, pass or fail.
 6. **APPLIED migrations are immutable.** This repo has 89 of them and they are
    never edited or renumbered. All fixes are new files, numbered 090+.

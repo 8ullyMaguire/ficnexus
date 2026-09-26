@@ -269,3 +269,56 @@ Tag: `reference-data-2026-09-26`.
 - Adding `word_count` to `works`. It belongs on `fic_info`; changing that is a
   schema decision for its own spec.
 - Any locale beyond what the specification names.
+
+## Addendum, 2026-09-26 (after execution)
+
+### What the plan got right
+
+Steps 1-4 held exactly as written. Three migrations, applied in order, on a
+from-scratch database:
+
+- `090_feature_clusters_status_default.sql` - `ALTER COLUMN status SET DEFAULT
+  'idea'`. Verified: the insert that previously failed with a CHECK violation now
+  succeeds and yields `status = idea`, and the CHECK still rejects `'open'`.
+- `091_seed_tag_types.sql` - the 7 rows from SPECIFICATION.md:428.
+  Verified: `count(*) = 7`.
+- `092_seed_locales.sql` - 6 rows. Verified: `count(*) = 6`, `is_rtl` false
+  throughout.
+
+The `--seed-tag-types` opt-in in `provision_test_db.sh` is removed, since 091
+closes the gap. Both reference-data facts are now true on a database built from
+`migrations/` alone, which was the point.
+
+### Where the plan's §5.1 needed correcting
+
+The plan said to fix `works.word_count` in the test. That part was right: the
+columns do not exist anywhere and nothing read them. But fixing it exposed a
+**third, distinct defect the plan did not predict**, and it is production code:
+
+`src/services/embedding_dedupe.rs:23-51` joins `rec_embeddings.work_id` to
+`works.id`. `rec_embeddings.work_id` is `varchar(128)` with an FK to
+`fic_info(id)`; `works.id` is `integer`. Run against the real schema:
+
+    ERROR:  operator does not exist: integer = character varying
+    LINE 5: JOIN works wa ON wa.id = a.work_id
+
+**`candidate_pairs` throws on every call and never has worked.** The test
+revealed it only because it is one of the 56 suites that had never executed.
+
+The test also expects `vector(2)` where the column is `vector(384)`.
+
+**Not fixed here.** The plan's own §9 rule applies: production changes are out of
+scope, and this one is not mechanical anyway. Whether `rec_embeddings` should key
+off `fic_info` or `works` is a product decision - the query and its Rust types
+change if it is the former, the schema and FK change if it is the latter. It is
+recorded in the spec as §5.2 and needs its own spec and plan.
+
+### Stale test SQL actually fixed
+
+- `tests/embedding_dedupe_api.rs` - `seed_work` no longer inserts
+  `word_count`/`chapter_count`/`avg_words_per_chapter` (they exist nowhere in the
+  schema) and no longer takes the unused `words` argument. 4 call sites updated.
+- `tests/polls_api.rs` - was naming both `topic_slug` and a nonexistent `slug`,
+  binding the same value twice. Now names `topic_slug` only. **Suite now fully
+  passes: 2/2.**
+- `tests/scheduled_topics_api.rs` - same duplicate `slug` column and bind removed.
