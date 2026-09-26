@@ -200,6 +200,19 @@ async fn cleanup(db: &sqlx::PgPool, users: &[&str], clusters: &[i32]) {
     let _ = sqlx::query("DELETE FROM feature_suggestions WHERE raw_text LIKE 'rmd_%'")
         .execute(db)
         .await;
+    // The leaderboard queries in routes/admin.rs and routes/roadmap.rs are
+    // global and unscoped, so this suite's lb[0] assertions depend on whatever
+    // rows any earlier suite left behind. admin_api seeds
+    // consensus_top_feature at the same elo_rating this suite uses, and the two
+    // tie. Sweep both prefixes so the suite does not inherit them; the
+    // id-based deletes above still cover rows whose text was generated rather
+    // than prefixed.
+    for prefix in ["rmd\\_%", "consensus\\_%"] {
+        let _ = sqlx::query("DELETE FROM feature_clusters WHERE representative_text LIKE $1 ESCAPE '\\'")
+            .bind(prefix)
+            .execute(db)
+            .await;
+    }
     // Clean up any changelog entries created by tests
     let _ = sqlx::query("DELETE FROM roadmap_changelog WHERE title LIKE 'rmd_%'")
         .execute(db)
