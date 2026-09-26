@@ -181,10 +181,21 @@ async fn app() -> Router {
         .with_state(state)
 }
 
-async fn seed_admin_user(db: &sqlx::PgPool, username: &str, role: i16) -> i32 {
+/// Seeds the legacy `users.role` column.
+///
+/// This is **not** the trust level. Admin routes authorize on
+/// `AuthUser.trust_level`, which JWT issuance reads from `users.trust_level`
+/// (`src/routes/auth.rs:145-162`) — so a handler that wrote `users.role` would
+/// have no effect on any authorization decision in the product.
+///
+/// Callers pass the trust level they want separately, to `auth_header`. The
+/// parameter is named `legacy_role` because the old name `role` is what made
+/// this read as though the routes under test consulted this column.
+/// See `docs/specs/admin-tier-separation.md` section 3.
+async fn seed_admin_user(db: &sqlx::PgPool, username: &str, legacy_role: i16) -> i32 {
     sqlx::query("INSERT INTO users (username, password_hash, role) VALUES ($1, 'x', $2) ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role RETURNING id")
         .bind(username)
-        .bind(role)
+        .bind(legacy_role)
         .fetch_one(db)
         .await
         .expect("seed user")

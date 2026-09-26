@@ -114,9 +114,7 @@ pub async fn auto_tag_queue(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let rows = sqlx::query_as::<
         _,
@@ -172,9 +170,7 @@ pub async fn auto_tag_approve(
     user: AuthUser,
     Path((url_id, tag_id)): Path<(String, i32)>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let updated = sqlx::query(
         r#"
@@ -209,9 +205,7 @@ pub async fn auto_tag_dismiss(
     user: AuthUser,
     Path((url_id, tag_id)): Path<(String, i32)>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let deleted = sqlx::query(
         r#"

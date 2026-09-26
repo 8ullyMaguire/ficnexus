@@ -611,3 +611,35 @@ mod tests {
         assert!(!meets_level(&m(600, 600, 1_200_000, 20, 60, 3), 4));
     }
 }
+
+
+/// Gate an administrator-tier route.
+///
+/// Reads `AuthUser.trust_level` — the **JWT claim** — not the database column.
+/// This distinction is load-bearing: `assert_min_trust` above reads
+/// `users.trust_level` from the database, but the highest value any account can
+/// reach there in practice is 5, so a database-backed admin gate would lock out
+/// every administrator. JWT issuance copies `users.trust_level` into the claim
+/// at `src/routes/auth.rs:145-162`; the claim is what routes authorize on.
+///
+/// The threshold comes from `Config` (`ADMIN_MIN_TRUST`, default 10) rather than
+/// a literal. Until 2026-09-26 this boundary was inlined as `trust_level < 5` in
+/// 77 handlers across 17 route files, which is how moderators could reach
+/// /api/admin/stats, the bot list, the moderation queue, the auto-tag queue and
+/// the blacklists. See `docs/specs/admin-tier-separation.md`.
+///
+/// Note this is *not* `users.role`, which is a separate legacy column that no
+/// admin route consults (it is set to 1 by subsystem approval in
+/// `src/routes/subsystems.rs:526`).
+pub fn require_admin_tier(
+    auth: &crate::routes::auth::AuthUser,
+    state: &crate::server::AppState,
+) -> Result<i32, AppError> {
+    let uid = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("login required".to_string()))?;
+    if auth.trust_level < state.config.admin_min_trust {
+        return Err(AppError::Forbidden("Admin access required".to_string()));
+    }
+    Ok(uid)
+}

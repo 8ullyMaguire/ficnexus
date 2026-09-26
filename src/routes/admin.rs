@@ -927,9 +927,7 @@ pub async fn admin_stats(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let daily_stats = sqlx::query_as::<_, (String, i32, i32, i32, i32, i32, i64, i64)>(
         r#"SELECT to_char(date, 'YYYY-MM-DD'), total_users, new_users, total_works,
@@ -984,9 +982,7 @@ pub async fn admin_bots(
     user: AuthUser,
     Query(params): Query<BotParams>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let window_hours = params.window_hours.unwrap_or(24).max(1).min(168);
     let min_requests = params.min_requests.unwrap_or(10);
@@ -1069,9 +1065,7 @@ pub async fn admin_bot_shadowban(
     user: AuthUser,
     Path(client_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     if client_id.is_empty() || client_id == "anon" {
         return Err(AppError::BadRequest("invalid client_id".to_string()));
     }
@@ -1349,9 +1343,7 @@ pub async fn moderation_comments(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let rows = sqlx::query_as::<
         _,
@@ -1423,9 +1415,7 @@ pub async fn blacklist_fic(
     user: AuthUser,
     Json(body): Json<FicBlacklistBody>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     if body.url_id.trim().is_empty() {
         return Err(AppError::BadRequest("url_id required".to_string()));
     }
@@ -1462,9 +1452,7 @@ pub async fn blacklist_author(
     user: AuthUser,
     Json(body): Json<AuthorBlacklistBody>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     let reason = body.reason.unwrap_or(5);
 
     sqlx::query(
@@ -1501,9 +1489,7 @@ pub async fn list_blacklist(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let fics = sqlx::query_as::<_, (String, i32, chrono::NaiveDateTime)>(
         "SELECT url_id, reason, created::timestamp FROM fic_blacklist ORDER BY created DESC LIMIT 500",
@@ -1539,9 +1525,7 @@ pub async fn admin_hide_comment(
     user: AuthUser,
     Path(comment_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let result = sqlx::query("UPDATE comments SET is_hidden = TRUE WHERE id = $1")
         .bind(comment_id)
@@ -1580,9 +1564,7 @@ pub async fn admin_delete_comment(
     user: AuthUser,
     Path(comment_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let result =
         sqlx::query("UPDATE comments SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
