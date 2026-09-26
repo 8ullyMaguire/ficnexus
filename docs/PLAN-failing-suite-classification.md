@@ -259,3 +259,47 @@ to prove the gate rejects now asserts a flat 403; it previously accepted 200
 - **Step 5 (class E)** the two genuine behaviour questions. Deliberately
   untouched.
 - **Step 6 (full re-measure)** not run since these commits.
+
+### Step 3 (class C) - the classification was wrong, and it was production
+
+The plan said: "`rec_curator` is repaired the same way `embedding_dedupe` was,
+from `works` to `fic_info`."
+
+**Wrong.** `rec_curator` already seeds `fic_info` at `tests/rec_curator.rs:44`
+and all of its own bookmarks resolve. Nothing about it needed the
+`embedding_dedupe` treatment.
+
+It was the victim of two other suites. `user_export_api` and `bookmark_csv_api`
+leave bookmarks whose `url_id` has no `fic_info` row, and `refresh_signals` -
+which opens with `DELETE FROM rec_user_signals` and rebuilds the whole table in
+one statement - then failed the FK, taking down signals for every user.
+
+`bookmarks.url_id` has no foreign key. It is free text that the rest of the
+codebase fills with `fic_info` slugs, so an orphan is a legal database state
+rather than corruption. `work_ratings.url_id` and `reviews.url_id` have the same
+shape. The reviews insert was not in the original report; the plan's instruction
+to account for every `url_id` occurrence in the file turned it up, and it had
+the same defect.
+
+This needed its own spec and plan before the code changed, which it got:
+`docs/specs/refresh-signals-orphan-bookmarks.md` and
+`docs/PLAN-refresh-signals-orphan-bookmarks.md`. All three inserts now
+`JOIN fic_info`. Verified in a rolled-back transaction that the old shape still
+raises the FK error and the new one succeeds.
+
+**The lesson, which matters more than the fix:** I classified this from the
+error message - "FK violation, therefore stale test fixture" - without asking
+which side of the constraint was wrong. Two of the three classes I worked this
+session were misclassified that way, and both times the truth was a production
+defect. The error names the violated constraint; it does not say which side is
+wrong.
+
+### Corrected status
+
+| class | outcome |
+|---|---|
+| A `uploads_api` | fixed, 2/6 to 6/6, plus 2 latent bugs found |
+| C `rec_curator` | fixed, 0/2 to 2/2, but as a production change with its own spec |
+| D `integration` | fixed, 24/31 to 31/31, 6 of 7 failures were one bug |
+| B `forum_api` | not started |
+| E behaviour questions | deliberately untouched |
