@@ -212,7 +212,7 @@ pub async fn consensus_feed(
             r#"SELECT id, representative_text, elo_rating::float8, matches_played, status, created_at
                FROM feature_clusters
                WHERE ($1 = '' OR status = $1)
-               ORDER BY elo_rating DESC LIMIT 200"#,
+               ORDER BY elo_rating DESC, id ASC LIMIT 200"#,
         )
         .bind(&status)
         .fetch_all(&state.db)

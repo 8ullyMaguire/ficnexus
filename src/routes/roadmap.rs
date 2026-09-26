@@ -416,7 +416,10 @@ pub async fn consensus_handler(
         FROM feature_clusters c
         LEFT JOIN feature_suggestions s ON s.cluster_id = c.id
         GROUP BY c.id
-        ORDER BY c.elo_rating DESC
+        -- c.id breaks ties: SQL does not define the order of rows with equal
+        -- elo_rating, so without this the admin leaderboard can reorder
+        -- between equally-ranked items on identical queries.
+        ORDER BY c.elo_rating DESC, c.id ASC
         LIMIT 100
         "#,
     )

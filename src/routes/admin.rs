@@ -1289,7 +1289,10 @@ pub async fn admin_roadmap_consensus(
         FROM feature_clusters c
         LEFT JOIN feature_suggestions s ON s.cluster_id = c.id
         GROUP BY c.id
-        ORDER BY c.elo_rating DESC
+        -- c.id breaks ties: SQL does not define the order of rows with equal
+        -- elo_rating, so without this the admin leaderboard can reorder
+        -- between equally-ranked items on identical queries.
+        ORDER BY c.elo_rating DESC, c.id ASC
         LIMIT 100
         "#,
     )
@@ -1304,7 +1307,12 @@ pub async fn admin_roadmap_consensus(
                (times_picked_best + times_picked_worst) AS controversy,
                elo_rating::float8
         FROM feature_clusters
-        WHERE status = 'open'
+        -- `status != 'rejected'`, not `status = 'open'`: migration 064 removed
+        -- 'open' from the allowed set, so the old predicate could never match
+        -- and this panel was permanently empty. This matches the sibling
+        -- consensus_handler in routes/roadmap.rs, which the two copies of this
+        -- query had drifted apart on.
+        WHERE status != 'rejected'
         ORDER BY matches_played DESC
         LIMIT 100
         "#,
