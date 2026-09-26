@@ -258,11 +258,38 @@ See [`docs/brainstorm-01-system-overview.md`](./docs/brainstorm-01-system-overvi
 
 ## Testing & Coverage
 
+Current state, measured 2026-09-26:
+
+| suite | result |
+|---|---|
+| unit (`--lib`) | **935 pass, 0 fail** |
+| DB-gated integration (56 suites) | **31 pass, 25 fail** |
+
+The integration suites need PostgreSQL (with `pgvector`) and Redis. A scratch
+database can be built from `migrations/` alone:
+
 ```bash
 # Backend (Rust)
 cargo test --lib                 # unit tests (fast, no DB)
-cargo test -- --include-ignored  # + DB-gated integration tests (needs .env DB/Redis)
+
+# DB-gated integration tests: provision first, then run
+bash scripts/provision_test_db.sh        # idempotent; prints DATABASE_URL
+bash scripts/run_db_suites.sh            # runs all 56 serially, tallies results
+
 cargo llvm-cov --lib             # line coverage report (install: cargo install cargo-llvm-cov)
+```
+
+`run_db_suites.sh` uses `--test-threads=1` deliberately: the suites serialise on
+their own `Mutex`, delete their own seed rows by unique prefix, and assume they
+are alone in the database.
+
+**25 integration suites still fail.** Most are role/level gate assertions left
+over from the `role` → `trust_level` refactor, which need per-test judgement
+rather than a bulk fix. One is blocked by a known production bug:
+`src/services/embedding_dedupe.rs` joins `rec_embeddings.work_id` (`varchar`) to
+`works.id` (`integer`), so `candidate_pairs` throws on every call. See
+[`docs/specs/missing-reference-data.md`](./docs/specs/missing-reference-data.md)
+§5.2 and [`docs/specs/db-gated-suites.md`](./docs/specs/db-gated-suites.md).
 
 # Frontend (SvelteKit / vitest)
 cd frontend
