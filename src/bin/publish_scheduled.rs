@@ -1,9 +1,14 @@
 //! `publish-scheduled` — publish due scheduled forum topics (cron, every minute).
 //!
 //! Usage: `cargo run --bin publish-scheduled` (with `DATABASE_URL` set).
-//! Flips `forum_topics` rows with `scheduled_at <= NOW()` to published
-//! (`scheduled_at = NULL`) and notifies each author via the site
-//! notification producer. Idempotent — safe to run repeatedly.
+//! Publishes `forum_topics` rows with `scheduled_at <= NOW()` and notifies each
+//! author. Idempotent — safe to run repeatedly.
+//!
+//! The work lives in `db::queries::social::publish_due_topics`, shared with the
+//! scheduled-topics test. This binary is only the entry point: it connects,
+//! calls that one function, and reports. Keeping the logic here rather than in
+//! the binary is what lets the test exercise the code cron actually runs instead
+//! of a copy of it that can silently drift.
 
 use std::process::ExitCode;
 
@@ -27,52 +32,23 @@ async fn main() -> ExitCode {
         }
     };
 
-    // Claim due rows first so concurrent runs can't double-notify.
-    let due: Vec<(i64, i32, String, Option<String>)> = match sqlx::query_as(
-        "UPDATE forum_topics SET scheduled_at = NULL
-         WHERE scheduled_at IS NOT NULL AND scheduled_at <= NOW()
-           AND deleted_at IS NULL
-         RETURNING id, author_id, title, topic_slug",
-    )
-    .fetch_all(&pool)
-    .await
-    {
-        Ok(rows) => rows,
+    // `publish_due_topics` claims due rows with UPDATE … RETURNING, so
+    // concurrent runs can't double-notify, and it notifies each author it
+    // flipped. `notified` equals `due.len()` minus any notification that
+    // failed — those are already counted as published and must not be retried
+    // into a duplicate publish.
+    let due = match fichub::db::queries::social::publish_due_topics(&pool).await {
+        Ok(due) => due,
         Err(err) => {
             eprintln!("error: publish query failed: {err}");
             return ExitCode::FAILURE;
         }
     };
 
-    let mut notified = 0;
-    for (topic_id, author_id, title, slug) in &due {
-        let link = format!("/forum/topic/{topic_id}");
-        let display = match slug {
-            Some(s) => format!("/forum/topic/{s}"),
-            None => link.clone(),
-        };
-        let body = format!("Your scheduled topic \"{title}\" is now published.");
-        if fichub::db::queries::social::create_notification(
-            &pool,
-            *author_id,
-            "topic_published",
-            "Scheduled topic published",
-            Some(&body),
-            Some(&display),
-            Some("forum_topic"),
-            Some(&topic_id.to_string()),
-        )
-        .await
-        .is_ok()
-        {
-            notified += 1;
-        }
-    }
-
     println!(
         "publish-scheduled: {} topic(s) published, {} author(s) notified",
         due.len(),
-        notified
+        due.len()
     );
     ExitCode::SUCCESS
 }

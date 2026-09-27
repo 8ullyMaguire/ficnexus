@@ -330,13 +330,32 @@ pub async fn set_user_role(
     // no login can hold trust 10.
     crate::services::trust::require_admin_tier(&user, &state)?;
 
+    // Reads and writes `role`, not `trust_level`.
+    //
+    // The route is `/role`, the frontend sends `{"role": N}`
+    // (frontend/src/routes/admin/users/+page.svelte) and the test asserts
+    // `SELECT role FROM users`. This handler read `trust_level` from the payload
+    // and wrote `trust_level`, so the admin role editor returned 400 for every
+    // real admin and, had the field matched, would have written a column
+    // nobody asked for. `users.role` is live: src/routes/subsystems.rs:526 sets
+    // it and subsystems.rs:32 documents gating on it.
+    //
+    // `role` and `trust_level` are separate columns and both are live. The gate
+    // above deliberately reads the `is_admin` claim rather than a trust level;
+    // that decision is unchanged. Only the write target is corrected here.
     let new_role: i16 = payload
-        .get("trust_level")
+        .get("role")
         .and_then(|v| v.as_i64())
         .map(|v| v as i16)
-        .ok_or_else(|| AppError::BadRequest("trust_level field required (0-6)".to_string()))?;
+        .ok_or_else(|| AppError::BadRequest("role field required".to_string()))?;
 
-    sqlx::query("UPDATE users SET trust_level = $1 WHERE id = $2")
+    if !(0..=10).contains(&new_role) {
+        return Err(AppError::BadRequest(format!(
+            "role must be 0-10, got {new_role}"
+        )));
+    }
+
+    sqlx::query("UPDATE users SET role = $1 WHERE id = $2")
         .bind(new_role)
         .bind(user_id)
         .execute(&state.db)
@@ -349,7 +368,7 @@ pub async fn set_user_role(
         "set_user_role",
         "user",
         &user_id.to_string(),
-        vec![("trust_level", json!(new_role))],
+        vec![("role", json!(new_role))],
     )
     .await;
 

@@ -464,7 +464,7 @@ async fn search_autocomplete_resolve() {
     // Search by q.
     let (s, b) = get_json(&app, "/api/tags/search?q=TagApiTest%20Character", None).await;
     assert_eq!(s, StatusCode::OK, "search: {b}");
-    let results = b["results"].as_array().unwrap();
+    let results = b["tags"].as_array().unwrap();
     assert_eq!(results.len(), 2, "two character tags: {b}");
     assert!(
         results
@@ -480,7 +480,7 @@ async fn search_autocomplete_resolve() {
     // Filter by type_id.
     let (s, b) = get_json(&app, "/api/tags/search?q=TagApiTest&type=4", None).await;
     assert_eq!(s, StatusCode::OK, "type filter: {b}");
-    let results = b["results"].as_array().unwrap();
+    let results = b["tags"].as_array().unwrap();
     // NOTE: the handler's ILIKE matches the shared prefix across ALL types,
     // so `type=4` still returns the character rows too — the type filter
     // narrows but the q match wins. Assert the freeform row is PRESENT
@@ -490,6 +490,10 @@ async fn search_autocomplete_resolve() {
         "freeform present: {b}"
     );
 
+    // `/api/tags/autocomplete` returns `results`, not `tags` -- it is a
+    // different handler from `/api/tags/search` (which returns `tags`, matching
+    // `TagSearchAdvancedResponse` in frontend/src/lib/api/tags.ts). A blanket
+    // rename across the file was wrong for these two lines.
     // Autocomplete requires 2+ chars; canonical-only (no alias rows yet).
     let (s, b) = get_json(&app, "/api/tags/autocomplete?q=T", None).await;
     assert_eq!(s, StatusCode::OK, "autocomplete short: {b}");

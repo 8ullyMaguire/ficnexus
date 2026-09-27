@@ -478,7 +478,14 @@ async fn publish_scheduled_flips_and_notifies() {
     let db = pool().await;
     let (uid, uname) = seed_user(&db, "sched_pub").await;
     let (oid, oname) = seed_user(&db, "sched_observer").await;
-    let (_cat_id, cat_slug) = seed_category(&db, "sched_pub_cat").await;
+    // The INSERT binds `cat_id`, not `cat_slug`: `category_id` is an i64 FK and
+    // the slug was bound to it, so the insert failed at
+    // `.expect("seed scheduled topic")`. The slug is still used below, for the
+    // `?category=<slug>` listing queries.
+    // The same fixture had already been repaired once for naming a nonexistent
+    // `slug` column (the column is `topic_slug`); the category binding was
+    // missed in that repair. See docs/specs/final-six-suites.md.
+    let (cat_id, cat_slug) = seed_category(&db, "sched_pub_cat").await;
     let auth = auth_header(uid, &uname);
     let o_auth = auth_header(oid, &oname);
 
@@ -490,7 +497,7 @@ async fn publish_scheduled_flips_and_notifies() {
          VALUES ($1, $2, $3, $4, $5, '2000-01-01T00:00:00Z'::timestamptz)
          RETURNING id",
     )
-    .bind(cat_slug.as_str())
+    .bind(cat_id)
     .bind(uid)
     .bind(format!("Publishable {}", uniq("pt")))
     .bind(format!("publish body {}", uniq("pb")))
@@ -514,18 +521,17 @@ async fn publish_scheduled_flips_and_notifies() {
         .unwrap_or_default();
     assert!(!before.contains(&topic_id), "must be hidden before publish");
 
-    // Run the same SQL the publish-scheduled binary executes.
-    let flipped: Vec<(i64, i32, String, Option<String>)> = sqlx::query_as(
-        "UPDATE forum_topics SET scheduled_at = NULL
-         WHERE scheduled_at IS NOT NULL AND scheduled_at <= NOW()
-           AND deleted_at IS NULL
-         RETURNING id, author_id, title, topic_slug",
-    )
-    .fetch_all(&db)
-    .await
-    .expect("publish query");
+    // Call the SAME function the publish-scheduled binary calls. This test used
+    // to paste a copy of the flip SQL inline, which meant it asserted against a
+    // query that could drift from the one cron actually runs -- and it never
+    // notified the author, so the notification assertion below was checking a
+    // row nothing in this test could ever have created.
+    let flipped =
+        fichub::db::queries::social::publish_due_topics(&db)
+            .await
+            .expect("publish due topics");
     assert!(
-        flipped.iter().any(|(id, _, _, _)| *id == topic_id),
+        flipped.iter().any(|t| t.id == topic_id),
         "topic must be in the flipped set"
     );
 
@@ -544,15 +550,23 @@ async fn publish_scheduled_flips_and_notifies() {
         .unwrap_or_default();
     assert!(after.contains(&topic_id), "must be visible after publish");
 
-    // Verify author received a notification.
+    // Verify author received a notification. The column is `notification_type`,
+    // not `type`; the old query referenced a non-existent column and
+    // `.unwrap_or(0)` turned that SQL error into a quiet 0, so the assertion
+    // reported "no notification" instead of "your query is wrong". No
+    // `unwrap_or` here: a broken assertion query must fail loudly.
     let notif_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND type = 'topic_published'",
+        "SELECT COUNT(*) FROM notifications
+         WHERE user_id = $1 AND notification_type = 'topic_published'",
     )
     .bind(uid)
     .fetch_one(&db)
     .await
-    .unwrap_or(0);
-    assert!(notif_count >= 1, "author should have a notification");
+    .expect("count publish notifications");
+    assert!(
+        notif_count >= 1,
+        "author should have a notification, found {notif_count}"
+    );
 
     cleanup(&db, topic_id, &cat_slug, &[uid, oid]).await;
 }

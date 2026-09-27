@@ -1100,3 +1100,62 @@ pub async fn delete_tag(pool: &PgPool, tag_id: i32, force: bool) -> AppResult<()
 }
 
 // ── Work CRUD queries ──────────────────────────────────────────────
+
+// ── Scheduled forum topics ───────────────────────────────────────���──────────
+
+/// One forum topic that this call just published (was flipped out of the
+/// scheduled queue).
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct PublishedTopic {
+    pub id: i64,
+    pub author_id: i32,
+    pub title: String,
+    pub topic_slug: Option<String>,
+}
+
+/// Publish every forum topic whose `scheduled_at` has come due, and notify each
+/// author. Returns the rows this call flipped.
+///
+/// The `UPDATE … RETURNING` claims the rows, so a concurrent run cannot
+/// double-notify: whichever run performs the flip owns the notification. This is
+/// the single implementation — the `publish-scheduled` binary calls it, and so
+/// does the scheduled-topics test, which previously pasted a copy of the flip
+/// SQL inline and therefore asserted against a query that could drift from the
+/// one cron actually runs.
+pub async fn publish_due_topics(pool: &PgPool) -> AppResult<Vec<PublishedTopic>> {
+    let due = sqlx::query_as::<_, PublishedTopic>(
+        "UPDATE forum_topics SET scheduled_at = NULL
+         WHERE scheduled_at IS NOT NULL AND scheduled_at <= NOW()
+           AND deleted_at IS NULL
+         RETURNING id, author_id, title, topic_slug",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for topic in &due {
+        let link = format!("/forum/topic/{}", topic.id);
+        let display = match &topic.topic_slug {
+            Some(s) => format!("/forum/topic/{s}"),
+            None => link.clone(),
+        };
+        let body = format!(
+            "Your scheduled topic \"{}\" is now published.",
+            topic.title
+        );
+        // A failed notification must not abort the run: the topic is already
+        // published and un-claiming it would republish it on the next tick.
+        let _ = create_notification(
+            pool,
+            topic.author_id,
+            "topic_published",
+            "Scheduled topic published",
+            Some(&body),
+            Some(&display),
+            Some("forum_topic"),
+            Some(&topic.id.to_string()),
+        )
+        .await;
+    }
+
+    Ok(due)
+}

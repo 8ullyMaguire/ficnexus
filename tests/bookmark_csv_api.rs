@@ -335,8 +335,8 @@ async fn export_returns_csv_with_header_and_rows() {
         .unwrap_or("")
         .to_string();
     assert!(
-        disposition.contains("fichub-bookmarks.csv"),
-        "content-disposition should name fichub-bookmarks.csv, got {disposition}"
+        disposition.contains("ficnexus-bookmarks.csv"),
+        "content-disposition should name ficnexus-bookmarks.csv, got {disposition}"
     );
 
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)

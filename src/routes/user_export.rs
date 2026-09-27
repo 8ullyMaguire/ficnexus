@@ -289,6 +289,23 @@ async fn collect_progress(state: &AppState, user_id: i32) -> Result<Value, AppEr
     .fetch_optional(&state.db)
     .await?;
 
+    // Quest progress. This was a hardcoded `"quests": null`, so a GDPR export
+    // silently omitted a user's quest progress even though the data exists in
+    // `user_daily_progress` / `daily_quests` and the endpoint's own test seeds
+    // it. An export that claims to be complete and is not is worse than one
+    // that documents what it leaves out. See docs/specs/final-six-suites.md.
+    let quests = sqlx::query_as::<_, (String, String, i32, i32, i32, bool, String)>(
+        r#"SELECT q.quest_type, q.title, q.target_count, q.reward_xp,
+                  p.progress, p.completed, p.quest_date::text
+           FROM user_daily_progress p
+           JOIN daily_quests q ON q.id = p.quest_id
+           WHERE p.user_id = $1
+           ORDER BY p.quest_date DESC, q.quest_type ASC"#,
+    )
+    .bind(user_id)
+    .fetch_all(&state.db)
+    .await?;
+
     Ok(json!({
         "login_streak": streak.map(|(cur, longest, last, updated)| json!({
             "current_streak": cur,
@@ -296,7 +313,20 @@ async fn collect_progress(state: &AppState, user_id: i32) -> Result<Value, AppEr
             "last_login_date": last.to_string(),
             "updated_at": updated.to_rfc3339(),
         })),
-        "quests": null,
+        "quests": quests
+            .into_iter()
+            .map(|(quest_type, title, target, reward, progress, completed, date)| {
+                json!({
+                    "quest_type": quest_type,
+                    "title": title,
+                    "target_count": target,
+                    "reward_xp": reward,
+                    "progress": progress,
+                    "completed": completed,
+                    "quest_date": date,
+                })
+            })
+            .collect::<Vec<_>>(),
     }))
 }
 

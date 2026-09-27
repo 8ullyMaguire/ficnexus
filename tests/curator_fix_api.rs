@@ -48,13 +48,45 @@ async fn pool() -> sqlx::PgPool {
         .expect("failed to connect to test database (is Postgres up?)")
 }
 
+/// The writable body cache this suite uses.
+///
+/// `build_app` points `config.body_cache_dir` here, and a test that reads the
+/// blob back must use the SAME path — a fresh `Config::from_env()` returns the
+/// root-only production default and finds nothing. Keeping it in one function
+/// means the two cannot drift apart again.
+fn test_body_dir() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "fichub-curator-fix-test-{}",
+        std::process::id()
+    ));
+    // create_dir_all is idempotent, and must NOT be preceded by a wipe: the
+    // readback in `fix_applies_after_quorum_of_other_curators` calls this after
+    // the handler has already written the blob, and clearing here would delete
+    // the thing the assertion is about.
+    std::fs::create_dir_all(&dir).expect("create temp body dir");
+    dir
+}
+
 async fn build_app() -> Router {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .try_init();
     use fichub::server::AppState;
 
-    let config = fichub::config::Config::from_env();
+    let mut config = fichub::config::Config::from_env();
+    // Applying a curator fix writes a real body blob through
+    // `body_cache::save_body`, so the suite needs a body cache it can actually
+    // write to. The production default is `/public/literature/fichub/bodies`
+    // (config.rs:617) — a root-only path — and the suite runner does not set
+    // BODY_CACHE_DIR, so the quorum test failed at
+    // "failed to apply body: Permission denied (os error 13)".
+    //
+    // Same pattern as tests/body_search_api.rs. The production default is a
+    // legitimate deployment path (a mounted volume), so this is a test-harness
+    // gap rather than a product bug — but a test that exercises the real write
+    // path will always hit it.
+    config.body_cache_dir = test_body_dir();
+
     let db = pool().await;
 
     let redis_client =
@@ -315,7 +347,8 @@ async fn fix_applies_after_quorum_of_other_curators() {
     assert_eq!(v["applied"], true);
 
     // The applied body should now be loadable from the cache.
-    let config = fichub::config::Config::from_env();
+    let mut config = fichub::config::Config::from_env();
+    config.body_cache_dir = test_body_dir();
     let loaded = fichub::body_cache::load_body(&config, "curatorfix_aaa1");
     assert!(loaded.is_some(), "approved fix should be in the body cache");
     if let Some(ch) = loaded {

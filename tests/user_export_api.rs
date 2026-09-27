@@ -515,7 +515,7 @@ async fn user_export_contains_all_expected_data() {
         .expect("content-disposition header");
     let disp_str = disposition.to_str().unwrap();
     assert!(
-        disp_str.contains("fichub-user-data-userexportit_full_user.zip"),
+        disp_str.contains("ficnexus-user-data-userexportit_full_user.zip"),
         "unexpected filename: {disp_str}"
     );
 

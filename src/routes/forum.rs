@@ -1678,6 +1678,15 @@ pub async fn list_topics(
     let fetch_n = limit + 1;
     let cursor = params.cursor;
 
+    // `COALESCE(t.last_post_id, 0)` in every branch, not bare `t.last_post_id`.
+    // `forum_topics.last_post_id` is `bigint NULL` and stays NULL until the
+    // first reply, so a brand-new topic has none — and the row tuple decoded it
+    // as `i64`, so sqlx failed the decode and the handler returned
+    // 500 {"err":-1,"msg":"database error"} for the WHOLE listing, not just the
+    // new topic. The `unread` expression below already guarded for NULL
+    // (`t.last_post_id IS NOT NULL AND ...`), which is what made the adjacent
+    // column safe and this one look safe too.
+    //
     // Sort extension (NodeBB parity): recently_replied (default), most_posts, most_views, most_votes, newest, oldest
     let sort = params.sort.as_deref().unwrap_or("recently_replied");
     let rows: Vec<(
@@ -1700,7 +1709,7 @@ pub async fn list_topics(
         r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
                   (SELECT COUNT(*) - 1 FROM forum_posts p WHERE p.topic_id = t.id AND p.deleted_at IS NULL AND p.is_hidden = FALSE)::bigint,
                   (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id = pr.post_id WHERE p.topic_id = t.id AND p.deleted_at IS NULL AND p.is_hidden = FALSE)::bigint,
-                  t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text,
+                  t.view_count, COALESCE(t.last_post_id, 0), t.status, t.last_activity_at::text, t.created_at::text,
                   (t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id, 0)) AS unread, rs.last_read_post_id
            FROM forum_topics t LEFT JOIN users u ON u.id = t.author_id LEFT JOIN forum_read_state rs ON rs.user_id = $4 AND rs.topic_id = t.id
            WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND t.scheduled_at IS NULL AND ($2::bigint IS NULL OR t.id < $2)
@@ -1710,7 +1719,7 @@ pub async fn list_topics(
         r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
                   (SELECT COUNT(*) - 1 FROM forum_posts p WHERE p.topic_id = t.id AND p.deleted_at IS NULL AND p.is_hidden = FALSE)::bigint,
                   (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id = pr.post_id WHERE p.topic_id = t.id AND p.deleted_at IS NULL AND p.is_hidden = FALSE)::bigint,
-                  t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text,
+                  t.view_count, COALESCE(t.last_post_id, 0), t.status, t.last_activity_at::text, t.created_at::text,
                   (t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id, 0)) AS unread, rs.last_read_post_id
            FROM forum_topics t LEFT JOIN users u ON u.id = t.author_id LEFT JOIN forum_read_state rs ON rs.user_id = $4 AND rs.topic_id = t.id
            WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND t.scheduled_at IS NULL AND ($2::bigint IS NULL OR t.id < $2)
@@ -1720,7 +1729,7 @@ pub async fn list_topics(
         r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
                   (SELECT COUNT(*) - 1 FROM forum_posts p WHERE p.topic_id = t.id AND p.deleted_at IS NULL AND p.is_hidden = FALSE)::bigint,
                   (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id = pr.post_id WHERE p.topic_id = t.id AND p.deleted_at IS NULL AND p.is_hidden = FALSE)::bigint,
-                  t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text,
+                  t.view_count, COALESCE(t.last_post_id, 0), t.status, t.last_activity_at::text, t.created_at::text,
                   (t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id, 0)) AS unread, rs.last_read_post_id
            FROM forum_topics t LEFT JOIN users u ON u.id = t.author_id LEFT JOIN forum_read_state rs ON rs.user_id = $4 AND rs.topic_id = t.id
            WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND t.scheduled_at IS NULL AND ($2::bigint IS NULL OR t.id < $2)
@@ -1730,7 +1739,7 @@ pub async fn list_topics(
         r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
                   (SELECT COUNT(*) - 1 FROM forum_posts p WHERE p.topic_id = t.id AND p.deleted_at IS NULL AND p.is_hidden = FALSE)::bigint,
                   (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id = pr.post_id WHERE p.topic_id = t.id AND p.deleted_at IS NULL AND p.is_hidden = FALSE)::bigint,
-                  t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text,
+                  t.view_count, COALESCE(t.last_post_id, 0), t.status, t.last_activity_at::text, t.created_at::text,
                   (t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id, 0)) AS unread, rs.last_read_post_id
            FROM forum_topics t LEFT JOIN users u ON u.id = t.author_id LEFT JOIN forum_read_state rs ON rs.user_id = $4 AND rs.topic_id = t.id
            WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND t.scheduled_at IS NULL AND ($2::bigint IS NULL OR t.id < $2)
@@ -1740,7 +1749,7 @@ pub async fn list_topics(
         r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
                   (SELECT COUNT(*) - 1 FROM forum_posts p WHERE p.topic_id = t.id AND p.deleted_at IS NULL AND p.is_hidden = FALSE)::bigint,
                   (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id = pr.post_id WHERE p.topic_id = t.id AND p.deleted_at IS NULL AND p.is_hidden = FALSE)::bigint,
-                  t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text,
+                  t.view_count, COALESCE(t.last_post_id, 0), t.status, t.last_activity_at::text, t.created_at::text,
                   (t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id, 0)) AS unread, rs.last_read_post_id
            FROM forum_topics t LEFT JOIN users u ON u.id = t.author_id LEFT JOIN forum_read_state rs ON rs.user_id = $4 AND rs.topic_id = t.id
            WHERE t.category_id = $1 AND t.deleted_at IS NULL AND t.is_hidden = FALSE AND t.scheduled_at IS NULL AND ($2::bigint IS NULL OR t.id < $2)
@@ -1823,10 +1832,17 @@ pub async fn unread_topics(
         .clamp(1, 100);
     let cursor: Option<i64> = q.get("cursor").and_then(|s| s.parse().ok());
     let fetch_n = limit + 1;
+    // `COALESCE(t.last_post_id, 0)`, not bare `t.last_post_id`. The column is
+    // `bigint NULL` and stays NULL until a topic's first reply, so decoding it
+    // as `i64` made sqlx fail the row decode and the handler 500 the ENTIRE
+    // listing, not just the new topic. Same defect and same fix as
+    // `list_topics`; the adjacent `unread` expression guards for NULL
+    // (`t.last_post_id IS NOT NULL AND …`), which is what made the bare column
+    // next to it look safe.
     let rows: Vec<(i64,String,Option<String>,i32,String,i64,i64,i64,i64,String,Option<String>,String,i64,String)> = sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
         (SELECT COUNT(*) - 1 FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL AND p.is_hidden=FALSE)::bigint,
         (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id)::bigint,
-        t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text, c.slug, c.title
+        t.view_count, COALESCE(t.last_post_id, 0), t.status, t.last_activity_at::text, t.created_at::text, c.slug, c.title
         FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id
         LEFT JOIN forum_read_state rs ON rs.user_id=$1 AND rs.topic_id=t.id
         WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND t.scheduled_at IS NULL AND t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id,0)
@@ -1869,10 +1885,17 @@ pub async fn recent_topics(
         None
     };
     let fetch_n = limit + 1;
+    // `COALESCE(t.last_post_id, 0)`, not bare `t.last_post_id`. The column is
+    // `bigint NULL` and stays NULL until a topic's first reply, so decoding it
+    // as `i64` made sqlx fail the row decode and the handler 500 the ENTIRE
+    // listing, not just the new topic. Same defect and same fix as
+    // `list_topics`; the adjacent `unread` expression guards for NULL
+    // (`t.last_post_id IS NOT NULL AND …`), which is what made the bare column
+    // next to it look safe.
     let rows: Vec<(i64,String,Option<String>,i32,String,i64,i64,i64,i64,String,Option<String>,String,bool,String,String)> = sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
         (SELECT COUNT(*) - 1 FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL AND p.is_hidden=FALSE)::bigint,
         (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id)::bigint,
-        t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text,
+        t.view_count, COALESCE(t.last_post_id, 0), t.status, t.last_activity_at::text, t.created_at::text,
         (t.last_post_id IS NOT NULL AND t.last_post_id > COALESCE(rs.last_read_post_id,0)) AS unread, c.slug, c.title
         FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id
         LEFT JOIN forum_read_state rs ON rs.user_id=$3 AND rs.topic_id=t.id
@@ -1917,25 +1940,32 @@ pub async fn popular_topics(
     };
     let fetch_n = limit + 1;
     // Use a single query with dynamic ORDER BY via CASE branching (avoid string interpolation)
+    // `COALESCE(t.last_post_id, 0)`, not bare `t.last_post_id`. The column is
+    // `bigint NULL` and stays NULL until a topic's first reply, so decoding it
+    // as `i64` made sqlx fail the row decode and the handler 500 the ENTIRE
+    // listing, not just the new topic. Same defect and same fix as
+    // `list_topics`; the adjacent `unread` expression guards for NULL
+    // (`t.last_post_id IS NOT NULL AND …`), which is what made the bare column
+    // next to it look safe.
     let rows: Vec<(i64,String,Option<String>,i32,String,i64,i64,i64,i64,String,Option<String>,String,String,String)> = match sort {
         "posts"|"replies" => sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
             (SELECT COUNT(*) - 1 FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL AND p.is_hidden=FALSE)::bigint,
             (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id)::bigint,
-            t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text, c.slug, c.title
+            t.view_count, COALESCE(t.last_post_id, 0), t.status, t.last_activity_at::text, t.created_at::text, c.slug, c.title
             FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id
             WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND t.scheduled_at IS NULL AND ($1::bigint IS NULL OR t.id < $1) ORDER BY (SELECT COUNT(*) FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL) DESC, t.id DESC LIMIT $2"#)
             .bind(cursor).bind(fetch_n).fetch_all(&state.db).await?,
         "votes" => sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
             (SELECT COUNT(*) - 1 FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL AND p.is_hidden=FALSE)::bigint,
             (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id)::bigint,
-            t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text, c.slug, c.title
+            t.view_count, COALESCE(t.last_post_id, 0), t.status, t.last_activity_at::text, t.created_at::text, c.slug, c.title
             FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id
             WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND t.scheduled_at IS NULL AND ($1::bigint IS NULL OR t.id < $1) ORDER BY (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id) DESC, t.id DESC LIMIT $2"#)
             .bind(cursor).bind(fetch_n).fetch_all(&state.db).await?,
         _ => sqlx::query_as(r#"SELECT t.id, t.title, t.topic_slug, t.author_id, u.username,
             (SELECT COUNT(*) - 1 FROM forum_posts p WHERE p.topic_id=t.id AND p.deleted_at IS NULL AND p.is_hidden=FALSE)::bigint,
             (SELECT COUNT(*) FROM forum_post_reactions pr JOIN forum_posts p ON p.id=pr.post_id WHERE p.topic_id=t.id)::bigint,
-            t.view_count, t.last_post_id, t.status, t.last_activity_at::text, t.created_at::text, c.slug, c.title
+            t.view_count, COALESCE(t.last_post_id, 0), t.status, t.last_activity_at::text, t.created_at::text, c.slug, c.title
             FROM forum_topics t JOIN forum_categories c ON c.id=t.category_id LEFT JOIN users u ON u.id=t.author_id
             WHERE t.deleted_at IS NULL AND t.is_hidden=FALSE AND t.scheduled_at IS NULL AND ($1::bigint IS NULL OR t.id < $1) ORDER BY t.view_count DESC, t.id DESC LIMIT $2"#)
             .bind(cursor).bind(fetch_n).fetch_all(&state.db).await?,
