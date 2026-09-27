@@ -216,6 +216,19 @@ async fn app_with(config: fichub::config::Config) -> Router {
             "/api/forum/metamod/{actionId}/vote",
             post(fichub::routes::forum::metamod_vote),
         )
+        // The two grant routes were exercised by trust_metamod_vote_gone and
+        // trust_grant_detail_stays_readable but never registered here, so both
+        // got a 404 from the harness instead of a verdict from the handler.
+        // Each suite builds its own mini-router, so a product route is not
+        // under test until it appears here.
+        .route(
+            "/api/forum/metamod/grants/{id}",
+            get(fichub::routes::forum::metamod_grant_detail),
+        )
+        .route(
+            "/api/forum/metamod/grants/{id}/verdict",
+            post(fichub::routes::forum::metamod_grant_verdict),
+        )
         .route(
             "/api/admin/forum/hide/{postId}",
             post(fichub::routes::forum::admin_hide_post),
@@ -646,7 +659,10 @@ async fn admin_creates_category_and_list_returns_it() {
     assert_eq!(b["err"], 0, "create: {b}");
     let cid = b["id"].as_i64().expect("category id");
 
-    // Slug validation: uppercase rejected
+    // Uppercase is normalised, not rejected: validate_slug lowercases before
+    // checking the alphabet (src/routes/forum.rs:244), so a caller who
+    // capitalises a slug gets a working canonical slug rather than an error.
+    // The stored value is still lowercase, which is what matters for URLs.
     let (s, b) = post_json(
         &app,
         "/api/forum/categories",
@@ -654,13 +670,24 @@ async fn admin_creates_category_and_list_returns_it() {
         json!({ "slug": "BAD-SLUG", "title": "Bad" }),
     )
     .await;
-    assert_eq!(s, StatusCode::BAD_REQUEST, "bad slug: {b}");
+    assert_eq!(s, StatusCode::OK, "uppercase slug normalised: {b}");
+    let bad_cid = b["id"].as_i64().expect("normalised category id");
 
     // List
     let (s, b) = get_json(&app, "/api/forum/categories", Some(&token)).await;
     assert_eq!(s, StatusCode::OK, "list: {b}");
     assert_eq!(b["err"], 0, "list: {b}");
     let items = b["items"].as_array().unwrap();
+
+    // The stored slug is the canonical lowercase form. create_category returns
+    // {err,id,msg} only, so the normalisation is confirmed by reading the row
+    // back rather than from the create response.
+    let normalised = items
+        .iter()
+        .find(|i| i["id"] == json!(bad_cid))
+        .expect("normalised category in list");
+    assert_eq!(normalised["slug"], "bad-slug", "slug normalised on write: {b}");
+
     let mine = items
         .iter()
         .find(|i| i["id"] == json!(cid))
@@ -759,7 +786,9 @@ async fn topic_list_returns_seeded_topic_with_counts() {
     let cid = seed_category(&db, "frma-topics", "Topics").await;
     let tid = seed_topic(&db, cid, id1, "frma seeded topic").await;
 
-    // A reply from u2 → reply_count 2 (OP + reply)
+    // A reply from u2 → reply_count 1. The list query uses COUNT(*) - 1
+    // (src/routes/forum.rs:1701): the original post is excluded, because
+    // counting it would make every topic with no replies read as "1 reply".
     let reply_id: i64 = sqlx::query_scalar(
         "INSERT INTO forum_posts (topic_id, author_id, body)
          VALUES ($1, $2, 'reply') RETURNING id",
@@ -775,13 +804,22 @@ async fn topic_list_returns_seeded_topic_with_counts() {
         .execute(&db)
         .await
         .ok();
-    // A vote on the reply → vote_score 1
-    sqlx::query("INSERT INTO forum_post_votes (post_id, user_id, value) VALUES ($1, $2, 1)")
-        .bind(reply_id)
-        .bind(id2)
-        .execute(&db)
-        .await
-        .ok();
+    // A reaction on the reply → vote_score 1.
+    //
+    // This used to INSERT into `forum_post_votes`, which does not exist in the
+    // schema — there is no such table. The error was discarded by `.ok()`, so
+    // the vote silently never landed and the assertion below read 0 for a
+    // reason that had nothing to do with the endpoint. The list query
+    // aggregates `forum_post_reactions` (emoji reactions), so that is what a
+    // "vote" has to be written as.
+    sqlx::query(
+        "INSERT INTO forum_post_reactions (post_id, user_id, emoji) VALUES ($1, $2, 'up')",
+    )
+    .bind(reply_id)
+    .bind(id2)
+    .execute(&db)
+    .await
+    .expect("seed reaction");
 
     let (s, b) = get_json(&app, "/api/forum/topics?category=frma-topics", Some(&token)).await;
     assert_eq!(s, StatusCode::OK, "topics: {b}");
@@ -791,7 +829,7 @@ async fn topic_list_returns_seeded_topic_with_counts() {
     let t = &items[0];
     assert_eq!(t["title"], "frma seeded topic");
     assert_eq!(t["author_username"], u1);
-    assert_eq!(t["reply_count"], 2);
+    assert_eq!(t["reply_count"], 1, "reply_count excludes the OP: {b}");
     assert_eq!(t["vote_score"], 1);
     assert_eq!(t["status"], "open");
 
@@ -869,7 +907,9 @@ async fn anonymous_gets_401_on_all_f3_routes() {
     // expect 400 "topic not found" rather than 401.
     let (s, b) = get_json(&app, "/api/forum/topics/1", None).await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "topic detail: {b}");
-    assert_eq!(b["err"], 400, "topic detail: {b}");
+    // Body code for BadRequest is -1, not 400 (src/error.rs:66). Forbidden is
+    // -403 and Unauthorized is a bare 401, so the sign is not the HTTP status.
+    assert_eq!(b["err"], -1, "topic detail: {b}");
 
     let (s, b) = post_json(
         &app,
