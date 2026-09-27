@@ -26,6 +26,17 @@ fn db_guard() -> std::sync::MutexGuard<'static, ()> {
     db_lock().lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// The single JWT secret for this suite.
+///
+/// Both halves of the round trip must agree: `app()` builds `AppState` with
+/// this, and `auth_token` signs with it. They used to be two separate literals
+/// in this file — `"fichub-test-secret"` for the state, and an env lookup
+/// falling back to `"fichub-dev-secret"` for the token — so every token minted
+/// here failed verification and `/feed/follows.xml` returned 401. `JWT_SECRET`
+/// is not exported by the suite runner, so the fallback was live code, not a
+/// dead default. See docs/specs/rss-api-rename-and-secrets.md.
+const TEST_JWT_SECRET: &str = "fichub-test-secret";
+
 const USERNAME: &str = "rss_follow_test_user";
 const TITLE_PREFIX: &str = "RssFeedTest";
 
@@ -110,7 +121,7 @@ async fn app() -> Router {
         ollama: ollama_client,
         mailer: Box::new(fichub::services::mailer::MockMailer::new()),
         rt_manager: fichub::realtime::ConnectionManager::new(),
-        jwt_secret: "fichub-test-secret".into(),
+        jwt_secret: TEST_JWT_SECRET.into(),
         redis_client: None,
     });
 
@@ -142,7 +153,6 @@ async fn get_raw(app: &Router, uri: &str) -> (StatusCode, String, String) {
 
 /// JWT for the given user id (real token, real JWT_SECRET from env).
 fn auth_token(user_id: i32) -> String {
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
     let user = fichub::routes::auth::User {
         id: user_id,
         username: USERNAME.into(),
@@ -153,7 +163,7 @@ fn auth_token(user_id: i32) -> String {
         exp: 0,
         is_admin: false,
     };
-    fichub::routes::auth::create_token(&user, &secret).expect("token creation")
+    fichub::routes::auth::create_token(&user, TEST_JWT_SECRET).expect("token creation")
 }
 
 /// Seed a user; returns its id. Idempotent.
@@ -326,7 +336,7 @@ async fn new_arrivals_feed_renders_atom() {
         "seeded fic should appear as an entry: {body}"
     );
     // Entry shape: id/updated/alternate links present, XML-escaped summary
-    assert!(body.contains("urn:fichub:fic:rss-new-1"));
+    assert!(body.contains("urn:ficnexus:fic:rss-new-1"));
     assert!(body.contains("rel=\"alternate\" href=\"/fic/rss-new-1\""));
     assert!(body.contains("desc &amp; more &lt;tagged&gt;"));
     // Not a JSON error envelope
@@ -359,7 +369,7 @@ async fn per_fic_feed_renders_single_entry() {
     let titles = entry_titles(&body);
     assert_eq!(titles.len(), 1, "exactly one entry: {titles:?}");
     assert_eq!(titles[0], format!("{TITLE_PREFIX} Solo"));
-    assert!(body.contains("urn:fichub:feed:work:rss-perfic-1"));
+    assert!(body.contains("urn:ficnexus:feed:work:rss-perfic-1"));
     // Self link points at the canonical .xml URL (absolute when OPDS_BASE_URL
     // is configured in the test env, relative otherwise).
     assert!(
@@ -467,7 +477,7 @@ async fn follows_feed_with_token_renders_followed_fic() {
         "followed fic must appear: {body}"
     );
     assert!(
-        body.contains("urn:fichub:feed:follows"),
+        body.contains("urn:ficnexus:feed:follows"),
         "follows feed id: {body}"
     );
 }
