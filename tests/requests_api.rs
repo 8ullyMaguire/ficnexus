@@ -170,6 +170,22 @@ fn auth_header(user_id: i32, username: &str) -> String {
 }
 
 /// Seed a user; returns its id. Idempotent.
+/// The answers a test actually wrote.
+///
+/// `create_request` spawns a background task that inserts an automatic
+/// "Archivist" answer (source = 'archivist') attributed to the requester. It
+/// lands whenever Ollama answers, so counting every row in `answers` is a race:
+/// the same run passes or fails on machine speed. Tests assert on user answers
+/// and ignore the system one explicitly rather than sleeping for it.
+fn user_answers(detail: &serde_json::Value) -> Vec<&serde_json::Value> {
+    detail["answers"]
+        .as_array()
+        .expect("answers array")
+        .iter()
+        .filter(|a| a["source"] != "archivist")
+        .collect()
+}
+
 async fn seed_user(pool: &sqlx::PgPool, username: &str) -> i32 {
     sqlx::query(
         "INSERT INTO users (username, password_hash) VALUES ($1, 'test-hash') ON CONFLICT (username) DO NOTHING",
@@ -355,7 +371,12 @@ async fn create_list_detail_request() {
     assert_eq!(det["err"], 0, "detail: {det}");
     assert_eq!(det["request"]["title"], "Fics like The Awakening");
     assert_eq!(det["request"]["username"], username);
-    assert_eq!(det["answers"].as_array().unwrap().len(), 0);
+    // A brand-new request has no user answers. The Archivist may add one at
+    // any moment; see user_answers().
+    assert!(
+        user_answers(&det).is_empty(),
+        "new request has no user answers: {det}"
+    );
 
     // Cleanup
     sqlx::query("DELETE FROM fic_requests WHERE id = $1")
@@ -451,8 +472,8 @@ async fn answer_and_vote_flow() {
 
     // Detail shows my_vote for the voter
     let (_, det) = get_json(&app, &format!("/api/requests/{rid}"), Some(&t2)).await;
-    let ans = det["answers"].as_array().unwrap();
-    assert_eq!(ans.len(), 1, "answers: {det}");
+    let ans = user_answers(&det);
+    assert_eq!(ans.len(), 1, "user answers: {det}");
     assert_eq!(ans[0]["score"], 0);
 
     // Cleanup
@@ -528,8 +549,8 @@ async fn answer_via_url_id_ask_flow() {
 
     // Detail includes the answer with the fic's title/author.
     let (_, det) = get_json(&app, &format!("/api/requests/{rid}"), None).await;
-    let ans = det["answers"].as_array().unwrap();
-    assert_eq!(ans.len(), 1, "answers: {det}");
+    let ans = user_answers(&det);
+    assert_eq!(ans.len(), 1, "user answers: {det}");
     assert_eq!(ans[0]["fic_title"], "Ask Found Fic");
     assert_eq!(ans[0]["fic_author"], "Ask Author");
 
@@ -596,7 +617,9 @@ async fn duplicate_answer_and_cap() {
     .await;
     let rid = b["id"].as_i64().unwrap();
 
-    // 3 answers OK
+    // 3 user answers OK. The cap counts source = 'user' only: the Archivist's
+    // automatic answer is attributed to the requester, and counting it charged
+    // them for a row they never wrote (their quota was 2, not 3).
     for wid in [w1, w2, w3] {
         let (s, b) = post_json(
             &app,
@@ -756,8 +779,8 @@ async fn delete_answer_flow() {
     assert_eq!(s, StatusCode::OK, "delete answer: {b}");
     assert_eq!(b["err"], 0, "delete answer err: {b}");
     let (_, det) = get_json(&app, &format!("/api/requests/{rid}"), None).await;
-    let ans = det["answers"].as_array().unwrap();
-    assert!(ans.is_empty(), "answer deleted: {det}");
+    let ans = user_answers(&det);
+    assert!(ans.is_empty(), "user answer deleted: {det}");
 
     // Non-owner delete blocked → HTTP 400 err 403.
     // Use a DIFFERENT work for the second answer (UNIQUE work per request).

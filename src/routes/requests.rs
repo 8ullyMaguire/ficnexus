@@ -507,9 +507,17 @@ pub async fn add_answer(
         return Err(AppError::BadRequest("pitch too long (max 500)".to_string()));
     }
 
-    // +3 cap per user per request
+    // +3 cap per user per request.
+    //
+    // Counts only source = 'user' answers. The Archivist writes an automatic
+    // answer attributed to the requester (`create_request` inserts it with
+    // r.user_id and source = 'archivist'), so counting it would charge the
+    // requester for a row they did not write and silently reduce their quota
+    // from 3 to 2. The cap exists to limit what a person posts.
     let (cnt,): (i64,) = sqlx::query_as(
-        "SELECT COUNT(*)::bigint FROM fic_request_answers WHERE request_id = $1 AND user_id = $2 AND deleted_at IS NULL",
+        "SELECT COUNT(*)::bigint FROM fic_request_answers
+          WHERE request_id = $1 AND user_id = $2 AND deleted_at IS NULL
+            AND source = 'user'",
     )
     .bind(id)
     .bind(user_id)
