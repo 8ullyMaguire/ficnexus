@@ -3404,7 +3404,12 @@ async fn search_rating_filter() {
     seed_fic_tag(&db, "searchit_rt_a", tag, 5).await;
 
     // rating=General Audiences → only fic A (has the rating tag).
-    let body = get_search("/api/search?q=rating&rating=SearchTest%20General%20Audiences").await;
+    //
+    // No `q=` term. Both fics are titled "Rating ..." and both bodies contain
+    // the word "rating", so a `q=rating` text query matches them both and the
+    // rating filter is not what put fic B in the results. The docstring above
+    // describes a rating-only request, which is what this is.
+    let body = get_search("/api/search?rating=SearchTest%20General%20Audiences").await;
     let ids = result_ids(&body);
     assert!(
         ids.contains(&"searchit_rt_a".to_string()),
@@ -3416,7 +3421,7 @@ async fn search_rating_filter() {
     );
 
     // A nonexistent rating name → no results (the rating doesn't resolve to a tag).
-    let body = get_search("/api/search?q=rating&rating=NoSuchRating").await;
+    let body = get_search("/api/search?rating=NoSuchRating").await;
     // Nonexistent rating is silently ignored, so the search is unfiltered.
     let ids = result_ids(&body);
     assert!(

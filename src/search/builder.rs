@@ -7,8 +7,13 @@ use sqlx::postgres::PgRow;
 use crate::search::parser::{Field, FieldOp, FieldQuery, RangeExpr};
 
 /// `fic_tags.role_confidence` threshold for the `@` role modifier (main /
-/// primary tag). The backfill in migration 003 maps score>=10 → 1.0, so a
-/// main/primary tag carries confidence >= 1.0.
+/// primary tag).
+///
+/// `role_confidence` is a **generated** column (migration
+/// 095_role_confidence_generated.sql) computing score>=10 → 1.0, score>0 →
+/// 0.5, else 0.0. It was previously a stored column backfilled once by
+/// migration 004 and never maintained, so every new row defaulted to 1.0 and
+/// this filter matched any role. See docs/specs/role-confidence-stale.md.
 const ROLE_MAIN_CONFIDENCE: f32 = 1.0;
 
 /// A single tag filter in the form (tag_type_id, tag_name)
@@ -37,6 +42,10 @@ pub struct SearchParams {
     /// Explicit "Guided tier" helper: a main/primary character name
     /// (`char:Name` with main role). Backed by role_confidence.
     pub main_char: Option<String>,
+    /// The combined Guided filter `"<main character>|<attribute>"`: a main-role
+    /// character tag AND a freeform tag, as a single EXISTS pair. See
+    /// `SearchQueryParams::main_char_attr`.
+    pub main_char_attr: Option<String>,
     /// Explicit status filter mapping to `fic_info.status` (e.g. "complete").
     pub status: Option<String>,
     /// Explicit beta/editing status filter mapping to `works.beta_status`.
@@ -517,6 +526,42 @@ impl SearchQueryBuilder {
         if let Some(ref beta) = self.params.beta_status {
             qb.push(" AND w.beta_status = ");
             qb.push_bind(beta.to_lowercase());
+        }
+        // Guided "main character + attribute": one character tag at main role
+        // AND one freeform tag, both required, as two EXISTS clauses in the
+        // same conjunct. Join key and score floor follow the same shape as the
+        // include_tags filters above (fic_tags has no deleted_at column).
+        if let Some(ref combined) = self.params.main_char_attr.clone() {
+            let (char_part, attr_part) = match combined.split_once('|') {
+                Some((c, a)) => (c.trim().to_string(), a.trim().to_string()),
+                // No pipe: treat the whole value as the character, which is
+                // what a caller sending a bare name almost certainly meant.
+                None => (combined.trim().to_string(), String::new()),
+            };
+            if !char_part.is_empty() {
+                qb.push(" AND EXISTS (SELECT 1 FROM fic_tags mca");
+                qb.push(" JOIN tags mcat ON mcat.id = mca.tag_id");
+                qb.push(" WHERE mca.url_id = fi.id");
+                qb.push(" AND mcat.tag_type_id = 2");
+                qb.push(" AND mcat.name ILIKE ");
+                qb.push_bind(format!("%{char_part}%"));
+                qb.push(" AND mca.score >= ");
+                qb.push_bind(self.hidden_threshold);
+                qb.push(" AND mca.role_confidence >= ");
+                qb.push_bind(ROLE_MAIN_CONFIDENCE);
+                qb.push(")");
+            }
+            if !attr_part.is_empty() {
+                qb.push(" AND EXISTS (SELECT 1 FROM fic_tags mca2");
+                qb.push(" JOIN tags mcat2 ON mcat2.id = mca2.tag_id");
+                qb.push(" WHERE mca2.url_id = fi.id");
+                qb.push(" AND mcat2.tag_type_id = 4");
+                qb.push(" AND mcat2.name ILIKE ");
+                qb.push_bind(format!("%{attr_part}%"));
+                qb.push(" AND mca2.score >= ");
+                qb.push_bind(self.hidden_threshold);
+                qb.push(")");
+            }
         }
         if self.params.main_char.is_some() {
             // Guide tier: a main/primary character (role_confidence >= 1.0).

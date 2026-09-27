@@ -61,6 +61,21 @@ pub struct SearchQueryParams {
     /// Main/primary character filter (Guide tier) — maps to a character tag
     /// with role_confidence >= 1.0 (`@char:Name`).
     pub main_char: Option<String>,
+    /// The combined Guided filter: `"<main character>|<attribute>"`.
+    ///
+    /// Both halves are one filter, not two independent ones — the point is
+    /// "fics where this character is the lead AND carries this attribute",
+    /// which is not expressible as two separate params without letting a
+    /// caller ask for a character who is main in one fic and an attribute it
+    /// has elsewhere. The left side is a character tag (type 2) restricted to
+    /// main role; the right side is a freeform tag (type 4).
+    ///
+    /// This parameter is named in src/bin/backfill_scores.rs, src/tags/backfill.rs
+    /// and src/roadmap_seed.rs as though it had always existed; it had not —
+    /// `SearchQueryParams` derives Deserialize without `deny_unknown_fields`, so
+    /// it was silently dropped and the search ran unfiltered. See
+    /// docs/specs/search-api-main-char-attr.md.
+    pub main_char_attr: Option<String>,
     /// Status filter — maps to `fic_info.status` (e.g. "complete").
     pub status: Option<String>,
     /// Beta/editing status — maps to `works.beta_status`.
@@ -170,6 +185,7 @@ impl SearchQueryParams {
             rating: self.rating.filter(|s| !s.is_empty()),
             language: self.language.filter(|s| !s.is_empty()),
             main_char: self.main_char.filter(|s| !s.is_empty()),
+            main_char_attr: self.main_char_attr.filter(|s| !s.is_empty()),
             status: self.status.filter(|s| !s.is_empty()),
             beta_status: self.beta_status.filter(|s| !s.is_empty()),
             crossover: self.crossover,
@@ -496,6 +512,44 @@ pub async fn run_search(
         ..search_params.clone()
     };
 
+// ── Resolve rating param to an include_tags entry ──────────────────
+    // Content ratings are stored as tags (tag_type_id = 7), not columns.
+    // If the user passes `rating=Explicit`, look up the tag and add it
+    // to include_tags so the existing tag-filter machinery handles it.
+    //
+    // This mutates `capped_params`, not `search_params`, and must run BEFORE
+    // the expanded_include_tag_ids resolution below. It used to push into
+    // `search_params`, which had already been cloned into `capped_params`
+    // above - so the filter was silently dropped and `rating=` was a no-op.
+    // The test caught it only because it also sent `q=rating`, which put the
+    // expected fic in the results for an unrelated reason.
+    // See docs/specs/search-api-main-char-attr.md.
+    if let Some(ref rating_name) = capped_params.rating.clone() {
+        let rating_tag_id: Option<i32> = sqlx::query_scalar(
+            "SELECT id FROM tags WHERE LOWER(name) = LOWER($1) AND tag_type_id = 7",
+        )
+        .bind(rating_name)
+        .fetch_optional(&state.db)
+        .await
+        .unwrap_or(None);
+        if let Some(tag_id) = rating_tag_id {
+            // We need the canonical name for include_tags (the DB name).
+            let canonical: String = sqlx::query_scalar("SELECT name FROM tags WHERE id = $1")
+                .bind(tag_id)
+                .fetch_one(&state.db)
+                .await
+                .unwrap_or_else(|_| rating_name.clone());
+            // Append to include_tags so the builder emits the EXISTS clause.
+            capped_params.include_tags.push(TagFilter {
+                tag_type_id: 7,
+                tag_name: canonical,
+            });
+        }
+        // If the rating name doesn't match any tag, silently ignore —
+        // the search will return results as if no rating filter was set.
+    }
+
+
     // Resolve tag names to expanded tag IDs for synonym-aware filtering
     if !capped_params.include_tags.is_empty() {
         let mut expanded = Vec::new();
@@ -556,36 +610,7 @@ pub async fn run_search(
     .await
     .unwrap_or(false);
 
-    // ── Resolve rating param to an include_tags entry ──────────────────
-    // Content ratings are stored as tags (tag_type_id = 7), not columns.
-    // If the user passes `rating=Explicit`, look up the tag and add it
-    // to include_tags so the existing tag-filter machinery handles it.
-    if let Some(ref rating_name) = search_params.rating.clone() {
-        let rating_tag_id: Option<i32> = sqlx::query_scalar(
-            "SELECT id FROM tags WHERE LOWER(name) = LOWER($1) AND tag_type_id = 7",
-        )
-        .bind(rating_name)
-        .fetch_optional(&state.db)
-        .await
-        .unwrap_or(None);
-        if let Some(tag_id) = rating_tag_id {
-            // We need the canonical name for include_tags (the DB name).
-            let canonical: String = sqlx::query_scalar("SELECT name FROM tags WHERE id = $1")
-                .bind(tag_id)
-                .fetch_one(&state.db)
-                .await
-                .unwrap_or_else(|_| rating_name.clone());
-            // Append to include_tags so the builder emits the EXISTS clause.
-            search_params.include_tags.push(TagFilter {
-                tag_type_id: 7,
-                tag_name: canonical,
-            });
-        }
-        // If the rating name doesn't match any tag, silently ignore —
-        // the search will return results as if no rating filter was set.
-    }
-
-    let builder = SearchQueryBuilder::new(
+        let builder = SearchQueryBuilder::new(
         capped_params,
         state.config.tag_hidden_threshold,
         has_comments,

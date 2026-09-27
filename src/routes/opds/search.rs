@@ -128,6 +128,8 @@ fn into_search_params(raw: SearchQueryParams) -> AppResult<SearchParams> {
         fielded_terms: vec![],
         field_queries: vec![],
         main_char: None,
+        // OPDS has no combined main_char_attr surface; the JSON search API does.
+        main_char_attr: None,
         status: None,
         beta_status: None,
         crossover: None,

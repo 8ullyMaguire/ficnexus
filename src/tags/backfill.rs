@@ -9,6 +9,12 @@
 //! "main character" is arbitrary). This module rewrites those zeros to the
 //! scrape-time convention.
 //!
+//! `main_char_attr` does not read `score` directly: search filters on
+//! `fic_tags.role_confidence`, which since migration
+//! 095_role_confidence_generated.sql is a **generated** column derived from
+//! `score` (>=10 → 1.0, >0 → 0.5, else 0.0). Fixing `score` here therefore fixes
+//! the filter, which is the point of this module.
+//!
 //! Idempotency: a fic's character tags are touched only when *none* of them
 //! has a nonzero score (same rule for ships). Once backfilled, re-running
 //! leaves the fic alone; user votes (which move scores off zero via the
