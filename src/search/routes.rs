@@ -414,6 +414,7 @@ pub async fn search_handler(
 ) -> Result<Json<Value>, AppError> {
     // Capture raw query for analytics logging BEFORE params are consumed.
     let analytics_query = params.q.clone();
+    let main_char_attr = params.main_char_attr.clone();
     let client_id = headers
         .get("x-client-id")
         .and_then(|v| v.to_str().ok())
@@ -440,7 +441,12 @@ pub async fn search_handler(
             &state.db,
             &log_query,
             envelope.total,
-            None,
+            // The raw "Character|Attribute" string the caller sent. This was a
+            // literal `None`, so every logged search had a null main_char_attr
+            // and the admin analytics screen could not show which guided
+            // filters were used -- the column was dead in production.
+            // See docs/specs/leaderboard-and-analytics-suites.md.
+            main_char_attr.as_deref(),
             client_id.as_deref(),
             auth.user_id,
         )

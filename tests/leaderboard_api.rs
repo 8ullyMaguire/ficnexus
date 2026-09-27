@@ -12,6 +12,19 @@
 //!   `cargo test --test leaderboard_api -- --include-ignored --test-threads=1`
 //! * Seeds a user + leaderboard rows with unique names and cleans up after itself.
 
+/// The JWT secret every test router in this file is built with.
+///
+/// This used to be `std::env::var("JWT_SECRET").unwrap_or_else(|_|
+/// "fichub-dev-secret")` while `AppState` was built with a different literal
+/// ("fichub-test-secret"), so tokens minted here were signed with one secret
+/// and verified with the other. The `AuthUser` extractor used to read the
+/// environment rather than `state.jwt_secret`
+/// (`src/routes/auth.rs::ProvidesJwtSecret`), which masked the mismatch -- the
+/// env fallback happened to match the token helper. Fixing the extractor
+/// exposed every affected file at once, because the tests were relying on a
+/// product bug in order to pass.
+const TEST_JWT_SECRET: &str = "fichub-test-secret";
+
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
@@ -114,7 +127,7 @@ async fn app() -> Router {
         ollama: ollama_client,
         mailer: Box::new(fichub::services::mailer::MockMailer::new()),
         rt_manager: fichub::realtime::ConnectionManager::new(),
-        jwt_secret: "fichub-test-secret".into(),
+        jwt_secret: TEST_JWT_SECRET.into(),
         redis_client: None,
     });
 
@@ -152,13 +165,24 @@ async fn get_leaderboard(uri: &str) -> Value {
 }
 
 /// Create a uniquely-named user for the test; returns their id.
-async fn seed_user(pool: &sqlx::PgPool, username: &str) -> i32 {
+/// Seed a user with a reputation score and return its id.
+///
+/// The leaderboard endpoints are computed LIVE from `users.reputation`
+/// (`get_weekly_leaderboard` / `get_monthly_leaderboard` in
+/// src/db/queries/social.rs both run `SELECT … FROM users u WHERE
+/// u.reputation > 0`). The column defaults to 0, so a user seeded without it
+/// is filtered out and never appears — which is what these two tests were
+/// reporting. They used to seed `leaderboard_weekly` / `leaderboard_monthly`
+/// rows instead, but nothing reads those tables; see
+/// docs/specs/leaderboard-and-analytics-suites.md.
+async fn seed_user(pool: &sqlx::PgPool, username: &str, reputation: i32) -> i32 {
     sqlx::query(
-        "INSERT INTO users (username, password_hash, email)
-         VALUES ($1, 'x', NULL)
-         ON CONFLICT (username) DO NOTHING",
+        "INSERT INTO users (username, password_hash, email, reputation)
+         VALUES ($1, 'x', NULL, $2)
+         ON CONFLICT (username) DO UPDATE SET reputation = EXCLUDED.reputation",
     )
     .bind(username)
+    .bind(reputation)
     .execute(pool)
     .await
     .expect("seed_user failed");
@@ -171,36 +195,8 @@ async fn seed_user(pool: &sqlx::PgPool, username: &str) -> i32 {
 }
 
 /// Insert a leaderboard_weekly row for the user.
-async fn seed_weekly(pool: &sqlx::PgPool, user_id: i32, score: i32, rank: i16, week_start: &str) {
-    sqlx::query(
-        "INSERT INTO leaderboard_weekly (user_id, score, rank, week_start)
-         VALUES ($1, $2, $3, $4::date)
-         ON CONFLICT (user_id, week_start) DO NOTHING",
-    )
-    .bind(user_id)
-    .bind(score)
-    .bind(rank)
-    .bind(week_start)
-    .execute(pool)
-    .await
-    .expect("seed_weekly failed");
-}
 
 /// Insert a leaderboard_monthly row for the user.
-async fn seed_monthly(pool: &sqlx::PgPool, user_id: i32, score: i32, rank: i16, month_start: &str) {
-    sqlx::query(
-        "INSERT INTO leaderboard_monthly (user_id, score, rank, month_start)
-         VALUES ($1, $2, $3, $4::date)
-         ON CONFLICT (user_id, month_start) DO NOTHING",
-    )
-    .bind(user_id)
-    .bind(score)
-    .bind(rank)
-    .bind(month_start)
-    .execute(pool)
-    .await
-    .expect("seed_monthly failed");
-}
 
 async fn cleanup(pool: &sqlx::PgPool, username: &str) {
     // FK cascade removes leaderboard rows; delete the user last.
@@ -218,8 +214,10 @@ async fn weekly_leaderboard_returns_rows() {
     let _guard = db_guard();
     let db = pool().await;
     let username = "lbtest_weekly_1";
-    let uid = seed_user(&db, username).await;
-    seed_weekly(&db, uid, 42, 1, "2026-08-03").await;
+    // Assert the score, not the rank: rank is derived from the ordering of
+    // every user with reputation > 0, so a hard-coded rank makes this a
+    // function of whatever else the shared test database happens to contain.
+    seed_user(&db, username, 42).await;
 
     let body = get_leaderboard("/api/leaderboard/curators/weekly").await;
     assert_eq!(body["err"], 0, "weekly err: {body}");
@@ -227,7 +225,7 @@ async fn weekly_leaderboard_returns_rows() {
     assert!(
         entries
             .iter()
-            .any(|e| e["username"] == username && e["score"] == 42 && e["rank"] == 1),
+            .any(|e| e["username"] == username && e["score"] == 42),
         "seeded user should appear in weekly leaderboard: {body}"
     );
 
@@ -241,8 +239,7 @@ async fn monthly_leaderboard_returns_rows() {
     let _guard = db_guard();
     let db = pool().await;
     let username = "lbtest_monthly_1";
-    let uid = seed_user(&db, username).await;
-    seed_monthly(&db, uid, 100, 2, "2026-08-01").await;
+    seed_user(&db, username, 100).await;
 
     let body = get_leaderboard("/api/leaderboard/curators/monthly").await;
     assert_eq!(body["err"], 0, "monthly err: {body}");
@@ -250,7 +247,7 @@ async fn monthly_leaderboard_returns_rows() {
     assert!(
         entries
             .iter()
-            .any(|e| e["username"] == username && e["score"] == 100 && e["rank"] == 2),
+            .any(|e| e["username"] == username && e["score"] == 100),
         "seeded user should appear in monthly leaderboard: {body}"
     );
 

@@ -1,4 +1,7 @@
 use axum::extract::FromRequestParts;
+use std::sync::Arc;
+
+use crate::server::AppState;
 use axum::http::request::Parts;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
@@ -273,13 +276,33 @@ pub fn auth_user_from_token(token: &str) -> Option<AuthUser> {
     auth_user_from_token_with_secret(token, &secret)
 }
 
+/// A state that can hand out the configured JWT secret.
+///
+/// `AppState` holds the secret the rest of the app verifies with; reading
+/// `JWT_SECRET` from the environment here instead made the extractor disagree
+/// with every other code path whenever the two differed. The test suites
+/// construct `AppState` with their own secret, so every `Authorization` header
+/// they minted was rejected here and the request fell through to
+/// `AuthUser::default()` -- i.e. anonymous, which surfaces as 401/403 at the
+/// gate rather than as the auth failure it was. `src/routes/download.rs` was
+/// already doing this correctly.
+pub trait ProvidesJwtSecret {
+    fn jwt_secret(&self) -> &str;
+}
+
+impl ProvidesJwtSecret for Arc<AppState> {
+    fn jwt_secret(&self) -> &str {
+        &self.jwt_secret
+    }
+}
+
 impl<S> FromRequestParts<S> for AuthUser
 where
-    S: Send + Sync,
+    S: ProvidesJwtSecret + Send + Sync,
 {
     type Rejection = ();
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         // Try to get the Authorization header
         let auth_header = parts
             .headers
@@ -288,7 +311,9 @@ where
 
         if let Some(header_val) = auth_header {
             if let Some(token) = header_val.strip_prefix("Bearer ") {
-                if let Some(user) = auth_user_from_token(token) {
+                if let Some(user) =
+                    auth_user_from_token_with_secret(token, state.jwt_secret())
+                {
                     return Ok(user);
                 }
             }

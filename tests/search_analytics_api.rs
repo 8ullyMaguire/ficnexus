@@ -9,6 +9,14 @@
 //!
 //! AppState construction is copied EXACTLY from tests/admin_api.rs.
 
+/// The single JWT secret for this suite. `app()` verifies with it and
+/// `auth_header` signs with it; they used to be two different literals in this
+/// file, so every admin request 403'd before reaching the handler. This is the
+/// second file in the repo with that defect after rss_api — a copy-paste
+/// artefact of hand-written `app()` constructors.
+/// See docs/specs/leaderboard-and-analytics-suites.md.
+const TEST_JWT_SECRET: &str = "fichub-test-secret";
+
 use axum::{
     Router,
     body::Body,
@@ -99,7 +107,7 @@ async fn app() -> Router {
         ollama: ollama_client,
         mailer: Box::new(fichub::services::mailer::MockMailer::new()),
         rt_manager: fichub::realtime::ConnectionManager::new(),
-        jwt_secret: "fichub-test-secret".into(),
+        jwt_secret: TEST_JWT_SECRET.into(),
         redis_client: None,
     });
 
@@ -130,8 +138,15 @@ async fn seed_admin_user(db: &sqlx::PgPool, username: &str, role: i16) -> i32 {
         .get(0)
 }
 
-fn auth_header(user_id: i32, username: &str, trust_level: i16) -> String {
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
+/// Bearer header for a user. `is_admin` is a parameter rather than a constant
+/// because `search_analytics_requires_role_10` asserts that a NON-admin is
+/// refused -- hard-coding `true` made that test assert nothing.
+///
+/// `/api/admin/*` gates on `require_admin_tier`, which reads the `is_admin`
+/// claim. `seed_admin_user` writes `role`/`trust_level` to the DB, but the claim
+/// has to carry the bit too, so both halves must be set or the request is
+/// refused before the handler runs.
+fn auth_header(user_id: i32, username: &str, trust_level: i16, is_admin: bool) -> String {
     let user = fichub::routes::auth::User {
         id: user_id,
         username: username.into(),
@@ -140,9 +155,10 @@ fn auth_header(user_id: i32, username: &str, trust_level: i16) -> String {
         email: None,
         level: 0,
         exp: 0,
-        is_admin: false,
+        is_admin,
     };
-    let token = fichub::routes::auth::create_token(&user, &secret).expect("token creation");
+    let token = fichub::routes::auth::create_token(&user, TEST_JWT_SECRET)
+        .expect("token creation");
     format!("Bearer {token}")
 }
 
@@ -186,7 +202,12 @@ async fn cleanup(db: &sqlx::PgPool, users: &[&str], query_prefixes: &[&str]) {
     }
 }
 
-/// /api/admin/search-analytics requires role >= 10.
+/// /api/admin/search-analytics refuses a non-admin.
+///
+/// The gate is `require_admin_tier`, which reads the `is_admin` CLAIM, not the
+/// `role` or `trust_level` columns. This test previously seeded `role = 5` and
+/// sent a token with `is_admin: false`; with the JWT secret also mismatched it
+/// could not have passed for the right reason.
 #[ignore]
 #[tokio::test]
 async fn search_analytics_requires_role_10() {
@@ -199,7 +220,7 @@ async fn search_analytics_requires_role_10() {
         .oneshot(
             Request::builder()
                 .uri("/api/admin/search-analytics")
-                .header("authorization", auth_header(low_role, "searchan_low", 5))
+                .header("authorization", auth_header(low_role, "searchan_low", 5, false))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -278,7 +299,7 @@ async fn search_analytics_returns_aggregates() {
         .oneshot(
             Request::builder()
                 .uri("/api/admin/search-analytics")
-                .header("authorization", auth_header(admin, "searchan_admin", 10))
+                .header("authorization", auth_header(admin, "searchan_admin", 10, true))
                 .body(Body::empty())
                 .unwrap(),
         )

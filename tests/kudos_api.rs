@@ -9,6 +9,19 @@
 //!   at the START so reruns never collide.
 //! * Requires migration 048 (kudos table) applied to the local database.
 
+/// The JWT secret every test router in this file is built with.
+///
+/// This used to be `std::env::var("JWT_SECRET").unwrap_or_else(|_|
+/// "fichub-dev-secret")` while `AppState` was built with a different literal
+/// ("fichub-test-secret"), so tokens minted here were signed with one secret
+/// and verified with the other. The `AuthUser` extractor used to read the
+/// environment rather than `state.jwt_secret`
+/// (`src/routes/auth.rs::ProvidesJwtSecret`), which masked the mismatch -- the
+/// env fallback happened to match the token helper. Fixing the extractor
+/// exposed every affected file at once, because the tests were relying on a
+/// product bug in order to pass.
+const TEST_JWT_SECRET: &str = "fichub-test-secret";
+
 use std::sync::{Mutex, OnceLock};
 
 use axum::{
@@ -105,7 +118,7 @@ async fn app() -> Router {
         ollama: ollama_client,
         mailer: Box::new(fichub::services::mailer::MockMailer::new()),
         rt_manager: fichub::realtime::ConnectionManager::new(),
-        jwt_secret: "fichub-test-secret".into(),
+        jwt_secret: TEST_JWT_SECRET.into(),
         redis_client: None,
     });
 
@@ -128,7 +141,7 @@ async fn app() -> Router {
 
 /// JWT for the given user id (real token, real JWT_SECRET from env).
 fn auth_header(user_id: i32) -> String {
-    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "fichub-dev-secret".into());
+    let secret = TEST_JWT_SECRET;
     let user = fichub::routes::auth::User {
         id: user_id,
         username: "kudos_test_user".into(),

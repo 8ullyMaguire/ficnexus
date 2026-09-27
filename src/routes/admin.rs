@@ -1148,6 +1148,8 @@ pub async fn admin_bot_unshadowban(
 ///   * zero_result_queries — top 50 queries that returned no results (search
 ///     quality blind spots), by frequency
 ///   * search_volume — queries per hour over the last 24h
+///   * trope_popularity — most-used "Character|Attribute" guided filters (7d)
+///   * conversion — searcher -> exporter funnel (7d)
 pub async fn admin_search_analytics(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
@@ -1175,6 +1177,30 @@ pub async fn admin_search_analytics(
            WHERE ts >= now() - interval '24 hours'
            GROUP BY date_trunc('hour', ts)
            ORDER BY hour ASC"#,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    // Guided-filter ("trope") popularity: the raw "Character|Attribute" string
+    // the caller sent, by frequency, over the last 7 days.
+    //
+    // This view was specified in tests/search_analytics_api.rs but never
+    // implemented -- the response had no such key, so the test failed on
+    // `None.unwrap()`. It depends on the search handler actually populating
+    // `main_char_attr` on the logged row, which it did not (it passed a literal
+    // `None`), so the column was dead in production too. Both halves are fixed
+    // together; see docs/specs/leaderboard-and-analytics-suites.md.
+    //
+    // Only non-null values are grouped, so ordinary text searches (which have
+    // no guided filter) do not appear as a `(none)` bucket.
+    let trope_popularity = sqlx::query_as::<_, (String, i64)>(
+        r#"SELECT main_char_attr, COUNT(*) AS cnt
+           FROM search_queries
+           WHERE main_char_attr IS NOT NULL
+             AND ts >= now() - interval '7 days'
+           GROUP BY main_char_attr
+           ORDER BY cnt DESC, main_char_attr ASC
+           LIMIT 50"#,
     )
     .fetch_all(&state.db)
     .await?;
@@ -1209,6 +1235,9 @@ pub async fn admin_search_analytics(
         })).collect::<Vec<_>>(),
         "search_volume": search_volume.into_iter().map(|(h, cnt)| json!({
             "hour": h, "count": cnt,
+        })).collect::<Vec<_>>(),
+        "trope_popularity": trope_popularity.into_iter().map(|(combo, cnt)| json!({
+            "main_char_attr": combo, "count": cnt,
         })).collect::<Vec<_>>(),
         "conversion": {
             "searchers_7d": conversion.0,
