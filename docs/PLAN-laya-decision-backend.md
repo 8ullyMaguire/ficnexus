@@ -37,22 +37,38 @@ replacement of the model behind a function that already exists.
 
 ---
 
-## 1. The seam already exists, twice over
+## 1. The seam, and a correction about it
 
-### 1a. `OllamaClient::generate` — the stringly-typed seam
+**Correction to an earlier draft of this plan.** I first described a `decide()` sibling on
+`OllamaClient`. Reading `src/services/ollama.rs` properly shows that would be wrong:
 
-`src/services/ollama.rs` is the only client. `classify_comment` calls `generate(prompt, model)` and
-gets prose back. A decision backend needs a sibling method, not a new client:
+* It hardcodes Ollama's native paths — `/api/embeddings` (line 59), `/api/generate` (line 91),
+  `/api/generate` for JSON (line 152) — by string interpolation onto `self.base_url`.
+* Its own module doc (lines 1-8) scopes it to *"Ollama runs on localhost:11434 … thin wrapper
+  avoids adding heavy Rust ML dependencies"*.
+
+The Laya Decision API is **`POST /v1/systemone` on a different server (Unsloth, port 8888)** with a
+different auth scheme. Retargeting `OllamaClient` at it would either break `embed()` (used by the
+Roadmap Consensus Engine) and `generate_json()`, or make a client named for one vendor speak to
+another. So this is a **new sibling client**, not a new method:
 
 ```
-    async fn decide(
-        &self, state: &str, questions: serde_json::Value, model: &str,
-    ) -> Result<DecisionAnswer, OllamaError>
+// src/services/decision.rs  — new file
+pub struct DecisionClient { base_url: String, api_key: Option<String>, http: reqwest::Client }
+impl DecisionClient {
+    pub async fn decide(&self, state: &str, questions: serde_json::Value)
+        -> Result<DecisionAnswer, OllamaError>;
+}
 ```
 
-posting to `POST {base}/v1/systemone` with `model`, `state`, `questions`.
+`DecisionAnswer` is a typed struct (`answer`, `probabilities`, `confidence`), which is what lets
+step 5 delete the prose parser. Reuse `OllamaError` rather than inventing a second error type —
+both are "a model was unreachable", and the callers already treat that as non-fatal.
 
-### 1b. `heal/agent.rs` — an existing LLM boundary with remote + local backends
+`OllamaClient` stays exactly as it is. The two clients talk to two different local servers and
+that is a real boundary, not an abstraction to be tidied away.
+
+### The second seam that already exists
 
 `src/heal/agent.rs` (254 lines) already abstracts "ask a model" with two backends and a
 capability probe:
@@ -66,10 +82,11 @@ capability probe:
 
 Routed at `src/routes/heal.rs:92-128` (`let agent_available = cfg.agent_enabled && agent::remote_configured(cfg)`).
 
-**So a third backend is a recognised shape in this codebase, not an invention.** A
-`decide_local(...)` sibling would follow `diagnose_local` exactly. Note that `diagnose_*` returns
-`String` and is genuinely a generation task — **do not** convert those to a decision model. The
-decision-model shape fits `comment_triage`, not `heal/agent.rs`.
+**So a third backend is a recognised shape in this codebase, not an invention.** But note the
+routing there is "remote or local", decided by whether a key is configured — a decision model is
+neither, so it needs its own path rather than a third arm on that `if`. And **`diagnose_*` returns
+`String` and is genuinely generative; do not convert those.** The decision-model shape fits
+`comment_triage` only.
 
 ---
 
@@ -79,8 +96,9 @@ Ordered so that each step is independently valuable and independently revertible
 
 | # | Step | Files | Reverts by |
 |---|---|---|---|
-| 1 | Add `decide()` to `OllamaClient`, returning a typed `DecisionAnswer { answer, probabilities, confidence }` | `src/services/ollama.rs` | deleting one method |
-| 2 | Feature-gate it: `AGENT_DECISION_MODEL` env, empty = off | `src/services/ollama.rs`, `Config` | unset the env |
+| 0 | **Verify Unsloth runs headless here.** GUI app on a headless box is an open question, and every step below is blocked on it | — | — |
+| 1 | New `DecisionClient` in its own file: `decide()` → typed `DecisionAnswer { answer, probabilities, confidence }`. Reuse `OllamaError` | **new** `src/services/decision.rs` | delete the file |
+| 2 | Feature-gate it: `DECISION_MODEL_BASE_URL` / `DECISION_MODEL` env, empty = off | `Config`, `decision.rs` | unset the env |
 | 3 | Port `classify_comment` to `decide()`, **behind the flag**, old path preserved | `src/services/comment_triage.rs` | unset the env |
 | 4 | Dual-run both, log disagreements + latency for N days | new | unset the env |
 | 5 | Only if disagreements are noise: delete `triage_prompt` and `parse_triage_response` | `src/services/comment_triage.rs` | git revert |
