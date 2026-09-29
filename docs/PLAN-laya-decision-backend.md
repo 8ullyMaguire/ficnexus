@@ -205,3 +205,36 @@ Deliberately excluded, with reasons:
 * [[Kev-4B — Use Cases Across the Local Projects]]
 * [[Local Ollama Coding Model — Multi-Machine Deployment]] — the measured speeds in §4
 * `30-Resources/laya-decision-model-repo-ledger.csv` — per-repo audit trail
+## Measured baseline — 2026-09-29
+
+**Unsloth is already running.** No install is required. On thinkcentre,
+`gravity-decision-provider.service` serves Unsloth Studio on `127.0.0.1:8888`; the API key is at
+`~/.unsloth/systemone.key` (mode 600 — read it in-process, never interpolate it into a command
+line or a log). Verified live: it returns the documented envelope exactly.
+
+Benchmarked on 12 hand-labelled comments against the real `triage_prompt` vocabulary:
+
+| | Top-1 | Latency |
+|---|---|---|
+| `laya-multilingual` | 4/12 (33%) | ~100 ms |
+| current baseline `llama3.1:8b` | 0/12 | errors out — **not installed** |
+
+Two findings that change the plan:
+
+1. **33% is a prompt defect, not a model limit.** Laya is 4/5 on unambiguous cases and 0/7 on
+   judgement calls, and its probabilities separate cleanly (mean p 0.805 correct / 0.176 wrong), so a
+   0.5 threshold acts at 100% precision and abstains otherwise. A `noul` control proved why: asked
+   whether a clearly-actionable comment gives specific feedback, it answered **0.003** while `choice`
+   in the same request said `toxic` at 0.46. It is reading the *category labels*, not the comment.
+   **So do not port `triage_prompt` as-is.** Decompose into independent booleans —
+   `actionable?` / `hostile?` / `promotional?` — and derive `TriageCategory` from them. That
+   decomposition is the first thing to build and measure.
+2. **The existing baseline is broken.** `llama3.1:8b` is not installed on any of the three hosts.
+   `classify_comment` logs at `debug` and returns `fallback()`, so every comment has been recorded as
+   `Fine` with no visible symptom. Fix this regardless of the Laya decision: either install the model,
+   or raise that log to `warn` and make the fallback visible in the UI.
+
+**On `confidence`:** the docs say twice to threshold on `probabilities`, and this benchmark shows
+why — a `choice` answer's `confidence` was 0.2187 while its top probability was 0.4565. Threshold the
+probability of the *specific* class, never the aggregate confidence.
+
