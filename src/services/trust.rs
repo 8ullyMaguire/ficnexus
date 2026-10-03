@@ -612,7 +612,6 @@ mod tests {
     }
 }
 
-
 /// Gate an administrator-tier route.
 ///
 /// Reads `AuthUser.trust_level` — the **JWT claim** — not the database column.
@@ -651,6 +650,26 @@ pub fn require_admin_tier(
         .ok_or_else(|| AppError::Unauthorized("login required".to_string()))?;
     if !auth.is_admin {
         return Err(AppError::Forbidden("Admin access required".to_string()));
+    }
+    Ok(uid)
+}
+
+/// Gate a curator-tier tool, returning the caller's user id.
+///
+/// Separate from [`require_admin_tier`] on purpose. Admin is the `is_admin` claim;
+/// curator is a rung on the trust ladder, and the two are different powers. Routing a
+/// curator check through the admin helper would hand curators the admin tier.
+///
+/// The threshold is [`CURATOR_MIN_TRUST`], not a literal. Two call sites hardcoded
+/// `trust_level < 5` while this constant says 3, so trust-level 3 and 4 users were
+/// refused curator tools they are entitled to. Constants, not literals, so the tier is
+/// stated once.
+pub fn require_curator(auth: &crate::routes::auth::AuthUser) -> Result<i32, AppError> {
+    let uid = auth
+        .user_id
+        .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
+    if auth.trust_level < CURATOR_MIN_TRUST {
+        return Err(AppError::Forbidden("Curator access required".to_string()));
     }
     Ok(uid)
 }

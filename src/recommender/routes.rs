@@ -537,9 +537,7 @@ pub async fn strategies_handler(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
 
     let enabled: std::collections::HashMap<String, f64> = state
         .strategy_registry
@@ -604,9 +602,7 @@ pub async fn train_handler(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    if user.trust_level < 5 {
-        return Err(AppError::Forbidden("Admin access required".into()));
-    }
+    crate::services::trust::require_admin_tier(&user, &state)?;
     let results = crate::recommender::worker::run_training_pipeline(
         &state.db,
         &state.config,
@@ -791,4 +787,3 @@ pub async fn taste_cluster_handler(
         "adjacent": adjacent,
     })))
 }
-

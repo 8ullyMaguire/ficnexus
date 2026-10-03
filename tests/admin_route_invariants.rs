@@ -36,7 +36,7 @@
 //! | `require_admin_tier` | `admin.rs` — the `is_admin` flag (canonical) |
 //! | `require_admin` | `backfill.rs` (`auth.level < 10`), `forum_privileges.rs` |
 //! | `require_mod` | `subsystems.rs`, `forum.rs` — trust >= 3, moderator |
-//! | `require_curator` | `curator_content.rs`, `tags/curator.rs` — trust >= 5 |
+//! | `require_curator` | `curator_content.rs`, `tags/curator.rs` — `CURATOR_MIN_TRUST` (3) |
 //! | `require_forum_category_admin` / `require_forum_moderator` | delegate to `require_admin_at_level` |
 //! | `require_trust_resolve` / `require_trust_queue` | `assert_staff_or_min_trust` |
 //! | inline `trust_level` | — |

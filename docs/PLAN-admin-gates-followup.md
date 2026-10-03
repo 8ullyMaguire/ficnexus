@@ -1,3 +1,85 @@
+# Admin/curator tier gates — the 37 count is wrong, and the real defect is a privilege bug
+
+Spec: `docs/specs/admin-tier-separation.md` (written 2026-09-26, before any code change)
+Status: **4 of 18 closed** (2026-10-03). The premise below was measured and found wrong.
+
+## Correction (2026-10-03): measured, not assumed
+
+This document said 37 inline gates in 16 files. Measured: **18** `trust_level < 5`
+sites, and **70** calls to `require_admin_tier` already in the tree. The 26 `admin.rs`
+copies it describes as outstanding were closed. So the count is stale by 19.
+
+More importantly, **the 18 are not interchangeable**, and converting all of them to
+`require_admin_tier` would have made two of them *worse*.
+
+### Why a blind conversion is a privilege escalation
+
+`require_admin_tier` reads `auth.is_admin`. `AuthUser` documents why that is a
+different thing from `trust_level`:
+
+    /// F7 trust level (0-6). Replaces legacy `role`.
+    pub trust_level: i16,
+    /// Administrator, from the token's `is_admin` claim. This is what
+    /// `trust::require_admin_tier` reads — not `trust_level`, which is bounded
+    /// to 0-6. See `docs/specs/admin-flag.md`.
+    pub is_admin: bool,
+
+`trust_level` is CHECK-constrained to 0-6, so `trust_level < 5` never meant "is an
+admin" — it means "has reached rung 5", a *mid-tier* user. Three constants already
+encode the tiers and the gates use none of them:
+
+| constant | value | for |
+|---|---|---|
+| `ADMIN_MIN_TRUST` | 5 | admin tools |
+| `RESOLVE_MIN_TRUST` | 5 | resolving disputes |
+| `CURATOR_MIN_TRUST` | **3** | curator tools |
+
+**`CURATOR_MIN_TRUST` was referenced nowhere outside its own definition.** Every
+curator gate hardcoded `5`. That was the live bug: trust levels 3 and 4 were refused
+curator tools they were entitled to.
+
+### Closed in this pass (4)
+
+- `src/recommender/routes.rs:540`, `:607` — pure admin gates, now `require_admin_tier`.
+- `src/tags/curator.rs:24`, `src/routes/curator_content.rs:29` — curator gates, now a
+  new `services::trust::require_curator` reading `CURATOR_MIN_TRUST`.
+
+The curator two are the ones the old plan would have converted to the **admin**
+helper, turning a too-strict check into a wrong-tier one.
+
+`tests/curator_tier_boundary.rs` (6 tests) pins the threshold, that the two tiers stay
+separate in both directions, and that no curator call site reintroduces a literal.
+Mutation-verified: restoring the literal `5` fails with *"trust level 3 is the stated
+curator minimum and must be admitted"*.
+
+### Still open (14), and why each keeps its own comparison
+
+Not gates — owner-or-staff, where a helper cannot express the second half (6):
+
+    forum_groups.rs:505   non-admins fall through to an owner lookup
+    extensions.rs:113     !is_public && author != uid && trust < 5
+    skins.rs:260          owner != uid && trust < 5
+    upload.rs:295,401     uploader-or-curator
+    reports.rs:484        reporter-or-staff
+
+Compound with a second threshold that conversion would drop (5):
+
+    forum.rs:221          require_admin_at_level: admin AND auth.level < min_level
+    forum.rs:1243         forum-scope bans
+    forum.rs:2629         marginalia, level-gated
+    forum_groups.rs:626   only admins may set role = owner
+    forum_groups.rs:662   same, on a different handler
+
+Not gates at all (2): `admin.rs:329` is the comment describing this bug;
+`services/trust.rs:360` is a SQL predicate selecting banned users.
+
+For the 5 compound sites the fix is not `require_admin_tier` but replacing the
+literal `5` with the right named constant, so the tier is stated once.
+
+---
+
+# Original plan (kept for the history; its count was wrong)
+
 # Replace the remaining 37 inline admin gates
 
 Spec: `docs/specs/admin-tier-separation.md` (written 2026-09-26, before any code change)
