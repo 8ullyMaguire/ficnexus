@@ -9,6 +9,7 @@ use crate::error::AppError;
 use crate::ingest::manual;
 use crate::routes::auth::AuthUser;
 use crate::routes::honeypot::{self, TrapVerdict};
+use crate::services::trust::CURATOR_MIN_TRUST;
 use crate::server::AppState;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -292,7 +293,11 @@ pub async fn handle_fic_update(
         .ok_or_else(|| AppError::NotFound("Work not found".into()))?;
 
     // Only allow if user is admin/curator (role >= 10) or the uploader
-    if user.trust_level < 5 && work.uploader_id != Some(user_id) {
+    // Uploader OR curator. The curator half used a hardcoded 5 while every other
+    // curator gate in the repo used CURATOR_MIN_TRUST (3), so trust levels 3 and 4
+    // were refused their own tools. Checked as a positive test rather than a
+    // negated one so the two allowed cases stay readable.
+    if work.uploader_id != Some(user_id) && user.trust_level < CURATOR_MIN_TRUST {
         return Err(AppError::Forbidden(
             "Only the uploader or a curator can update this fic".into(),
         ));
@@ -398,7 +403,11 @@ pub async fn handle_fic_delete(
         .ok_or_else(|| AppError::NotFound("Work not found".into()))?;
 
     // Only allow if user is admin/curator (role >= 10) or the uploader
-    if user.trust_level < 5 && work.uploader_id != Some(user_id) {
+    // Uploader OR curator. The curator half used a hardcoded 5 while every other
+    // curator gate in the repo used CURATOR_MIN_TRUST (3), so trust levels 3 and 4
+    // were refused their own tools. Checked as a positive test rather than a
+    // negated one so the two allowed cases stay readable.
+    if work.uploader_id != Some(user_id) && user.trust_level < CURATOR_MIN_TRUST {
         return Err(AppError::Forbidden(
             "Only the uploader or a curator can delete this fic".into(),
         ));

@@ -47,9 +47,12 @@ pub const PUBLISH_MIN_TRUST: i16 = 2;
 /// human layer).
 pub const RESOLVE_MIN_TRUST: i16 = 5;
 
-/// Minimum trust for admin tools (replaces legacy role >= 10).
-pub const ADMIN_MIN_TRUST: i16 = 5;
-
+// ADMIN_MIN_TRUST was removed here. It stated "minimum trust for admin tools" and
+// was referenced nowhere, because admin stopped being a rung on the trust ladder and
+// became the `is_admin` token claim -- see require_admin_tier below and
+// docs/specs/admin-flag.md. Keeping a constant named for a tier the design no longer
+// has is how the next person reintroduces a trust-based admin gate by accident.
+//
 /// Minimum trust for curator tools (replaces legacy role >= 5).
 pub const CURATOR_MIN_TRUST: i16 = 3;
 

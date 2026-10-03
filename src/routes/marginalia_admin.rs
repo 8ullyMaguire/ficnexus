@@ -44,9 +44,15 @@ pub async fn list(
     auth: AuthUser,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<Value>, AppError> {
+    // Message and gate disagreed: the text said "Level 5", the comparison said 3.
+    // Marginalia moderation is a staff surface -- see require_mod (trust >= 3) used
+    // by subsystems.rs and forum.rs for the same tier -- so 3 is the gate and the
+    // message was wrong. Message corrected rather than the gate raised, because
+    // nothing in the spec calls this admin-only and raising it would lock out the
+    // moderators the tier exists for.
     if auth.trust_level < 3 {
         return Err(AppError::Forbidden(
-            "Level 5 required to view marginalia admin list".to_string(),
+            "Moderator access required to view marginalia admin list".to_string(),
         ));
     }
 
