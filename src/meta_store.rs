@@ -11,8 +11,8 @@
 //!
 //! `META_DIR` defaults to `<body_cache_dir>/../meta` (the attached drive).
 
-use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 use crate::scrape::{ExtractedTag, FicMetadata};
@@ -148,12 +148,11 @@ pub fn read_pass(config: &Config, url_id: &str, version: i32) -> Option<MetaBlob
     serde_json::from_slice(&bytes).ok()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use crate::config::Config;
+    use chrono::Utc;
 
     #[test]
     fn write_then_read_roundtrip() {
@@ -213,4 +212,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&cfg.meta_dir);
     }
 }
-

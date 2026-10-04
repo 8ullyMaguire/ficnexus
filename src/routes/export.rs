@@ -15,7 +15,6 @@ use crate::scrape::FicMetadata;
 use crate::server::AppState;
 use crate::services::pow;
 
-
 // ── Reading time estimation ────────────────────────────────────────────────
 /// Minimum and maximum words-per-minute bounds for dialogue-aware estimation.
 /// Clamping prevents absurd estimates for very short or very long works.
@@ -49,7 +48,6 @@ pub fn estimate_reading_minutes(words: i64, body_text: &str) -> i64 {
     let minutes = (words as f64 / wpm).round() as i64;
     minutes.clamp(1, 999_999)
 }
-
 
 /// Query parameters for export requests
 #[derive(Debug, Deserialize)]
@@ -2087,11 +2085,13 @@ mod tests {
         assert!(!super::supported_convert_format("mobi;rm -rf /"));
     }
 
-
     #[test]
     fn reading_time_uses_dialogue_ratio() {
         // Pure narrative (0 quotes): 240 wpm → 10000 words = ~42 min.
-        let mins = super::estimate_reading_minutes(10_000, "A story with no dialogue whatsoever and just plain prose text.");
+        let mins = super::estimate_reading_minutes(
+            10_000,
+            "A story with no dialogue whatsoever and just plain prose text.",
+        );
         assert!((mins as f64 - 42.0).abs() < 1.0);
 
         // High dialogue (many quotes): ~300 wpm → same 10k words = ~33 min.
@@ -2099,7 +2099,10 @@ mod tests {
         // so WPM = 300 and 10k words = 33 min vs 42 min for narrative.
         let dialogue = "\"He said.\" \"She replied.\" ".repeat(500);
         let mins_dialogue = super::estimate_reading_minutes(10_000, &dialogue);
-        assert!(mins_dialogue < mins, "dialogue-heavy text should estimate fewer minutes");
+        assert!(
+            mins_dialogue < mins,
+            "dialogue-heavy text should estimate fewer minutes"
+        );
     }
 
     #[test]

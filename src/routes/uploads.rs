@@ -66,16 +66,20 @@ fn classify_image(bytes: &[u8]) -> Option<(&str, &str)> {
     if bytes.len() >= 8 && bytes[..8] == PNG_MAGIC {
         return Some(("image/png", "png"));
     }
-    if bytes.len() >= 2 && bytes[0] == 0xff && bytes[1] == 0xd8
-        && bytes[bytes.len() - 2] == 0xff && bytes[bytes.len() - 1] == 0xd9 {
+    if bytes.len() >= 2
+        && bytes[0] == 0xff
+        && bytes[1] == 0xd8
+        && bytes[bytes.len() - 2] == 0xff
+        && bytes[bytes.len() - 1] == 0xd9
+    {
         return Some(("image/jpeg", "jpg"));
     }
-    if bytes.len() >= 12 && starts_with(&bytes[..4], "RIFF")
-        && starts_with(&bytes[8..12], "WEBP") {
+    if bytes.len() >= 12 && starts_with(&bytes[..4], "RIFF") && starts_with(&bytes[8..12], "WEBP") {
         return Some(("image/webp", "webp"));
     }
     if bytes.len() >= 6
-        && (starts_with(&bytes[..6], "GIF87a") || starts_with(&bytes[..6], "GIF89a")) {
+        && (starts_with(&bytes[..6], "GIF87a") || starts_with(&bytes[..6], "GIF89a"))
+    {
         return Some(("image/gif", "gif"));
     }
     None
@@ -120,17 +124,29 @@ fn parse_dimensions(kind: &str, bytes: &[u8]) -> Option<(i32, i32)> {
         "png" if bytes.len() >= 24 => {
             let w = read_be(bytes, 16, 4);
             let h = read_be(bytes, 20, 4);
-            if w > 0 && h > 0 { Some((w as i32, h as i32)) } else { None }
+            if w > 0 && h > 0 {
+                Some((w as i32, h as i32))
+            } else {
+                None
+            }
         }
         "webp" => {
             if bytes.len() >= 30 && starts_with(&bytes[12..16], "VP8 ") {
                 let w = ((bytes[26] as i64 & 0x3f) << 8 | bytes[24] as i64) as i64;
                 let h = ((bytes[28] as i64 & 0x3f) << 8 | bytes[26] as i64) as i64;
-                if w > 0 && h > 0 { Some((w as i32, h as i32)) } else { None }
+                if w > 0 && h > 0 {
+                    Some((w as i32, h as i32))
+                } else {
+                    None
+                }
             } else if bytes.len() >= 34 && starts_with(&bytes[12..16], "VP8L") {
                 let w = read_le(bytes, 21, 2) + 1;
                 let h = read_le(bytes, 23, 2) + 1;
-                if w > 0 && h > 0 { Some((w as i32, h as i32)) } else { None }
+                if w > 0 && h > 0 {
+                    Some((w as i32, h as i32))
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -138,25 +154,40 @@ fn parse_dimensions(kind: &str, bytes: &[u8]) -> Option<(i32, i32)> {
         "gif" if bytes.len() >= 10 => {
             let w = read_le(bytes, 6, 2);
             let h = read_le(bytes, 8, 2);
-            if w > 0 && h > 0 { Some((w as i32, h as i32)) } else { None }
+            if w > 0 && h > 0 {
+                Some((w as i32, h as i32))
+            } else {
+                None
+            }
         }
         "jpg" => {
             let mut i: usize = 2;
             while i + 4 <= bytes.len() {
-                if bytes[i] != 0xff { i += 1; continue; }
+                if bytes[i] != 0xff {
+                    i += 1;
+                    continue;
+                }
                 let marker = bytes[i + 1];
                 if marker == 0xd8 || (marker >= 0xd0 && marker <= 0xd7) {
                     i += 2;
                     continue;
                 }
-                if i + 3 > bytes.len() { break; }
+                if i + 3 > bytes.len() {
+                    break;
+                }
                 let seg_len = read_be(bytes, i + 2, 2) as usize;
                 if marker == 0xc0 || marker == 0xc2 {
                     let h = read_be(bytes, i + 5, 2);
                     let w = read_be(bytes, i + 7, 2);
-                    return if w > 0 && h > 0 { Some((w as i32, h as i32)) } else { None };
+                    return if w > 0 && h > 0 {
+                        Some((w as i32, h as i32))
+                    } else {
+                        None
+                    };
                 }
-                if seg_len < 2 { break; }
+                if seg_len < 2 {
+                    break;
+                }
                 i += 2 + seg_len;
             }
             None
@@ -192,8 +223,13 @@ pub async fn upload_image(
     mut multipart: Multipart,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&user)?;
-    assert_min_trust(&state.db, Some(user_id), PUBLISH_MIN_TRUST, "uploading images")
-        .await?;
+    assert_min_trust(
+        &state.db,
+        Some(user_id),
+        PUBLISH_MIN_TRUST,
+        "uploading images",
+    )
+    .await?;
 
     let mut original_name = String::from("upload");
     let mut data: Vec<u8> = Vec::new();
@@ -285,14 +321,24 @@ pub async fn serve_upload(
         _ => "",
     };
     let ok_name = !name.starts_with('.')
-        && !name.contains('/') && !name.contains("..")
-        && name.len() <= 96 && name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '.');
+        && !name.contains('/')
+        && !name.contains("..")
+        && name.len() <= 96
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '.');
     let ok_seg = yy.len() <= 4 && mm.len() <= 2;
     if kind.is_empty() || !ok_name || !ok_seg {
         return Json(json!({ "err": -1, "msg": "not found" })).into_response();
     }
-    let abs = state.config.cache_dir.join("uploads").join("forum")
-        .join(&yy).join(&mm).join(&name);
+    let abs = state
+        .config
+        .cache_dir
+        .join("uploads")
+        .join("forum")
+        .join(&yy)
+        .join(&mm)
+        .join(&name);
     if !abs.exists() {
         return Json(json!({ "err": -1, "msg": "not found" })).into_response();
     }
@@ -306,7 +352,8 @@ pub async fn serve_upload(
             ("Cache-Control", "public, max-age=31536000, immutable"),
         ],
         data,
-    ).into_response()
+    )
+        .into_response()
 }
 
 /// DELETE /api/uploads/{id} — owner or staff.
@@ -316,22 +363,27 @@ pub async fn delete_upload(
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
     let caller = require_user(&user)?;
-    let (owner_id, stored_path): (i32, String) = match sqlx::query_as(
-        "SELECT user_id, stored_path FROM forum_uploads WHERE id = $1",
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| AppError::Database(e.to_string()))? {
-        Some(r) => r,
-        None => return Err(AppError::NotFound("Upload not found".to_string())),
-    };
+    let (owner_id, stored_path): (i32, String) =
+        match sqlx::query_as("SELECT user_id, stored_path FROM forum_uploads WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?
+        {
+            Some(r) => r,
+            None => return Err(AppError::NotFound("Upload not found".to_string())),
+        };
 
     if owner_id != caller && !is_staff(&user) {
         return Err(AppError::Forbidden("Not your upload".to_string()));
     }
     // Best-effort file removal; the row is authoritative.
-    let abs = state.config.cache_dir.join("uploads").join("forum").join(&stored_path);
+    let abs = state
+        .config
+        .cache_dir
+        .join("uploads")
+        .join("forum")
+        .join(&stored_path);
     if abs.exists() {
         std::fs::remove_file(&abs).unwrap_or(());
     }
@@ -348,8 +400,14 @@ mod tests {
 
     fn png_with_dims(w: i64, h: i64) -> Vec<u8> {
         let mut p = [0u8; 24];
-        p[0] = 0x89; p[1] = b'P'; p[2] = b'N'; p[3] = b'G';
-        p[4] = 0x0d; p[5] = 0x0a; p[6] = 0x1a; p[7] = 0x0a;
+        p[0] = 0x89;
+        p[1] = b'P';
+        p[2] = b'N';
+        p[3] = b'G';
+        p[4] = 0x0d;
+        p[5] = 0x0a;
+        p[6] = 0x1a;
+        p[7] = 0x0a;
         for i in 8..15 {
             p[i] = 0;
         }
@@ -362,7 +420,10 @@ mod tests {
 
     #[test]
     fn classify_accepts_whitelisted_formats() {
-        assert_eq!(classify_image(&png_with_dims(10, 10)).map(|t| t.0), Some("image/png"));
+        assert_eq!(
+            classify_image(&png_with_dims(10, 10)).map(|t| t.0),
+            Some("image/png")
+        );
         let j = [0xff, 0xd8, 0xef, 0xbe, 0xff, 0xd9].to_vec();
         assert_eq!(classify_image(&j).map(|t| t.0), Some("image/jpeg"));
         let w = [b'R', b'I', b'F', b'F', 0, 0, 0, 0, b'W', b'E', b'B', b'P'].to_vec();
@@ -388,8 +449,10 @@ mod tests {
         for x in b"GIF89a" {
             g.push(*x);
         }
-        g.push(0x02); g.push(0x01); // width  0x0102 LE
-        g.push(0x04); g.push(0x03); // height 0x0304 LE
+        g.push(0x02);
+        g.push(0x01); // width  0x0102 LE
+        g.push(0x04);
+        g.push(0x03); // height 0x0304 LE
         assert_eq!(parse_dimensions("gif", &g), Some((0x0102, 0x0304)));
     }
 

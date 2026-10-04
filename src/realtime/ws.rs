@@ -1,7 +1,7 @@
 use axum::{
     extract::{
-        ws::{Message, WebSocket},
         Query, WebSocketUpgrade,
+        ws::{Message, WebSocket},
     },
     response::IntoResponse,
 };
@@ -94,8 +94,9 @@ async fn handle_socket(
     let (mut sender, mut receiver) = socket.split();
 
     // Shared subscriptions list for both send and recv tasks.
-    let subscriptions: Arc<RwLock<Vec<(Channel, tokio::sync::broadcast::Receiver<RealtimeMessage>)>>> =
-        Arc::new(RwLock::new(Vec::new()));
+    let subscriptions: Arc<
+        RwLock<Vec<(Channel, tokio::sync::broadcast::Receiver<RealtimeMessage>)>>,
+    > = Arc::new(RwLock::new(Vec::new()));
 
     // If authenticated, auto-subscribe to personal channel.
     if let Some(uid) = user_id {

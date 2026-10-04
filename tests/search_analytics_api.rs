@@ -157,8 +157,7 @@ fn auth_header(user_id: i32, username: &str, trust_level: i16, is_admin: bool) -
         exp: 0,
         is_admin,
     };
-    let token = fichub::routes::auth::create_token(&user, TEST_JWT_SECRET)
-        .expect("token creation");
+    let token = fichub::routes::auth::create_token(&user, TEST_JWT_SECRET).expect("token creation");
     format!("Bearer {token}")
 }
 
@@ -220,7 +219,10 @@ async fn search_analytics_requires_role_10() {
         .oneshot(
             Request::builder()
                 .uri("/api/admin/search-analytics")
-                .header("authorization", auth_header(low_role, "searchan_low", 5, false))
+                .header(
+                    "authorization",
+                    auth_header(low_role, "searchan_low", 5, false),
+                )
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -299,7 +301,10 @@ async fn search_analytics_returns_aggregates() {
         .oneshot(
             Request::builder()
                 .uri("/api/admin/search-analytics")
-                .header("authorization", auth_header(admin, "searchan_admin", 10, true))
+                .header(
+                    "authorization",
+                    auth_header(admin, "searchan_admin", 10, true),
+                )
                 .body(Body::empty())
                 .unwrap(),
         )

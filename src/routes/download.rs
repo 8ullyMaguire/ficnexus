@@ -3,8 +3,8 @@ use axum::{
     extract::{Query, State},
     http::{HeaderMap, StatusCode, header},
     response::{
-        sse::{Event, KeepAlive, Sse},
         IntoResponse,
+        sse::{Event, KeepAlive, Sse},
     },
 };
 use base64::Engine as _;
@@ -24,31 +24,49 @@ use crate::scrape::sites::ao3::Ao3Scraper;
 use crate::scrape::sites::xenforo::XenForoScraper;
 use crate::server::AppState;
 
-
 /// Result of a bulk-download bundle operation.
 /// - Single: 1 work × 1 format → stream directly (no ZIP overhead).
 /// - Bundle:  N works × M formats → ZIP with per-work subdirectories.
 pub enum DownloadBundle {
-    Single { data: Vec<u8>, filename: String, mime: &'static str },
-    Bundle { data: Vec<u8>, filename: String },
+    Single {
+        data: Vec<u8>,
+        filename: String,
+        mime: &'static str,
+    },
+    Bundle {
+        data: Vec<u8>,
+        filename: String,
+    },
 }
 
 impl DownloadBundle {
     pub fn into_response(self) -> (StatusCode, HeaderMap, Vec<u8>) {
         match self {
-            DownloadBundle::Single { data, filename, mime } => {
+            DownloadBundle::Single {
+                data,
+                filename,
+                mime,
+            } => {
                 let headers = HeaderMap::from_iter([
                     (header::CONTENT_TYPE, mime.parse().unwrap()),
-                    (header::CONTENT_DISPOSITION,
-                        format!("attachment; filename=\"{}\"", filename).parse().unwrap()),
+                    (
+                        header::CONTENT_DISPOSITION,
+                        format!("attachment; filename=\"{}\"", filename)
+                            .parse()
+                            .unwrap(),
+                    ),
                 ]);
                 (StatusCode::OK, headers, data)
             }
             DownloadBundle::Bundle { data, filename } => {
                 let headers = HeaderMap::from_iter([
                     (header::CONTENT_TYPE, "application/zip".parse().unwrap()),
-                    (header::CONTENT_DISPOSITION,
-                        format!("attachment; filename=\"{}\"", filename).parse().unwrap()),
+                    (
+                        header::CONTENT_DISPOSITION,
+                        format!("attachment; filename=\"{}\"", filename)
+                            .parse()
+                            .unwrap(),
+                    ),
                 ]);
                 (StatusCode::OK, headers, data)
             }
@@ -65,12 +83,30 @@ async fn export_one_format(
     format: &str,
 ) -> Option<(String, std::path::PathBuf)> {
     match format {
-        "epub" => export::epub::create_epub(meta, chapters, tmp_dir).await.ok().map(|(p, _)| ("epub".into(), p)),
-        "html" => export::html_bundle::create_html_bundle(meta, chapters, tmp_dir).await.ok().map(|(p, _)| ("html".into(), p)),
-        "txt"  => export::txt::create_txt(meta, chapters, tmp_dir).await.ok().map(|(p, _)| ("txt".into(), p)),
-        "md"   => export::md::create_md(meta, chapters, tmp_dir).await.ok().map(|(p, _)| ("md".into(), p)),
-        "docx" => export::docx::create_docx(meta, chapters, tmp_dir).await.ok().map(|(p, _)| ("docx".into(), p)),
-        "kepub" => export::kepub::create_kepub(meta, chapters, tmp_dir).await.ok().map(|(p, _)| ("kepub".into(), p)),
+        "epub" => export::epub::create_epub(meta, chapters, tmp_dir)
+            .await
+            .ok()
+            .map(|(p, _)| ("epub".into(), p)),
+        "html" => export::html_bundle::create_html_bundle(meta, chapters, tmp_dir)
+            .await
+            .ok()
+            .map(|(p, _)| ("html".into(), p)),
+        "txt" => export::txt::create_txt(meta, chapters, tmp_dir)
+            .await
+            .ok()
+            .map(|(p, _)| ("txt".into(), p)),
+        "md" => export::md::create_md(meta, chapters, tmp_dir)
+            .await
+            .ok()
+            .map(|(p, _)| ("md".into(), p)),
+        "docx" => export::docx::create_docx(meta, chapters, tmp_dir)
+            .await
+            .ok()
+            .map(|(p, _)| ("docx".into(), p)),
+        "kepub" => export::kepub::create_kepub(meta, chapters, tmp_dir)
+            .await
+            .ok()
+            .map(|(p, _)| ("kepub".into(), p)),
         "pdf" | "mobi" | "azw3" => {
             tracing::debug!("format {} requires Calibre, skipping", format);
             None
@@ -86,10 +122,20 @@ async fn export_one_format(
 fn safe_basename(title: &str, url_id: &str) -> String {
     let s: String = title
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let s: String = s.split_whitespace().collect::<Vec<_>>().join("_");
-    if s.is_empty() { format!("work_{}", url_id) } else { s }
+    if s.is_empty() {
+        format!("work_{}", url_id)
+    } else {
+        s
+    }
 }
 
 /// Query parameters for batch download requests
@@ -126,7 +172,11 @@ async fn create_bundle_from_works(
     formats: Vec<String>,
 ) -> Result<DownloadBundle, AppError> {
     let tmp_dir = state.config.tmp_dir.clone();
-    let formats = if formats.is_empty() { vec!["epub".into()] } else { formats };
+    let formats = if formats.is_empty() {
+        vec!["epub".into()]
+    } else {
+        formats
+    };
     let mut bundle_entries: Vec<(String, std::path::PathBuf)> = Vec::new();
 
     for work_url in work_urls {
@@ -160,12 +210,9 @@ async fn create_bundle_from_works(
             .await
             .map_err(|e| AppError::ScrapeError(format!("failed to scrape {work_url}: {e}")))?;
 
-        let chapters = scraper
-            .fetch_chapters(client, &meta)
-            .await
-            .map_err(|e| {
-                AppError::ScrapeError(format!("failed to fetch chapters for {}: {e}", meta.title))
-            })?;
+        let chapters = scraper.fetch_chapters(client, &meta).await.map_err(|e| {
+            AppError::ScrapeError(format!("failed to fetch chapters for {}: {e}", meta.title))
+        })?;
 
         // Export in each requested format.
         let safe_name = safe_basename(&meta.title, &meta.url_id);
@@ -194,15 +241,19 @@ async fn create_bundle_from_works(
             .map_err(|e| AppError::Internal(format!("failed to read file: {e}")))?;
         let _ = std::fs::remove_file(&path);
         let mime = match entry_name.rsplit('.').next().unwrap_or("") {
-            "epub"  => "application/epub+zip",
-            "html"  => "application/zip",
-            "txt"   => "text/plain",
-            "md"    => "text/markdown",
-            "docx"  => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "epub" => "application/epub+zip",
+            "html" => "application/zip",
+            "txt" => "text/plain",
+            "md" => "text/markdown",
+            "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "kepub" => "application/epub+zip",
-            _       => "application/octet-stream",
+            _ => "application/octet-stream",
         };
-        return Ok(DownloadBundle::Single { data, filename: entry_name, mime });
+        return Ok(DownloadBundle::Single {
+            data,
+            filename: entry_name,
+            mime,
+        });
     }
 
     // N works × M formats → ZIP with per-work subdirectories.
@@ -224,7 +275,8 @@ async fn create_bundle_from_works(
         })?;
     }
 
-    zip_writer.finish()
+    zip_writer
+        .finish()
         .map_err(|e| AppError::Internal(format!("failed to finalize ZIP: {e}")))?;
 
     // Clean up temp files.
@@ -237,7 +289,10 @@ async fn create_bundle_from_works(
     let _ = std::fs::remove_file(&zip_path);
 
     let zip_filename = format!("{}.zip", basename);
-    Ok(DownloadBundle::Bundle { data: zip_data, filename: zip_filename })
+    Ok(DownloadBundle::Bundle {
+        data: zip_data,
+        filename: zip_filename,
+    })
 }
 
 /// GET /api/download/author?url=<author_page_url>
@@ -524,10 +579,7 @@ pub async fn download_author_stream_handler(
                 break;
             }
 
-            let scraper = match state_clone
-                .scraper_registry
-                .find_specific_or_fff(work_url)
-            {
+            let scraper = match state_clone.scraper_registry.find_specific_or_fff(work_url) {
                 Some(s) => s,
                 None => continue,
             };
@@ -579,10 +631,7 @@ pub async fn download_author_stream_handler(
                 .await;
 
             // Fetch chapters
-            let chapters = match scraper
-                .fetch_chapters(client, &meta)
-                .await
-            {
+            let chapters = match scraper.fetch_chapters(client, &meta).await {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::warn!("Skipping chapters for {}: {e}", meta.title);
@@ -593,7 +642,8 @@ pub async fn download_author_stream_handler(
             // Export in each format
             let safe_name = safe_basename(&meta.title, &meta.url_id);
             for fmt in &formats {
-                if let Some((ext, path)) = export_one_format(&meta, &chapters, &tmp_dir, fmt).await {
+                if let Some((ext, path)) = export_one_format(&meta, &chapters, &tmp_dir, fmt).await
+                {
                     let entry_name = if formats.len() == 1 && work_urls.len() == 1 {
                         format!("{safe_name}.{ext}")
                     } else {
@@ -654,8 +704,7 @@ pub async fn download_author_stream_handler(
             let zip_file = match std::fs::File::create(&zip_path) {
                 Ok(f) => f,
                 Err(e) => {
-                    let _ =
-                        send_error(&tx_clone, &format!("Failed to create ZIP: {e}")).await;
+                    let _ = send_error(&tx_clone, &format!("Failed to create ZIP: {e}")).await;
                     return;
                 }
             };
@@ -681,8 +730,7 @@ pub async fn download_author_stream_handler(
             let zip_data = match std::fs::read(&zip_path) {
                 Ok(d) => d,
                 Err(e) => {
-                    let _ =
-                        send_error(&tx_clone, &format!("Failed to read ZIP: {e}")).await;
+                    let _ = send_error(&tx_clone, &format!("Failed to read ZIP: {e}")).await;
                     return;
                 }
             };
@@ -729,9 +777,8 @@ pub async fn download_author_stream_handler(
     // FIX 3 (busy-loop Stream): ReceiverStream parks the task on the channel
     // instead of wake_by_ref() spinning. The stream ends when the sender
     // (tx_clone, moved into the task) is dropped.
-    let stream = ReceiverStream::new(rx).map(|evt: ProgressEvent| {
-        Ok(Event::default().event(evt.event_type).data(evt.data))
-    });
+    let stream = ReceiverStream::new(rx)
+        .map(|evt: ProgressEvent| Ok(Event::default().event(evt.event_type).data(evt.data)));
     // Keep the original sender alive until the task finishes: dropping `tx`
     // here would close the channel early only if the task's clone were also
     // gone — the task holds tx_clone, so this just releases our handle.
@@ -751,8 +798,7 @@ async fn send_error(
 ) -> Result<(), tokio::sync::mpsc::error::SendError<ProgressEvent>> {
     tx.send(ProgressEvent {
         event_type: "error",
-        data: serde_json::to_string(&serde_json::json!({ "message": msg }))
-            .unwrap_or_default(),
+        data: serde_json::to_string(&serde_json::json!({ "message": msg })).unwrap_or_default(),
     })
     .await
 }

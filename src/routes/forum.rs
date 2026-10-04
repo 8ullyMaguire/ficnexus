@@ -53,8 +53,11 @@ use crate::server::AppState;
 const DEFAULT_LIMIT: i64 = 25;
 const MAX_LIMIT: i64 = 100;
 
-/// FicNexus roles (migration 007): 0 reader, 5 curator, 10 admin.
-const MOD_ROLE: i16 = 5;
+// Roles were migration 007's trust proxy: 0 reader, 5 curator, 10 admin. Curator is no
+// longer a role at all -- it is trust level >= 50 (`CURATOR_MIN_TRUST`), the same shift
+// that turned admin into the `is_admin` token claim. Nothing reads role 5 any more, and
+// a constant still named for it invites reintroducing a role-based gate. See
+// src/services/trust.rs and docs/specs/admin-flag.md.
 
 // ── Request bodies ─────────────────────────────────────────────────────────
 
@@ -512,7 +515,9 @@ async fn check_flood(state: &AppState, auth: &AuthUser) -> Result<(), AppError> 
     .fetch_one(&state.db)
     .await?;
     if let Some(last_ts) = last {
-        let elapsed = chrono::Utc::now().signed_duration_since(last_ts).num_seconds();
+        let elapsed = chrono::Utc::now()
+            .signed_duration_since(last_ts)
+            .num_seconds();
         if elapsed < i64::from(delay) {
             return Err(AppError::BadRequest(format!(
                 "flood control: wait {}s before posting again",
@@ -624,9 +629,10 @@ pub async fn moderation_status(
     let can_queue = trust_level >= queue_min_trust(&state) || auth.trust_level >= 5;
     let can_resolve = trust_level >= resolve_min_trust(&state) || auth.trust_level >= 5;
     let (used, cap) = daily_mod_usage(&state, user_id).await?;
-    let day_end = Utc::now().date_naive().and_hms_opt(23, 59, 59).map(|t| {
-        chrono::DateTime::<Utc>::from_naive_utc_and_offset(t, Utc).to_rfc3339()
-    });
+    let day_end = Utc::now()
+        .date_naive()
+        .and_hms_opt(23, 59, 59)
+        .map(|t| chrono::DateTime::<Utc>::from_naive_utc_and_offset(t, Utc).to_rfc3339());
     Ok(Json(json!({
         "err": 0,
         "trust_level": trust_level,
@@ -820,10 +826,14 @@ pub async fn moderate_batch(
 
     let post_ids = &body.post_ids;
     if post_ids.is_empty() {
-        return Err(AppError::BadRequest("post_ids must not be empty".to_string()));
+        return Err(AppError::BadRequest(
+            "post_ids must not be empty".to_string(),
+        ));
     }
     if post_ids.len() > 50 {
-        return Err(AppError::BadRequest("cannot moderate more than 50 posts at once".to_string()));
+        return Err(AppError::BadRequest(
+            "cannot moderate more than 50 posts at once".to_string(),
+        ));
     }
 
     let mut results = Vec::new();
@@ -850,7 +860,9 @@ pub async fn moderate_batch(
             continue;
         }
         if mod_count >= 5 {
-            errors.push(json!({ "post_id": post_id, "error": "post has reached the moderation limit" }));
+            errors.push(
+                json!({ "post_id": post_id, "error": "post has reached the moderation limit" }),
+            );
             continue;
         }
         if already_modded(&state.db, *post_id, user_id).await? {
@@ -921,11 +933,11 @@ pub async fn moderate_batch(
 
         if delta > 0 {
             let _ = crate::services::leveling::award_mod_received_exp(
-            &state.db,
-            author_id,
-            state.config.forum_exp_mod_received,
-        )
-        .await;
+                &state.db,
+                author_id,
+                state.config.forum_exp_mod_received,
+            )
+            .await;
         }
 
         results.push(json!({ "post_id": post_id, "score_after": score_after }));
@@ -2535,22 +2547,27 @@ pub async fn topic_detail(
         let unread = last_post_id
             .map(|lp| lp > last_read.unwrap_or(0))
             .unwrap_or(false);
-                resp["unread"] = json!(unread);
+        resp["unread"] = json!(unread);
         resp["last_read_post_id"] = json!(last_read);
     }
 
     // Attach the poll attached to this topic (if any), so the frontend can
     // render a PollBar inline in the OP without a second request.
-    let poll_row: Option<(i64, String, i32, bool, Option<chrono::DateTime<chrono::Utc>>)> =
-        sqlx::query_as(
-            "SELECT id, question, max_selections, allow_change, close_at \
+    let poll_row: Option<(
+        i64,
+        String,
+        i32,
+        bool,
+        Option<chrono::DateTime<chrono::Utc>>,
+    )> = sqlx::query_as(
+        "SELECT id, question, max_selections, allow_change, close_at \
              FROM forum_polls WHERE topic_id = $1",
-        )
-        .bind(topic_id)
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten();
+    )
+    .bind(topic_id)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
     if let Some((poll_id, question, max_selections, allow_change, close_at)) = poll_row {
         let options: Vec<(i64, String, i32, i64)> = sqlx::query_as(
             "SELECT id, text, position, vote_count \
@@ -2568,9 +2585,17 @@ pub async fn topic_detail(
             max_selections,
             allow_change,
             close_at,
-            options.into_iter().map(|(oid, text, position, vc)| crate::routes::forum_polls::PollOption {
-                id: oid, text, position, vote_count: vc,
-            }).collect(),
+            options
+                .into_iter()
+                .map(
+                    |(oid, text, position, vc)| crate::routes::forum_polls::PollOption {
+                        id: oid,
+                        text,
+                        position,
+                        vote_count: vc,
+                    },
+                )
+                .collect(),
             None,
         );
     }
@@ -2819,7 +2844,13 @@ pub async fn create_topic(
         }
     }
 
-    let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 2, "forum_post_create").await;
+    let _ = crate::db::queries::update_reputation_and_promote(
+        &state.db,
+        user_id,
+        2,
+        "forum_post_create",
+    )
+    .await;
 
     Ok(Json(json!({
         "err": 0,
@@ -3106,7 +3137,13 @@ pub async fn create_post(
     )
     .await;
 
-    let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 2, "forum_post_create").await;
+    let _ = crate::db::queries::update_reputation_and_promote(
+        &state.db,
+        user_id,
+        2,
+        "forum_post_create",
+    )
+    .await;
 
     // Check for newly unlocked achievements (best-effort)
     let _ = crate::services::achievements::check_and_unlock_achievements(
@@ -3820,7 +3857,13 @@ pub async fn react_to_post(
     // Award XP for reaction (upvote equivalent) only on 0→1 transitions,
     // not on toggle cycles (un-react/re-react). This prevents XP farming.
     if is_new_reaction {
-        let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 5, "post_reacted").await;
+        let _ = crate::db::queries::update_reputation_and_promote(
+            &state.db,
+            user_id,
+            5,
+            "post_reacted",
+        )
+        .await;
 
         // Check for newly unlocked achievements (best-effort)
         let _ = crate::services::achievements::check_and_unlock_achievements(
@@ -3984,14 +4027,23 @@ pub async fn user_profile(
     .await?
     .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
 
-    let (id, username, trust, reputation, created_at, last_active_at, total_words_read, total_works_read) = row;
+    let (
+        id,
+        username,
+        trust,
+        reputation,
+        created_at,
+        last_active_at,
+        total_words_read,
+        total_works_read,
+    ) = row;
 
-        Ok(axum::Json(serde_json::json!({
+    Ok(axum::Json(serde_json::json!({
         "err": 0,
         "data": {
             "id": id,
             "username": username,
-            
+
             "trust": trust,
             "reputation": reputation,
             "created_at": created_at,
@@ -4009,16 +4061,14 @@ pub async fn user_xp_history(
     axum::extract::Path(user_id): axum::extract::Path<i32>,
 ) -> Result<axum::Json<serde_json::Value>, AppError> {
     // Get current XP info
-    let user = sqlx::query_as::<_, (i16, i64)>(
-        "SELECT trust, reputation FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
+    let user = sqlx::query_as::<_, (i16, i64)>("SELECT trust, reputation FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
 
     let (trust, reputation) = user;
-            let progress = 0;
+    let progress = 0;
 
     // Get recent XP events (last 20)
     let events = sqlx::query_as::<_, (String, i32, chrono::DateTime<chrono::Utc>)>(
@@ -4099,16 +4149,17 @@ pub async fn user_achievements(
 pub async fn widget_recent_topics(
     axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::server::AppState>>,
 ) -> Result<axum::Json<serde_json::Value>, AppError> {
-    let topics = sqlx::query_as::<_, (i64, String, String, i32, chrono::DateTime<chrono::Utc>, i64)>(
-        "SELECT t.id, t.title, c.slug as category_slug, t.author_id, t.created_at,
+    let topics =
+        sqlx::query_as::<_, (i64, String, String, i32, chrono::DateTime<chrono::Utc>, i64)>(
+            "SELECT t.id, t.title, c.slug as category_slug, t.author_id, t.created_at,
                 (SELECT COUNT(*) FROM forum_posts p WHERE p.topic_id = t.id) as reply_count
          FROM forum_topics t
          JOIN forum_categories c ON c.id = t.category_id
          WHERE t.scheduled_at IS NULL AND t.deleted_at IS NULL AND t.is_hidden = false
          ORDER BY t.created_at DESC LIMIT 5",
-    )
-    .fetch_all(&state.db)
-    .await?;
+        )
+        .fetch_all(&state.db)
+        .await?;
 
     Ok(axum::Json(serde_json::json!({
         "topics": topics.into_iter().map(|(id, title, category_slug, author_id, created_at, reply_count)| {
@@ -4169,11 +4220,10 @@ pub async fn widget_stats(
     .fetch_one(&state.db)
     .await?;
 
-    let (total_users,) = sqlx::query_as::<_, (i64,)>(
-        "SELECT COUNT(*) FROM users WHERE is_banned = false",
-    )
-    .fetch_one(&state.db)
-    .await?;
+    let (total_users,) =
+        sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM users WHERE is_banned = false")
+            .fetch_one(&state.db)
+            .await?;
 
     let newest_user = sqlx::query_as::<_, (String, chrono::DateTime<chrono::Utc>)>(
         "SELECT username, created_at FROM users ORDER BY created_at DESC LIMIT 1",
@@ -4192,4 +4242,3 @@ pub async fn widget_stats(
 }
 
 // ── Phase 8d: Additional XP awards ─────────────────────────────────────────
-

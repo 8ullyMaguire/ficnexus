@@ -41,7 +41,18 @@ pub async fn candidate_pairs(
     // `fic_info(id)`, NOT `works(id)`, so every join here goes through
     // `fic_info`. Titles live there too, and `fic_info.work_id` bridges to the
     // `works.id` that the merge path needs.
-    let rows = sqlx::query_as::<_, (String, String, Option<i32>, String, String, Option<i32>, f64)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            Option<i32>,
+            String,
+            String,
+            Option<i32>,
+            f64,
+        ),
+    >(
         r#"SELECT
             a.work_id                        AS source_url_id,
             fa.title                         AS source_title,
@@ -125,8 +136,7 @@ pub async fn run_dedupe(
     for c in &candidates {
         // `fic_info.work_id` is nullable; the query filters those rows out, so
         // this only trips if that filter is ever weakened.
-        let (Some(source_work_id), Some(target_work_id)) =
-            (c.source_work_id, c.target_work_id)
+        let (Some(source_work_id), Some(target_work_id)) = (c.source_work_id, c.target_work_id)
         else {
             tracing::debug!(
                 "embedding dedupe: skipping unlinked pair {} / {}",

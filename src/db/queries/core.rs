@@ -1,9 +1,8 @@
-use crate::db::models::*;
 use super::SiteCredRow;
+use crate::db::models::*;
 use crate::error::AppResult;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
-
 
 /// Upsert a user's site credentials (encrypted password). Resets the
 /// 30-day expiry clock on re-save.

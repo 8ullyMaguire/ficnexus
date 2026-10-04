@@ -222,10 +222,12 @@ async fn cleanup(db: &sqlx::PgPool, users: &[&str], clusters: &[i32]) {
     // id-based deletes above still cover rows whose text was generated rather
     // than prefixed.
     for prefix in ["rmd\\_%", "consensus\\_%"] {
-        let _ = sqlx::query("DELETE FROM feature_clusters WHERE representative_text LIKE $1 ESCAPE '\\'")
-            .bind(prefix)
-            .execute(db)
-            .await;
+        let _ = sqlx::query(
+            "DELETE FROM feature_clusters WHERE representative_text LIKE $1 ESCAPE '\\'",
+        )
+        .bind(prefix)
+        .execute(db)
+        .await;
     }
     // Clean up any changelog entries created by tests
     let _ = sqlx::query("DELETE FROM roadmap_changelog WHERE title LIKE 'rmd_%'")

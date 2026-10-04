@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use sqlx::{PgPool, Postgres, Transaction};
 
-use crate::schema::{ImportFile, ms_to_datetime, ms_to_optional_datetime};
+use crate::schema::{ms_to_datetime, ms_to_optional_datetime, ImportFile};
 
 /// Import statistics.
 #[derive(Debug, Default)]
@@ -52,7 +52,12 @@ async fn check_preconditions(tx: &mut Transaction<'_, Postgres>, force: bool) ->
 /// Run the full import wrapped in a single database transaction.
 /// If any phase fails, the entire import is rolled back.
 /// Pass `force: true` to skip the empty-database precondition check.
-pub async fn run_import(pool: &PgPool, data: &ImportFile, dry_run: bool, force: bool) -> Result<ImportStats> {
+pub async fn run_import(
+    pool: &PgPool,
+    data: &ImportFile,
+    dry_run: bool,
+    force: bool,
+) -> Result<ImportStats> {
     // Check preconditions before starting the transaction.
     // We use a separate brief transaction for this so the check sees
     // committed state (not our own uncommitted writes).
@@ -63,7 +68,10 @@ pub async fn run_import(pool: &PgPool, data: &ImportFile, dry_run: bool, force: 
         let mut stats = ImportStats::default();
         tracing::info!("[dry-run] Would import {} users...", data.users.len());
         stats.users_skipped = data.users.len() as u64;
-        tracing::info!("[dry-run] Would import {} categories...", data.categories.len());
+        tracing::info!(
+            "[dry-run] Would import {} categories...",
+            data.categories.len()
+        );
         stats.categories_skipped = data.categories.len() as u64;
         tracing::info!("[dry-run] Would import {} topics...", data.topics.len());
         stats.topics_skipped = data.topics.len() as u64;
@@ -152,7 +160,10 @@ pub async fn run_import(pool: &PgPool, data: &ImportFile, dry_run: bool, force: 
     // Phase 5: Notifications (one per unique user)
     let mut imported_users: Vec<i64> = data.users.iter().map(|u| u.uid).collect();
     imported_users.dedup();
-    tracing::info!("Creating import notifications for {} users...", imported_users.len());
+    tracing::info!(
+        "Creating import notifications for {} users...",
+        imported_users.len()
+    );
     for uid in &imported_users {
         match create_import_notification(&mut tx, *uid).await {
             Ok(()) => stats.notifications_created += 1,
@@ -167,14 +178,15 @@ pub async fn run_import(pool: &PgPool, data: &ImportFile, dry_run: bool, force: 
 }
 
 /// Import a single user. Returns true if inserted, false if skipped (duplicate).
-async fn import_user(tx: &mut Transaction<'_, Postgres>, user: &crate::schema::ImportUser) -> Result<bool> {
-    let row = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)",
-    )
-    .bind(user.uid)
-    .fetch_one(&mut **tx)
-    .await
-    .context("check user exists")?;
+async fn import_user(
+    tx: &mut Transaction<'_, Postgres>,
+    user: &crate::schema::ImportUser,
+) -> Result<bool> {
+    let row = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+        .bind(user.uid)
+        .fetch_one(&mut **tx)
+        .await
+        .context("check user exists")?;
 
     if row {
         return Ok(false);
@@ -205,7 +217,10 @@ async fn import_user(tx: &mut Transaction<'_, Postgres>, user: &crate::schema::I
 }
 
 /// Import a single category. Returns true if inserted, false if skipped.
-async fn import_category(tx: &mut Transaction<'_, Postgres>, cat: &crate::schema::ImportCategory) -> Result<bool> {
+async fn import_category(
+    tx: &mut Transaction<'_, Postgres>,
+    cat: &crate::schema::ImportCategory,
+) -> Result<bool> {
     let row = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM forum_categories WHERE id = $1)",
     )
@@ -218,9 +233,10 @@ async fn import_category(tx: &mut Transaction<'_, Postgres>, cat: &crate::schema
         return Ok(false);
     }
 
-    let slug = cat.slug.clone().unwrap_or_else(|| {
-        cat.name.to_lowercase().replace(' ', "-")
-    });
+    let slug = cat
+        .slug
+        .clone()
+        .unwrap_or_else(|| cat.name.to_lowercase().replace(' ', "-"));
     let position = cat.order.unwrap_or(0) as i32;
     let is_mod_only = cat.is_private.unwrap_or(0) != 0;
 
@@ -243,22 +259,23 @@ async fn import_category(tx: &mut Transaction<'_, Postgres>, cat: &crate::schema
 }
 
 /// Import a single topic. Returns true if inserted, false if skipped.
-async fn import_topic(tx: &mut Transaction<'_, Postgres>, topic: &crate::schema::ImportTopic) -> Result<bool> {
-    let row = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM forum_topics WHERE id = $1)",
-    )
-    .bind(topic.tid)
-    .fetch_one(&mut **tx)
-    .await
-    .context("check topic exists")?;
+async fn import_topic(
+    tx: &mut Transaction<'_, Postgres>,
+    topic: &crate::schema::ImportTopic,
+) -> Result<bool> {
+    let row =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM forum_topics WHERE id = $1)")
+            .bind(topic.tid)
+            .fetch_one(&mut **tx)
+            .await
+            .context("check topic exists")?;
 
     if row {
         return Ok(false);
     }
 
     let created_at = ms_to_datetime(topic.timestamp);
-    let last_activity = ms_to_optional_datetime(topic.lastposttimestamp)
-        .unwrap_or(created_at);
+    let last_activity = ms_to_optional_datetime(topic.lastposttimestamp).unwrap_or(created_at);
     let updated_at = ms_to_optional_datetime(topic.lastposttimestamp);
     let status = if topic.locked.unwrap_or(0) != 0 {
         "locked"
@@ -296,14 +313,16 @@ async fn import_topic(tx: &mut Transaction<'_, Postgres>, topic: &crate::schema:
 }
 
 /// Import a single post. Returns true if inserted, false if skipped.
-async fn import_post(tx: &mut Transaction<'_, Postgres>, post: &crate::schema::ImportPost) -> Result<bool> {
-    let row = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM forum_posts WHERE id = $1)",
-    )
-    .bind(post.pid)
-    .fetch_one(&mut **tx)
-    .await
-    .context("check post exists")?;
+async fn import_post(
+    tx: &mut Transaction<'_, Postgres>,
+    post: &crate::schema::ImportPost,
+) -> Result<bool> {
+    let row =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM forum_posts WHERE id = $1)")
+            .bind(post.pid)
+            .fetch_one(&mut **tx)
+            .await
+            .context("check post exists")?;
 
     if row {
         return Ok(false);
@@ -336,7 +355,10 @@ async fn import_post(tx: &mut Transaction<'_, Postgres>, post: &crate::schema::I
 }
 
 /// Create an import notification for a user. Uses `notifications` table (NOT `forum_notifications`).
-async fn create_import_notification(tx: &mut Transaction<'_, Postgres>, user_id: i64) -> Result<()> {
+async fn create_import_notification(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: i64,
+) -> Result<()> {
     sqlx::query(
         "INSERT INTO notifications (user_id, notification_type, title, body, link, is_read, created_at)
          VALUES ($1, 'forum_import', 'Forum Import Complete', 'Your NodeBB content has been imported.', '/forum', true, NOW())

@@ -140,12 +140,7 @@ fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
     auth_header_for(user_id, trust_level, username, false)
 }
 
-fn auth_header_for(
-    user_id: i32,
-    trust_level: i16,
-    username: &str,
-    is_admin: bool,
-) -> String {
+fn auth_header_for(user_id: i32, trust_level: i16, username: &str, is_admin: bool) -> String {
     let secret = TEST_JWT_SECRET;
     let user = fichub::routes::auth::User {
         id: user_id,
@@ -217,7 +212,10 @@ async fn middleware_records_view_and_action_events() {
             Request::builder()
                 .method("GET")
                 .uri("/api/admin/analytics")
-                .header("authorization", auth_header_for(admin, 6, "analtest_admin", true))
+                .header(
+                    "authorization",
+                    auth_header_for(admin, 6, "analtest_admin", true),
+                )
                 .body(Body::empty())
                 .unwrap(),
         )

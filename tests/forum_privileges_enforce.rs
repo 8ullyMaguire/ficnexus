@@ -200,7 +200,9 @@ async fn post_json(
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     let s = res.status();
-    let b = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
+    let b = axum::body::to_bytes(res.into_body(), 1 << 20)
+        .await
+        .unwrap();
     let v: Value = if b.is_empty() {
         Value::Null
     } else {
@@ -262,12 +264,11 @@ async fn cleanup(db: &sqlx::PgPool, cat_id: i64, uids: &[i32]) {
         .bind(cat_id)
         .execute(db)
         .await;
-    let topics: Vec<i64> =
-        sqlx::query_scalar("SELECT id FROM forum_topics WHERE category_id = $1")
-            .bind(cat_id)
-            .fetch_all(db)
-            .await
-            .unwrap_or_default();
+    let topics: Vec<i64> = sqlx::query_scalar("SELECT id FROM forum_topics WHERE category_id = $1")
+        .bind(cat_id)
+        .fetch_all(db)
+        .await
+        .unwrap_or_default();
     for t in topics {
         let _ = sqlx::query("DELETE FROM forum_posts WHERE topic_id = $1")
             .bind(t)
@@ -278,13 +279,12 @@ async fn cleanup(db: &sqlx::PgPool, cat_id: i64, uids: &[i32]) {
             .execute(db)
             .await;
     }
-    let groups: Vec<i64> = sqlx::query_scalar(
-        "SELECT DISTINCT group_id FROM forum_privileges WHERE category_id = $1",
-    )
-    .bind(cat_id)
-    .fetch_all(db)
-    .await
-    .unwrap_or_default();
+    let groups: Vec<i64> =
+        sqlx::query_scalar("SELECT DISTINCT group_id FROM forum_privileges WHERE category_id = $1")
+            .bind(cat_id)
+            .fetch_all(db)
+            .await
+            .unwrap_or_default();
     // Privilege rows already deleted above; find groups via members instead.
     let _ = groups;
     let _ = sqlx::query("DELETE FROM forum_categories WHERE id = $1")

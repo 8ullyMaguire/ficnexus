@@ -2,27 +2,27 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{ConnectInfo, State},
     http::HeaderMap,
-    Json,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
+use crate::db::queries::works::get_work_sources;
 use crate::error::AppError;
 use crate::limiter::{Tier, TieredRateLimitResult, client_ip_from_headers};
 use crate::search::builder::SearchParams;
-use crate::search::routes::{run_search, SearchFacets, SearchResponseEnvelope};
+use crate::search::routes::{SearchFacets, SearchResponseEnvelope, run_search};
 use crate::server::AppState;
-use crate::db::queries::works::get_work_sources;
 
 /// Parsed representation of a find-fic query.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ParsedFindQuery {
     pub title: Option<String>,
     pub author: Option<String>,
-    pub site: Option<String>,  // canonical site key, e.g. "spacebattles"
-    pub raw: String,           // original input for the /ask fallback
+    pub site: Option<String>, // canonical site key, e.g. "spacebattles"
+    pub raw: String,          // original input for the /ask fallback
 }
 
 /// Form input for POST /api/find-fic.
@@ -35,8 +35,12 @@ pub struct FindFicQuery {
     pub per_page: usize,
 }
 
-fn default_limit() -> usize { 5 }
-fn default_per_page() -> usize { 20 }
+fn default_limit() -> usize {
+    5
+}
+fn default_per_page() -> usize {
+    20
+}
 
 /// Resolve the caller's real IP from X-Forwarded-For with the peer address
 /// as fallback.
@@ -101,14 +105,9 @@ pub async fn find_fic(
 
     // Delegate to the shared helper (same logic used by the requests
     // auto-suggest feature).
-    let canonical_results: Vec<Value> = find_matches(
-        &state,
-        &parsed,
-        form.limit,
-        form.per_page,
-    )
-    .await
-    .unwrap_or_default();
+    let canonical_results: Vec<Value> = find_matches(&state, &parsed, form.limit, form.per_page)
+        .await
+        .unwrap_or_default();
 
     // If no results, try fuzzy suggestions
     let suggestions: Vec<Value> = if canonical_results.is_empty() && parsed.title.is_some() {
@@ -119,27 +118,33 @@ pub async fn find_fic(
             per_page: Some(5),
             ..Default::default()
         };
-        let fuzzy_envelope: SearchResponseEnvelope = run_search(&state, fuzzy_params).await.unwrap_or_else(|_| SearchResponseEnvelope {
-            total: 0,
-            page: 1,
-            per_page: 5,
-            results: Vec::new(),
-            facets: SearchFacets {
-                fandoms: Vec::new(),
-                characters: Vec::new(),
-                relationships: Vec::new(),
-                warnings: Vec::new(),
-                categories: Vec::new(),
-                freeforms: Vec::new(),
-                statuses: Vec::new(),
-            },
-        });
-        fuzzy_envelope.results.iter().map(|r| {
-            json!({
-                "title": r.title,
-                "author": r.author,
+        let fuzzy_envelope: SearchResponseEnvelope = run_search(&state, fuzzy_params)
+            .await
+            .unwrap_or_else(|_| SearchResponseEnvelope {
+                total: 0,
+                page: 1,
+                per_page: 5,
+                results: Vec::new(),
+                facets: SearchFacets {
+                    fandoms: Vec::new(),
+                    characters: Vec::new(),
+                    relationships: Vec::new(),
+                    warnings: Vec::new(),
+                    categories: Vec::new(),
+                    freeforms: Vec::new(),
+                    statuses: Vec::new(),
+                },
+            });
+        fuzzy_envelope
+            .results
+            .iter()
+            .map(|r| {
+                json!({
+                    "title": r.title,
+                    "author": r.author,
+                })
             })
-        }).collect()
+            .collect()
     } else {
         Vec::new()
     };
@@ -275,8 +280,14 @@ pub async fn suggest_fic(
     // If we have an author, boost results that match the author
     if !author.is_empty() {
         suggestions.sort_by(|a, b| {
-            let a_match = a["author"].as_str().unwrap_or("").eq_ignore_ascii_case(&author);
-            let b_match = b["author"].as_str().unwrap_or("").eq_ignore_ascii_case(&author);
+            let a_match = a["author"]
+                .as_str()
+                .unwrap_or("")
+                .eq_ignore_ascii_case(&author);
+            let b_match = b["author"]
+                .as_str()
+                .unwrap_or("")
+                .eq_ignore_ascii_case(&author);
             b_match.cmp(&a_match)
         });
     }
@@ -331,14 +342,14 @@ pub async fn find_matches(
     let mut canonical_results: Vec<serde_json::Value> = Vec::new();
 
     for result in &envelope.results {
-        let work_id: Option<i32> = sqlx::query_scalar(
-            "SELECT work_id FROM fic_info WHERE id = $1",
-        )
-        .bind(&result.url_id)
-        .fetch_optional(&state.db)
-        .await?;
+        let work_id: Option<i32> = sqlx::query_scalar("SELECT work_id FROM fic_info WHERE id = $1")
+            .bind(&result.url_id)
+            .fetch_optional(&state.db)
+            .await?;
         if let Some(wid) = work_id {
-            if seen_work_ids.contains(&wid) { continue; }
+            if seen_work_ids.contains(&wid) {
+                continue;
+            }
             seen_work_ids.insert(wid);
             let sources = get_work_sources(&state.db, wid)
                 .await
@@ -387,7 +398,9 @@ pub async fn similar_titles(
     let mut seen: std::collections::HashSet<i32> = std::collections::HashSet::new();
     let mut suggestions: Vec<serde_json::Value> = Vec::new();
     for (wid, t, a, sim, _wsim) in rows {
-        if seen.contains(&wid) { continue; }
+        if seen.contains(&wid) {
+            continue;
+        }
         seen.insert(wid);
         suggestions.push(json!({
             "work_id": wid,

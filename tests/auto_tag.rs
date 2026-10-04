@@ -45,10 +45,9 @@ async fn pool() -> sqlx::PgPool {
 /// tests cannot pass — that is a real environment requirement, not a test
 /// defect, and the runner has no skip mechanism for it.
 fn ollama() -> fichub::services::ollama::OllamaClient {
-    let url = std::env::var("OLLAMA_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-    let model = std::env::var("OLLAMA_EMBED_MODEL")
-        .unwrap_or_else(|_| "nomic-embed-text".to_string());
+    let url = std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+    let model =
+        std::env::var("OLLAMA_EMBED_MODEL").unwrap_or_else(|_| "nomic-embed-text".to_string());
     fichub::services::ollama::OllamaClient::new(url.into(), model.into(), reqwest::Client::new())
 }
 
@@ -100,10 +99,7 @@ async fn seed_tag(pool: &sqlx::PgPool, name: &str, type_id: i16) -> i32 {
 /// Embedding the *same* text `recommend_tags` embeds is the only way to get the
 /// similarity the test is about — similarity 1.0, identical vectors.
 async fn seed_tag_embedding(pool: &sqlx::PgPool, tag_id: i32, text: &str) {
-    let emb = ollama()
-        .embed(text)
-        .await
-        .expect("embed tag text");
+    let emb = ollama().embed(text).await.expect("embed tag text");
     assert_eq!(
         emb.len(),
         768,

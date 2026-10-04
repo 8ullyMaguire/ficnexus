@@ -24,8 +24,7 @@ const XENFORO_DOMAINS: &[&str] = &[
 /// QQ Creative Writing forum node IDs (used for author work discovery).
 const QQ_CW_NODES: &[&str] = &["19", "28", "29", "30"];
 
-const USER_AGENT: &str =
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
 
 impl XenForoScraper {
     fn extract_thread_id(url: &str) -> Option<String> {
@@ -84,10 +83,8 @@ impl XenForoScraper {
             .await
             .map_err(|e| ScrapeError::Network(e.to_string()))?;
 
-        let token_re =
-            regex_lite::Regex::new(r#"_xfToken.*?value="([^"]+)"#).map_err(|e| {
-                ScrapeError::Internal(format!("regex compile error: {e}"))
-            })?;
+        let token_re = regex_lite::Regex::new(r#"_xfToken.*?value="([^"]+)"#)
+            .map_err(|e| ScrapeError::Internal(format!("regex compile error: {e}")))?;
         let token = token_re
             .captures(&html)
             .and_then(|c| c.get(1))
@@ -129,9 +126,8 @@ impl XenForoScraper {
     ) -> Result<Vec<String>, ScrapeError> {
         let base = Self::base_url(profile_url)
             .ok_or_else(|| ScrapeError::ParseError("cannot extract base URL".into()))?;
-        let user_id =
-            Self::extract_user_id(profile_url)
-                .ok_or_else(|| ScrapeError::ParseError("cannot extract user ID".into()))?;
+        let user_id = Self::extract_user_id(profile_url)
+            .ok_or_else(|| ScrapeError::ParseError("cannot extract user ID".into()))?;
         let username = Self::extract_user_name(profile_url)
             .ok_or_else(|| ScrapeError::ParseError("cannot extract username".into()))?;
 
@@ -139,7 +135,8 @@ impl XenForoScraper {
         if let Some(cred) = creds.iter().find(|c| {
             base.contains(&c.domain)
                 || c.domain.contains(
-                    &base.split("://")
+                    &base
+                        .split("://")
                         .nth(1)
                         .unwrap_or("")
                         .split('/')
@@ -172,10 +169,7 @@ impl XenForoScraper {
 
         if base.contains("questionablequesting") {
             for node in QQ_CW_NODES {
-                body_parts.push(format!(
-                    "c[nodes][]={}",
-                    urlencoding::encode(node)
-                ));
+                body_parts.push(format!("c[nodes][]={}", urlencoding::encode(node)));
             }
         }
 
@@ -193,10 +187,8 @@ impl XenForoScraper {
         let search_url = search_resp.url().to_string();
 
         // Extract search ID from redirect URL
-        let sid_re =
-            regex_lite::Regex::new(r"/search/(\d+)/").map_err(|e| {
-                ScrapeError::Internal(format!("regex error: {e}"))
-            })?;
+        let sid_re = regex_lite::Regex::new(r"/search/(\d+)/")
+            .map_err(|e| ScrapeError::Internal(format!("regex error: {e}")))?;
         let sid = sid_re
             .captures(&search_url)
             .and_then(|c| c.get(1))

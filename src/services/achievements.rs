@@ -5,8 +5,8 @@
 
 use sqlx::PgPool;
 
-use crate::error::AppError;
 use crate::db::models::Feature;
+use crate::error::AppError;
 
 /// Check and unlock achievements for a user based on their current stats.
 /// Call this after reputation changes, post creation, reactions, etc.
@@ -35,53 +35,95 @@ pub async fn check_and_unlock_achievements(
     for slug in slugs {
         let should_unlock = match slug {
             "first_post" => {
-                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forum_posts WHERE author_id = $1")
-                    .bind(user_id).fetch_one(pool).await.unwrap_or(0);
+                let count: i64 =
+                    sqlx::query_scalar("SELECT COUNT(*) FROM forum_posts WHERE author_id = $1")
+                        .bind(user_id)
+                        .fetch_one(pool)
+                        .await
+                        .unwrap_or(0);
                 count >= 1
             }
             "forum_veteran" => {
-                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forum_posts WHERE author_id = $1")
-                    .bind(user_id).fetch_one(pool).await.unwrap_or(0);
+                let count: i64 =
+                    sqlx::query_scalar("SELECT COUNT(*) FROM forum_posts WHERE author_id = $1")
+                        .bind(user_id)
+                        .fetch_one(pool)
+                        .await
+                        .unwrap_or(0);
                 count >= 50
             }
             "topic_creator" => {
-                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forum_topics WHERE author_id = $1")
-                    .bind(user_id).fetch_one(pool).await.unwrap_or(0);
+                let count: i64 =
+                    sqlx::query_scalar("SELECT COUNT(*) FROM forum_topics WHERE author_id = $1")
+                        .bind(user_id)
+                        .fetch_one(pool)
+                        .await
+                        .unwrap_or(0);
                 count >= 10
             }
             "reaction_giver" => {
-                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forum_post_reactions WHERE user_id = $1")
-                    .bind(user_id).fetch_one(pool).await.unwrap_or(0);
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM forum_post_reactions WHERE user_id = $1",
+                )
+                .bind(user_id)
+                .fetch_one(pool)
+                .await
+                .unwrap_or(0);
                 count >= 25
             }
             "poll_master" => {
-                let count: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT topic_id) FROM forum_poll_votes WHERE user_id = $1")
-                    .bind(user_id).fetch_one(pool).await.unwrap_or(0);
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(DISTINCT topic_id) FROM forum_poll_votes WHERE user_id = $1",
+                )
+                .bind(user_id)
+                .fetch_one(pool)
+                .await
+                .unwrap_or(0);
                 count >= 10
             }
             "social_butterfly" => {
-                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE sender_id = $1")
-                    .bind(user_id).fetch_one(pool).await.unwrap_or(0);
+                let count: i64 =
+                    sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE sender_id = $1")
+                        .bind(user_id)
+                        .fetch_one(pool)
+                        .await
+                        .unwrap_or(0);
                 count >= 25
             }
             "mod_action" => {
-                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mod_log WHERE moderator_id = $1")
-                    .bind(user_id).fetch_one(pool).await.unwrap_or(0);
+                let count: i64 =
+                    sqlx::query_scalar("SELECT COUNT(*) FROM mod_log WHERE moderator_id = $1")
+                        .bind(user_id)
+                        .fetch_one(pool)
+                        .await
+                        .unwrap_or(0);
                 count >= 1
             }
             "loremaster" => {
-                let count: i64 = sqlx::query_scalar("SELECT total_works_read FROM users WHERE id = $1")
-                    .bind(user_id).fetch_one(pool).await.unwrap_or(0);
+                let count: i64 =
+                    sqlx::query_scalar("SELECT total_works_read FROM users WHERE id = $1")
+                        .bind(user_id)
+                        .fetch_one(pool)
+                        .await
+                        .unwrap_or(0);
                 count >= 100
             }
             "collector" => {
-                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bookmarks WHERE user_id = $1")
-                    .bind(user_id).fetch_one(pool).await.unwrap_or(0);
+                let count: i64 =
+                    sqlx::query_scalar("SELECT COUNT(*) FROM bookmarks WHERE user_id = $1")
+                        .bind(user_id)
+                        .fetch_one(pool)
+                        .await
+                        .unwrap_or(0);
                 count >= 50
             }
             "reviewer" => {
-                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM reviews WHERE user_id = $1")
-                    .bind(user_id).fetch_one(pool).await.unwrap_or(0);
+                let count: i64 =
+                    sqlx::query_scalar("SELECT COUNT(*) FROM reviews WHERE user_id = $1")
+                        .bind(user_id)
+                        .fetch_one(pool)
+                        .await
+                        .unwrap_or(0);
                 count >= 10
             }
             "rep_100" | "rep_500" | "rep_1000" | "rep_5000" => {
@@ -93,7 +135,10 @@ pub async fn check_and_unlock_achievements(
                     _ => 0,
                 };
                 let rep: i64 = sqlx::query_scalar("SELECT reputation FROM users WHERE id = $1")
-                    .bind(user_id).fetch_one(pool).await.unwrap_or(0);
+                    .bind(user_id)
+                    .fetch_one(pool)
+                    .await
+                    .unwrap_or(0);
                 rep >= target
             }
             _ => false,
@@ -141,13 +186,12 @@ pub async fn check_and_unlock_achievements(
 /// trust level. Returns the slugs of newly unlocked features.
 pub async fn recompute_unlocks(pool: &PgPool, user_id: i32) -> Result<Vec<String>, AppError> {
     // Fetch user's trust level
-    let user_row = sqlx::query_as::<_, (i16,)>(
-        "SELECT COALESCE(trust_level, 0) FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("User {user_id} not found")))?;
+    let user_row =
+        sqlx::query_as::<_, (i16,)>("SELECT COALESCE(trust_level, 0) FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("User {user_id} not found")))?;
 
     let user_trust = user_row.0;
     let mut newly_unlocked: Vec<String> = Vec::new();
@@ -199,11 +243,10 @@ pub async fn can_access(pool: &PgPool, user_id: i32, feature_slug: &str) -> Resu
     .await
     .map_err(|e| AppError::Database(format!("can_access query failed: {e}")))?;
 
-    let (user_trust, enabled, gate_type, gate_value, requires_feature) =
-        match row {
-            Some(r) => r,
-            None => return Ok(false), // Feature not found
-        };
+    let (user_trust, enabled, gate_type, gate_value, requires_feature) = match row {
+        Some(r) => r,
+        None => return Ok(false), // Feature not found
+    };
 
     // Check enabled
     if enabled != Some(true) {

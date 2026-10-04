@@ -699,7 +699,10 @@ async fn admin_creates_category_and_list_returns_it() {
         .iter()
         .find(|i| i["id"] == json!(bad_cid))
         .expect("normalised category in list");
-    assert_eq!(normalised["slug"], "bad-slug", "slug normalised on write: {b}");
+    assert_eq!(
+        normalised["slug"], "bad-slug",
+        "slug normalised on write: {b}"
+    );
 
     let mine = items
         .iter()
@@ -825,14 +828,12 @@ async fn topic_list_returns_seeded_topic_with_counts() {
     // reason that had nothing to do with the endpoint. The list query
     // aggregates `forum_post_reactions` (emoji reactions), so that is what a
     // "vote" has to be written as.
-    sqlx::query(
-        "INSERT INTO forum_post_reactions (post_id, user_id, emoji) VALUES ($1, $2, 'up')",
-    )
-    .bind(reply_id)
-    .bind(id2)
-    .execute(&db)
-    .await
-    .expect("seed reaction");
+    sqlx::query("INSERT INTO forum_post_reactions (post_id, user_id, emoji) VALUES ($1, $2, 'up')")
+        .bind(reply_id)
+        .bind(id2)
+        .execute(&db)
+        .await
+        .expect("seed reaction");
 
     let (s, b) = get_json(&app, "/api/forum/topics?category=frma-topics", Some(&token)).await;
     assert_eq!(s, StatusCode::OK, "topics: {b}");
@@ -1649,7 +1650,10 @@ async fn f3_edit_topic_author_any_time_and_mod_proposes() {
             .fetch_one(&db)
             .await
             .expect("topic row");
-    assert_eq!(title, "Renamed by author", "a proposal must not edit the topic");
+    assert_eq!(
+        title, "Renamed by author",
+        "a proposal must not edit the topic"
+    );
     assert_ne!(body, "Mod body", "a proposal must not edit the topic body");
 
     // Fresh topic: author body-only update is OK.
@@ -3522,7 +3526,6 @@ async fn trust_elder_queue_access_no_resolve() {
         .await
         .ok();
 }
-
 
 #[tokio::test]
 #[ignore]

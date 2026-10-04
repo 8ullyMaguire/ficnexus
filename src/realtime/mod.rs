@@ -1,11 +1,11 @@
-pub mod ws;
-pub mod sse;
 pub mod pubsub;
+pub mod sse;
+pub mod ws;
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast};
-use serde::{Deserialize, Serialize};
 
 /// A channel name like "topic:123" or "user:456".
 pub type Channel = String;

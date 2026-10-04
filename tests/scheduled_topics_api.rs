@@ -214,7 +214,9 @@ async fn req(
     };
     let res = app.clone().oneshot(req).await.unwrap();
     let s = res.status();
-    let b = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
+    let b = axum::body::to_bytes(res.into_body(), 1 << 20)
+        .await
+        .unwrap();
     let v: Value = if b.is_empty() {
         Value::Null
     } else {
@@ -526,10 +528,9 @@ async fn publish_scheduled_flips_and_notifies() {
     // query that could drift from the one cron actually runs -- and it never
     // notified the author, so the notification assertion below was checking a
     // row nothing in this test could ever have created.
-    let flipped =
-        fichub::db::queries::social::publish_due_topics(&db)
-            .await
-            .expect("publish due topics");
+    let flipped = fichub::db::queries::social::publish_due_topics(&db)
+        .await
+        .expect("publish due topics");
     assert!(
         flipped.iter().any(|t| t.id == topic_id),
         "topic must be in the flipped set"

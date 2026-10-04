@@ -466,14 +466,19 @@ pub async fn hide_comment_handler(
         .ok_or_else(|| AppError::Unauthorized("Login required".to_string()))?;
 
     // Check curator trust level
-    let trust_level: Option<i16> = sqlx::query_scalar("SELECT trust_level FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(&state.db)
-        .await?;
+    let trust_level: Option<i16> =
+        sqlx::query_scalar("SELECT trust_level FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.db)
+            .await?;
 
     match trust_level {
         Some(r) if r >= 3 => {} // Curator or above
-        _ => return Err(AppError::Forbidden("Curator trust level required".to_string())),
+        _ => {
+            return Err(AppError::Forbidden(
+                "Curator trust level required".to_string(),
+            ));
+        }
     }
 
     sqlx::query("UPDATE comments SET is_hidden = $2 WHERE id = $1")

@@ -46,8 +46,10 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     for e in entries.flatten() {
         let p = e.path();
         if p.is_dir() {
-            if !matches!(p.file_name().and_then(|n| n.to_str()),
-                         Some("target") | Some(".git")) {
+            if !matches!(
+                p.file_name().and_then(|n| n.to_str()),
+                Some("target") | Some(".git")
+            ) {
                 rust_files(&p, out);
             }
         } else if p.extension().and_then(|x| x.to_str()) == Some("rs") {
@@ -81,7 +83,12 @@ fn tier_constants() -> BTreeMap<String, i32> {
             if !name.ends_with("MIN_TRUST") && !name.ends_with("MAX_TRUST") {
                 continue;
             }
-            let raw = tail.rsplit('=').next().unwrap_or("").trim().trim_end_matches(';');
+            let raw = tail
+                .rsplit('=')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .trim_end_matches(';');
             if let Ok(v) = raw.parse::<i32>() {
                 out.insert(name.to_string(), v);
             }
@@ -107,11 +114,13 @@ fn tier_named_gates() -> Vec<(String, i32, String)> {
             if t.starts_with("//") {
                 continue;
             }
-            let Some(n) = t
-                .split("trust_level < ")
-                .nth(1)
-                .and_then(|r| r.chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok())
-            else {
+            let Some(n) = t.split("trust_level < ").nth(1).and_then(|r| {
+                r.chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<String>()
+                    .parse()
+                    .ok()
+            }) else {
                 continue;
             };
             // The message is in the next couple of lines.
@@ -119,11 +128,7 @@ fn tier_named_gates() -> Vec<(String, i32, String)> {
             if !msg.contains("Forbidden") {
                 continue;
             }
-            out.push((
-                format!("{}:{}", f.display(), i + 1),
-                n,
-                msg,
-            ));
+            out.push((format!("{}:{}", f.display(), i + 1), n, msg));
         }
     }
     out
@@ -251,4 +256,3 @@ fn declared_tier_constants_are_actually_referenced() {
         );
     }
 }
-

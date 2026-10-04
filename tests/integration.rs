@@ -121,7 +121,6 @@ mod db_tests {
             // file), so no search_path could redirect them.
             let schema = "public".to_string();
 
-
             TestDb { pool, schema }
         }
 

@@ -111,10 +111,10 @@ async fn app_with_mock(mailer: Arc<MockMailer>) -> Router {
         wayback: fichub::scrape::wayback::WaybackService::disabled(),
         ollama: ollama_client,
         mailer: Box::new(mailer.as_ref().clone_box()),
-            rt_manager: fichub::realtime::ConnectionManager::new(),
+        rt_manager: fichub::realtime::ConnectionManager::new(),
         jwt_secret: TEST_JWT_SECRET.into(),
         redis_client: None,
-});
+    });
 
     Router::new()
         .route(

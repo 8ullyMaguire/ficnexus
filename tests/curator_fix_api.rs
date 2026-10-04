@@ -55,10 +55,7 @@ async fn pool() -> sqlx::PgPool {
 /// root-only production default and finds nothing. Keeping it in one function
 /// means the two cannot drift apart again.
 fn test_body_dir() -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "fichub-curator-fix-test-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("fichub-curator-fix-test-{}", std::process::id()));
     // create_dir_all is idempotent, and must NOT be preceded by a wipe: the
     // readback in `fix_applies_after_quorum_of_other_curators` calls this after
     // the handler has already written the blob, and clearing here would delete
@@ -192,12 +189,7 @@ fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
     auth_header_for(user_id, trust_level, username, false)
 }
 
-fn auth_header_for(
-    user_id: i32,
-    trust_level: i16,
-    username: &str,
-    is_admin: bool,
-) -> String {
+fn auth_header_for(user_id: i32, trust_level: i16, username: &str, is_admin: bool) -> String {
     let secret = TEST_JWT_SECRET;
     let user = fichub::routes::auth::User {
         id: user_id,
@@ -262,7 +254,10 @@ async fn fix_applies_after_quorum_of_other_curators() {
                 .method("POST")
                 .uri("/api/curator/content/curatorfix_aaa1/propose")
                 .header("content-type", "application/json")
-                .header("authorization", auth_header_for(u1, 6, "curatorfix_admin1", true))
+                .header(
+                    "authorization",
+                    auth_header_for(u1, 6, "curatorfix_admin1", true),
+                )
                 .body(Body::from(
                     r#"{"body_html":"<p>correct body</p>","reason":"wrong scrape"}"#,
                 ))
@@ -285,7 +280,10 @@ async fn fix_applies_after_quorum_of_other_curators() {
                 .method("POST")
                 .uri(format!("/api/curator/content/proposals/{proposal_id}/vote"))
                 .header("content-type", "application/json")
-                .header("authorization", auth_header_for(u1, 6, "curatorfix_admin1", true))
+                .header(
+                    "authorization",
+                    auth_header_for(u1, 6, "curatorfix_admin1", true),
+                )
                 .body(Body::from(r#"{"vote":1}"#))
                 .unwrap(),
         )
@@ -313,7 +311,10 @@ async fn fix_applies_after_quorum_of_other_curators() {
                 .method("POST")
                 .uri(format!("/api/curator/content/proposals/{proposal_id}/vote"))
                 .header("content-type", "application/json")
-                .header("authorization", auth_header_for(u2, 6, "curatorfix_admin2", true))
+                .header(
+                    "authorization",
+                    auth_header_for(u2, 6, "curatorfix_admin2", true),
+                )
                 .body(Body::from(r#"{"vote":1}"#))
                 .unwrap(),
         )
@@ -333,7 +334,10 @@ async fn fix_applies_after_quorum_of_other_curators() {
                 .method("POST")
                 .uri(format!("/api/curator/content/proposals/{proposal_id}/vote"))
                 .header("content-type", "application/json")
-                .header("authorization", auth_header_for(u3, 6, "curatorfix_admin3", true))
+                .header(
+                    "authorization",
+                    auth_header_for(u3, 6, "curatorfix_admin3", true),
+                )
                 .body(Body::from(r#"{"vote":1}"#))
                 .unwrap(),
         )
@@ -377,7 +381,10 @@ async fn downvotes_reject_and_list_shows_status() {
                 .method("POST")
                 .uri("/api/curator/content/curatorfix_bbb1/propose")
                 .header("content-type", "application/json")
-                .header("authorization", auth_header_for(u1, 6, "curatorfix_r1", true))
+                .header(
+                    "authorization",
+                    auth_header_for(u1, 6, "curatorfix_r1", true),
+                )
                 .body(Body::from(
                     r#"{"body_html":"<p>bad body</p>","reason":"test"}"#,
                 ))
@@ -425,7 +432,10 @@ async fn downvotes_reject_and_list_shows_status() {
             Request::builder()
                 .method("GET")
                 .uri("/api/curator/content/proposals?status=rejected")
-                .header("authorization", auth_header_for(u2, 6, "curatorfix_r2", true))
+                .header(
+                    "authorization",
+                    auth_header_for(u2, 6, "curatorfix_r2", true),
+                )
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -502,7 +512,10 @@ async fn metadata_proposal_applies_after_quorum() {
                     "/api/curator/metadata/proposals/{proposal_id}/vote"
                 ))
                 .header("content-type", "application/json")
-                .header("authorization", auth_header_for(u2, 6, "meta_test_admin2", true))
+                .header(
+                    "authorization",
+                    auth_header_for(u2, 6, "meta_test_admin2", true),
+                )
                 .body(Body::from(r#"{"vote":1}"#))
                 .unwrap(),
         )
@@ -524,7 +537,10 @@ async fn metadata_proposal_applies_after_quorum() {
                     "/api/curator/metadata/proposals/{proposal_id}/vote"
                 ))
                 .header("content-type", "application/json")
-                .header("authorization", auth_header_for(u3, 6, "meta_test_admin3", true))
+                .header(
+                    "authorization",
+                    auth_header_for(u3, 6, "meta_test_admin3", true),
+                )
                 .body(Body::from(r#"{"vote":1}"#))
                 .unwrap(),
         )

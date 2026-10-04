@@ -131,25 +131,26 @@ async fn refresh_signals_tolerates_orphaned_bookmark() {
     // The load-bearing assertion. A "fix" that dropped every bookmark would
     // satisfy the call above and silently disable the recommender's primary
     // signal source, so check the resolving bookmark survived.
-    let count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM rec_user_signals WHERE work_id = 'sigtest_real'",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("count signals");
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM rec_user_signals WHERE work_id = 'sigtest_real'")
+            .fetch_one(&pool)
+            .await
+            .expect("count signals");
     assert_eq!(
         count, 1,
         "a bookmark whose url_id resolves must still produce a signal row"
     );
 
     // And the orphan must not have been inserted.
-    let orphan_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM rec_user_signals WHERE work_id = 'sigtest_gone'",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("count orphan signals");
-    assert_eq!(orphan_count, 0, "an unresolved url_id must not become a signal");
+    let orphan_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM rec_user_signals WHERE work_id = 'sigtest_gone'")
+            .fetch_one(&pool)
+            .await
+            .expect("count orphan signals");
+    assert_eq!(
+        orphan_count, 0,
+        "an unresolved url_id must not become a signal"
+    );
 
     cleanup(&pool).await;
 }

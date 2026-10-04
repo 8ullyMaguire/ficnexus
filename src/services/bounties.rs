@@ -10,7 +10,6 @@ use sqlx::PgPool;
 
 use crate::error::{AppError, AppResult};
 
-
 /// Minimum reputation a user needs to *create* a bounty (Contributor rank).
 pub const MIN_REP_FOR_BOUNTY: i32 = 50;
 

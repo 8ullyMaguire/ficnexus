@@ -53,7 +53,12 @@ pub async fn sitemap_index_handler(State(state): State<Arc<AppState>>) -> impl I
 
 /// One row: the url_id plus the last meaningful update timestamp.
 /// url_id, work_id, canonical_title, updated
-type SitemapRow = (String, Option<i32>, Option<String>, Option<chrono::DateTime<chrono::Utc>>);
+type SitemapRow = (
+    String,
+    Option<i32>,
+    Option<String>,
+    Option<chrono::DateTime<chrono::Utc>>,
+);
 
 fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;")
@@ -108,7 +113,9 @@ pub async fn sitemap_works_handler(
             .map(|(wid, title)| {
                 let cleaned: String = title
                     .chars()
-                    .filter(|c| c.is_ascii_alphanumeric() || c.is_whitespace() || matches!(c, '-' | '\''))
+                    .filter(|c| {
+                        c.is_ascii_alphanumeric() || c.is_whitespace() || matches!(c, '-' | '\'')
+                    })
                     .collect();
                 let slug = cleaned
                     .replace('\'', "")
@@ -120,7 +127,11 @@ pub async fn sitemap_works_handler(
                     .chars()
                     .take(60)
                     .collect::<String>();
-                let slug = if slug.is_empty() { "work".to_string() } else { slug };
+                let slug = if slug.is_empty() {
+                    "work".to_string()
+                } else {
+                    slug
+                };
                 format!("{}.{}", slug, wid)
             })
             .unwrap_or_else(|| url_id.clone());

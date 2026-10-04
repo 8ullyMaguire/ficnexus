@@ -9,8 +9,8 @@ use crate::error::AppError;
 use crate::ingest::manual;
 use crate::routes::auth::AuthUser;
 use crate::routes::honeypot::{self, TrapVerdict};
-use crate::services::trust::CURATOR_MIN_TRUST;
 use crate::server::AppState;
+use crate::services::trust::CURATOR_MIN_TRUST;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// POST /api/upload — Upload a new fic manually

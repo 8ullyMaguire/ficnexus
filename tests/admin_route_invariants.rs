@@ -156,7 +156,9 @@ fn admin_routes(server_src: &str) -> Vec<(String, String)> {
         // `, axum::routing::post(handler))`.
         let tail = &after[path_len..];
         let Some(paren) = tail.find('(') else { break };
-        let Some(close_rel) = tail[paren..].find(')') else { break };
+        let Some(close_rel) = tail[paren..].find(')') else {
+            break;
+        };
         let inside = tail[paren + 1..paren + close_rel].trim();
 
         // A handler is a `::`-separated identifier path. Anything else (a

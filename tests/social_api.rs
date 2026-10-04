@@ -1304,7 +1304,10 @@ async fn granular_notification_toggles_round_trip() {
     let (s, b) = get_json(&app, "/api/notifications/preferences", Some(&token)).await;
     assert_eq!(s, StatusCode::OK, "granular prefs re-get: {b}");
     for f in ["comments_on_work", "kudos_on_work", "mentions"] {
-        assert_eq!(b["preferences"][f], false, "{f} should have persisted FALSE: {b}");
+        assert_eq!(
+            b["preferences"][f], false,
+            "{f} should have persisted FALSE: {b}"
+        );
     }
     for f in ["replies_to_comments", "bookmarks_on_work", "follows"] {
         assert_eq!(
@@ -1324,7 +1327,11 @@ async fn granular_notification_toggles_round_trip() {
     .fetch_one(&db)
     .await
     .expect("read the persisted preference row");
-    assert_eq!(row, (false, true, false, true, true, false), "row on disk: {row:?}");
+    assert_eq!(
+        row,
+        (false, true, false, true, true, false),
+        "row on disk: {row:?}"
+    );
 
     cleanup(&db, &[u], &[]).await;
 }

@@ -206,7 +206,6 @@ async fn app() -> Router {
         .with_state(state)
 }
 
-
 /// R4 acceptance: log in through the real path and reach an admin route with
 /// the token the server issued.
 ///
@@ -247,7 +246,7 @@ async fn real_login_reaches_admin_route() {
         .unwrap()
         .as_millis()
         - 5_000)
-    .to_string();
+        .to_string();
     let (s, b) = send(
         &app,
         "POST",

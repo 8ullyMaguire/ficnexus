@@ -7,8 +7,8 @@ use axum::{
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use crate::error::AppError;
 use crate::db::models::Feature;
+use crate::error::AppError;
 use crate::routes::auth::AuthUser;
 use crate::server::AppState;
 

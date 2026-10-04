@@ -253,8 +253,7 @@ async fn fetch_sequential_next_up(db: &sqlx::PgPool, work_id: i32) -> Vec<serde_
     .await
     .unwrap_or_default();
 
-    rows
-        .into_iter()
+    rows.into_iter()
         .map(|(url_id, title, author, score)| {
             json!({
                 "url_id": url_id,

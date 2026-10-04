@@ -162,7 +162,8 @@ async fn app() -> Router {
     Router::new()
         .route(
             "/api/messages/rooms",
-            get(fichub::routes::messages::list_rooms).post(fichub::routes::messages::create_dm_room),
+            get(fichub::routes::messages::list_rooms)
+                .post(fichub::routes::messages::create_dm_room),
         )
         .route(
             "/api/messages/rooms/{roomId}/messages",
@@ -212,7 +213,9 @@ async fn req(
     };
     let res = app.clone().oneshot(req).await.unwrap();
     let s = res.status();
-    let b = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
+    let b = axum::body::to_bytes(res.into_body(), 1 << 20)
+        .await
+        .unwrap();
     let v: Value = if b.is_empty() {
         Value::Null
     } else {
@@ -396,7 +399,11 @@ async fn blocked_user_cannot_dm() {
         Some(&b_auth),
     )
     .await;
-    assert_eq!(s2, StatusCode::FORBIDDEN, "blocked send must 403, got: {e2}");
+    assert_eq!(
+        s2,
+        StatusCode::FORBIDDEN,
+        "blocked send must 403, got: {e2}"
+    );
 
     // No message row was stored.
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM forum_messages WHERE room_id = $1")

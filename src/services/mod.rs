@@ -1,3 +1,4 @@
+pub mod achievements;
 pub mod auto_tagger;
 pub mod bookmark_import;
 pub mod bounties;
@@ -15,4 +16,3 @@ pub mod recipes;
 pub mod search_mining;
 pub mod translation;
 pub mod trust;
-pub mod achievements;

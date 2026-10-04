@@ -355,8 +355,8 @@ pub struct Config {
     pub forum_post_delay_secs: i32,
     // ── F7 site-wide leveling (SPEC-COMMUNITY-PLATFORM §10) ──────────────
     /// Level required to act as curator/mod (level >= this = mod).
-        /// Level required to act as admin.
-        /// Exp required per level (level = exp / this, capped at 100).
+    /// Level required to act as admin.
+    /// Exp required per level (level = exp / this, capped at 100).
     pub forum_exp_per_level: i32,
     /// Exp awarded for creating a forum topic.
     pub forum_exp_topic_create: i32,
@@ -872,8 +872,10 @@ impl Config {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(5000);
-        let rs_redis_key_prefix = std::env::var("RS_REDIS_KEY_PREFIX").unwrap_or_else(|_| "fichub:".into());
-        let rs_redis_hash_tag = std::env::var("RS_REDIS_HASH_TAG").unwrap_or_else(|_| "{rl}".into());
+        let rs_redis_key_prefix =
+            std::env::var("RS_REDIS_KEY_PREFIX").unwrap_or_else(|_| "fichub:".into());
+        let rs_redis_hash_tag =
+            std::env::var("RS_REDIS_HASH_TAG").unwrap_or_else(|_| "{rl}".into());
         let rs_redis_compression = std::env::var("RS_REDIS_COMPRESSION")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
@@ -885,8 +887,8 @@ impl Config {
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(6);
-        let rs_redis_compression_algo = std::env::var("RS_REDIS_COMPRESSION_ALGO")
-            .unwrap_or_else(|_| "gzip".into());
+        let rs_redis_compression_algo =
+            std::env::var("RS_REDIS_COMPRESSION_ALGO").unwrap_or_else(|_| "gzip".into());
         let rs_redis_compression_min_size = std::env::var("RS_REDIS_COMPRESSION_MIN_SIZE")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -1223,7 +1225,7 @@ impl Config {
             .unwrap_or(10);
 
         // ── F7 site-wide leveling (SPEC-COMMUNITY-PLATFORM §10) ─────────
-                        let forum_exp_per_level = std::env::var("FORUM_EXP_PER_LEVEL")
+        let forum_exp_per_level = std::env::var("FORUM_EXP_PER_LEVEL")
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(100);
@@ -1432,7 +1434,7 @@ impl Config {
             forum_mod_actions_per_day,
             forum_min_post_len,
             forum_post_delay_secs,
-                                    forum_exp_per_level,
+            forum_exp_per_level,
             forum_exp_topic_create,
             forum_exp_post_create,
             forum_exp_mod_received,
@@ -1762,7 +1764,7 @@ mod tests {
         // places. See docs/specs/admin-tier-separation.md.
         assert_eq!(config.forum_mod_actions_per_day, 50);
         // F7 site-wide leveling defaults (SPEC §10)
-                        assert_eq!(config.forum_exp_per_level, 100);
+        assert_eq!(config.forum_exp_per_level, 100);
         assert_eq!(config.forum_exp_topic_create, 2);
         assert_eq!(config.forum_exp_post_create, 2);
         assert_eq!(config.forum_exp_mod_received, 1);

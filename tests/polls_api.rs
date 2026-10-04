@@ -213,7 +213,9 @@ async fn req(
     };
     let res = app.clone().oneshot(req).await.unwrap();
     let s = res.status();
-    let b = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
+    let b = axum::body::to_bytes(res.into_body(), 1 << 20)
+        .await
+        .unwrap();
     let v: Value = if b.is_empty() {
         Value::Null
     } else {

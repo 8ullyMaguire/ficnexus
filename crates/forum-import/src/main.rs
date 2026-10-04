@@ -1,10 +1,10 @@
-mod schema;
 mod import;
+mod schema;
 
-use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::Parser;
 use sqlx::PgPool;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
@@ -45,8 +45,7 @@ async fn main() -> Result<()> {
     // Read input file.
     let content = std::fs::read_to_string(&cli.input)
         .context(format!("reading input file: {}", cli.input.display()))?;
-    let data: schema::ImportFile = serde_json::from_str(&content)
-        .context("parsing JSON input")?;
+    let data: schema::ImportFile = serde_json::from_str(&content).context("parsing JSON input")?;
 
     tracing::info!(
         "Loaded import file: {} users, {} categories, {} topics, {} posts",

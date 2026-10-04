@@ -10,8 +10,8 @@
 //!   * impressions older than N days with no engagement → beta += 1
 
 use async_trait::async_trait;
-use serde_json::json;
 use rand::RngCore;
+use serde_json::json;
 
 use super::strategy::{RecError, RecStrategy, ScoredRec, StrategyContext};
 
@@ -52,7 +52,9 @@ struct SeededRng {
 #[cfg(test)]
 impl SeededRng {
     fn new(seed: u64) -> Self {
-        Self { state: if seed == 0 { 1 } else { seed } }
+        Self {
+            state: if seed == 0 { 1 } else { seed },
+        }
     }
 }
 #[cfg(test)]
@@ -455,7 +457,6 @@ mod tests {
 
     #[test]
     fn thompson_prefers_certain_high_arm_on_average() {
-        
         // Seeded rng so test is deterministic.
         let mut rng = SeededRng::new(42);
         let high = (0..200)
@@ -494,16 +495,11 @@ mod tests {
     #[test]
     fn thompson_select_explores_uncertain_arms() {
         // Arms: strong winner (w1), strong loser (w2), uniform (w3).
-        let arms = [
-            ("w1", 9.0, 1.0),
-            ("w2", 1.0, 9.0),
-            ("w3", 1.0, 1.0),
-        ];
+        let arms = [("w1", 9.0, 1.0), ("w2", 1.0, 9.0), ("w3", 1.0, 1.0)];
         // Run 200 fixed-rng draws: w1 should win most often, but w2/w3 must
         // win at least once (exploration — Thompson sampling should not be
         // greedy).
-        
-        
+
         // Seeded ChaCha8 for deterministic but high-quality randomness.
         let mut rng = SeededRng::new(42);
 
@@ -517,7 +513,10 @@ mod tests {
         // so it should win more often than w2 (alpha=1,beta=9).
         let w1 = wins.get("w1").copied().unwrap_or(0);
         let w2 = wins.get("w2").copied().unwrap_or(0);
-        assert!(w1 >= w2, "w1 ({w1}) should win at least as often as w2 ({w2})");
+        assert!(
+            w1 >= w2,
+            "w1 ({w1}) should win at least as often as w2 ({w2})"
+        );
     }
 
     #[test]
@@ -536,5 +535,4 @@ mod tests {
         let mut rng = FnMutRng::new(|| 0.5);
         assert_eq!(super::thompson_select(&arms, &mut rng), None);
     }
-
 }

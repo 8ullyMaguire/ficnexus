@@ -23,8 +23,8 @@
 //!
 //! Routes are site-level, sibling of notifications.rs.
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::FromRow;
@@ -85,22 +85,19 @@ async fn decode_key(
         }
         "forum_topic" => {
             if let Some(slug) = ref_.strip_prefix("new:") {
-                let category_id: Option<i64> = sqlx::query_scalar(
-                    "SELECT id FROM forum_categories WHERE slug = $1",
-                )
-                .bind(slug)
-                .fetch_optional(db)
-                .await
-                .map_err(|e| AppError::Database(e.to_string()))?;
+                let category_id: Option<i64> =
+                    sqlx::query_scalar("SELECT id FROM forum_categories WHERE slug = $1")
+                        .bind(slug)
+                        .fetch_optional(db)
+                        .await
+                        .map_err(|e| AppError::Database(e.to_string()))?;
                 match category_id {
                     Some(id) => Ok((None, Some(id))),
                     None => Err(AppError::NotFound("Unknown category".to_string())),
                 }
             } else {
                 let topic_id: i64 = ref_.parse().map_err(|_| {
-                    AppError::BadRequest(
-                        "ref must be a topic id or new:{categorySlug}".to_string(),
-                    )
+                    AppError::BadRequest("ref must be a topic id or new:{categorySlug}".to_string())
                 })?;
                 Ok((Some(topic_id), None))
             }
@@ -184,7 +181,9 @@ pub async fn list_drafts(
             draft_to_json(d, ctx, &r)
         })
         .collect();
-    Ok(Json(json!({ "err": 0, "drafts": items, "count": items.len() })))
+    Ok(Json(
+        json!({ "err": 0, "drafts": items, "count": items.len() }),
+    ))
 }
 
 // ── PUT /api/drafts/{context}/{ref} ────────────────────────────────────────
@@ -206,7 +205,11 @@ pub async fn upsert_draft(
         ));
     }
 
-    let mut tx = state.db.begin().await.map_err(|e| AppError::Database(e.to_string()))?;
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
     let updated = sqlx::query(
         r#"UPDATE forum_drafts
            SET title = $4, body = $5, payload = COALESCE($6, payload),
@@ -255,7 +258,9 @@ pub async fn upsert_draft(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
-    tx.commit().await.map_err(|e| AppError::Database(e.to_string()))?;
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
 
     Ok(Json(draft_to_json(&draft, &context, &ref_)))
 }
@@ -285,7 +290,9 @@ pub async fn delete_draft(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
 
-    Ok(Json(json!({ "err": 0, "deleted": deleted.rows_affected() > 0 })))
+    Ok(Json(
+        json!({ "err": 0, "deleted": deleted.rows_affected() > 0 }),
+    ))
 }
 
 #[cfg(test)]

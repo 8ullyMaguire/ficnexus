@@ -1,9 +1,9 @@
+use super::ReadingHistoryEntry;
+use super::update_reputation_and_promote;
 use crate::db::models::*;
 use crate::error::AppResult;
 use chrono::Datelike;
 use sqlx::{PgPool, Row};
-use super::ReadingHistoryEntry;
-use super::update_reputation_and_promote;
 
 // ── Follow exclusions ─────────────────────────────────────────────────
 
@@ -1138,10 +1138,7 @@ pub async fn publish_due_topics(pool: &PgPool) -> AppResult<Vec<PublishedTopic>>
             Some(s) => format!("/forum/topic/{s}"),
             None => link.clone(),
         };
-        let body = format!(
-            "Your scheduled topic \"{}\" is now published.",
-            topic.title
-        );
+        let body = format!("Your scheduled topic \"{}\" is now published.", topic.title);
         // A failed notification must not abort the run: the topic is already
         // published and un-claiming it would republish it on the next tick.
         let _ = create_notification(

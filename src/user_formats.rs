@@ -5,9 +5,8 @@
 //! - Multiple formats → download produces a zip
 //! - Author/collection/series/list pages → always zip with all preferred formats
 
-
-use axum::{extract::State, response::Json};
 use crate::server::AppState;
+use axum::{extract::State, response::Json};
 
 /// All formats the system can produce.
 pub const AVAILABLE_FORMATS: &[&str] = &["epub", "pdf", "mobi", "html", "azw3", "kepub", "docx"];
@@ -129,7 +128,6 @@ mod tests {
     }
 }
 
-
 // ── API endpoint ───────────────────────────────────────────────────────────
 
 use std::sync::Arc;
@@ -155,9 +153,7 @@ pub fn formats_response() -> serde_json::Value {
     })
 }
 
-pub async fn list_formats(
-    _axum_state: State<Arc<AppState>>,
-) -> Json<serde_json::Value> {
+pub async fn list_formats(_axum_state: State<Arc<AppState>>) -> Json<serde_json::Value> {
     Json(formats_response())
 }
 
@@ -170,7 +166,10 @@ mod api_tests {
         let json = formats_response();
         assert_eq!(json.get("err").and_then(|v| v.as_i64()), Some(0));
         let formats = json.get("formats").and_then(|v| v.as_array()).unwrap();
-        let ids: Vec<_> = formats.iter().filter_map(|f| f.get("id").and_then(|v| v.as_str())).collect();
+        let ids: Vec<_> = formats
+            .iter()
+            .filter_map(|f| f.get("id").and_then(|v| v.as_str()))
+            .collect();
         assert!(ids.contains(&"epub"));
         assert!(ids.contains(&"mobi"));
         assert!(ids.contains(&"pdf"));

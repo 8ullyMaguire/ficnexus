@@ -60,96 +60,85 @@ pub struct VisitorStateRow {
 // ── Submodules ───────────────────────────────────────────────────────────────
 
 pub mod core;
-pub mod tags;
-pub mod social;
-pub mod works;
+pub mod prefs;
 pub mod proposals;
 pub mod reputation;
-pub mod prefs;
+pub mod social;
+pub mod tags;
 pub mod visitor;
+pub mod works;
 
 // ── Re-exports (all existing call sites stay as crate::db::queries::fn) ────────
 
 // core
 pub use core::{
-    set_site_credentials, get_user_site_credentials, get_user_site_credential,
-    delete_user_site_credential, upsert_fic_info, hide_fic_info,
-    create_curator_quorum_proposal, get_fic_info, insert_request_source,
-    insert_request_log, insert_search_query, recent_search_chips, latest_export_log,
-    find_export_log, insert_export_log, check_fic_blacklist, check_author_blacklist,
-    get_fic_version_bump, search_similar_fics,
+    check_author_blacklist, check_fic_blacklist, create_curator_quorum_proposal,
+    delete_user_site_credential, find_export_log, get_fic_info, get_fic_version_bump,
+    get_user_site_credential, get_user_site_credentials, hide_fic_info, insert_export_log,
+    insert_request_log, insert_request_source, insert_search_query, latest_export_log,
+    recent_search_chips, search_similar_fics, set_site_credentials, upsert_fic_info,
 };
 
 // tags (includes tag queries + follow queries, as per the original file structure)
 pub use tags::{
-    lookup_tag_by_name, lookup_alias, create_tag, upsert_fic_tag, get_fic_tags,
-    follow_user, follow_work, follow_author, unfollow, list_follows, get_followers,
-    is_following_user, is_following_work, find_follow_for_work, find_follow_for_author,
-    mark_follow_seen, list_followed_work_updates, count_unseen_followed_updates,
+    count_unseen_followed_updates, create_tag, find_follow_for_author, find_follow_for_work,
+    follow_author, follow_user, follow_work, get_fic_tags, get_followers, is_following_user,
+    is_following_work, list_followed_work_updates, list_follows, lookup_alias, lookup_tag_by_name,
+    mark_follow_seen, unfollow, upsert_fic_tag,
 };
 
 // social (notifications, badges, reading stats, analytics, translations, leaderboard, flags)
 pub use social::{
-    create_follow_exclusion, list_follow_exclusions, delete_follow_exclusion,
-    create_notification, get_unread_notification_count, list_notifications,
-    mark_notification_read, mark_all_notifications_read, get_notification_preferences,
-    update_notification_preferences, get_badge_definitions, get_user_badges,
-    award_badge, check_and_award_badges, record_login_streak, get_login_streak,
-    record_work_read, get_user_reading_stats, get_user_reading_aggregate,
-    record_read_history, get_personal_reading_analytics, get_author_analytics,
-    get_reading_history, delete_read_history, clear_read_history,
-    get_locales, get_ui_translations, get_work_translation, upsert_work_translation,
-    get_weekly_leaderboard, get_monthly_leaderboard,
-    compute_weekly_leaderboard, compute_monthly_leaderboard,
-    notify_comment_reply, notify_work_followers,
-    upsert_tag_vote, get_existing_vote, insert_tag_flag,
-    list_unresolved_flags, resolve_flag, check_rate_limit,
-    create_tag_alias, merge_tags, delete_tag,
+    award_badge, check_and_award_badges, check_rate_limit, clear_read_history,
+    compute_monthly_leaderboard, compute_weekly_leaderboard, create_follow_exclusion,
+    create_notification, create_tag_alias, delete_follow_exclusion, delete_read_history,
+    delete_tag, get_author_analytics, get_badge_definitions, get_existing_vote, get_locales,
+    get_login_streak, get_monthly_leaderboard, get_notification_preferences,
+    get_personal_reading_analytics, get_reading_history, get_ui_translations,
+    get_unread_notification_count, get_user_badges, get_user_reading_aggregate,
+    get_user_reading_stats, get_weekly_leaderboard, get_work_translation, insert_tag_flag,
+    list_follow_exclusions, list_notifications, list_unresolved_flags, mark_all_notifications_read,
+    mark_notification_read, merge_tags, notify_comment_reply, notify_work_followers,
+    record_login_streak, record_read_history, record_work_read, resolve_flag,
+    update_notification_preferences, upsert_tag_vote, upsert_work_translation,
 };
 
 // works
 pub use works::{
-    create_work, get_work, list_my_works, get_work_by_source,
-    find_work_by_source_url, find_work_by_title_author, link_source_to_work,
-    get_work_sources, get_work_slug_target, get_work_canonical_url_id, log_auto_merge,
+    create_work, find_work_by_source_url, find_work_by_title_author, get_work, get_work_by_source,
+    get_work_canonical_url_id, get_work_slug_target, get_work_sources, link_source_to_work,
+    list_my_works, log_auto_merge,
 };
 
 // proposals
 pub use proposals::{
-    create_proposal, list_pending_proposals, get_proposal, cast_proposal_vote,
-    get_proposal_vote_sum, is_senior_curator, update_proposal_status,
-    execute_merge, execute_split,
+    cast_proposal_vote, create_proposal, execute_merge, execute_split, get_proposal,
+    get_proposal_vote_sum, is_senior_curator, list_pending_proposals, update_proposal_status,
 };
 
 // reputation (analytics, leaderboard, shelves, reading lists, collections, reading status)
 pub use reputation::{
-    update_reputation_and_promote,
-    get_daily_stats, get_user_stats, get_popular_fics, get_format_breakdown,
-    get_total_unique_visitors, get_return_visitor_rate,
-    insert_usage_event, get_daily_unique_visitors, get_weekly_unique_visitors,
-    get_monthly_unique_visitors, get_active_users, get_view_only_users, get_total_events,
-    endpoint_group, get_endpoint_usage, get_endpoint_group_usage, get_recent_events,
-    create_shelf, list_shelves, get_shelf, delete_shelf,
-    add_work_to_shelf, remove_work_from_shelf, list_works_in_shelf,
-    create_reading_list, list_reading_lists, get_reading_list,
-    update_reading_list, delete_reading_list, add_reading_list_item,
-    remove_reading_list_item, list_reading_list_items,
-    create_collection, browse_public_collections, get_collection, get_collection_by_slug,
-    update_collection, delete_collection, add_collection_item,
-    remove_collection_item, list_collection_item_requests,
-    list_collection_item_requests_with_votes, upsert_collection_submission_vote,
-    approve_collection_item, reject_collection_item,
-    bookmark_collection, unbookmark_collection, list_collection_bookmarkers,
-    update_reading_status, get_reading_stats_list,
+    add_collection_item, add_reading_list_item, add_work_to_shelf, approve_collection_item,
+    bookmark_collection, browse_public_collections, create_collection, create_reading_list,
+    create_shelf, delete_collection, delete_reading_list, delete_shelf, endpoint_group,
+    get_active_users, get_collection, get_collection_by_slug, get_daily_stats,
+    get_daily_unique_visitors, get_endpoint_group_usage, get_endpoint_usage, get_format_breakdown,
+    get_monthly_unique_visitors, get_popular_fics, get_reading_list, get_reading_stats_list,
+    get_recent_events, get_return_visitor_rate, get_shelf, get_total_events,
+    get_total_unique_visitors, get_user_stats, get_view_only_users, get_weekly_unique_visitors,
+    insert_usage_event, list_collection_bookmarkers, list_collection_item_requests,
+    list_collection_item_requests_with_votes, list_reading_list_items, list_reading_lists,
+    list_shelves, list_works_in_shelf, reject_collection_item, remove_collection_item,
+    remove_reading_list_item, remove_work_from_shelf, unbookmark_collection, update_collection,
+    update_reading_list, update_reading_status, update_reputation_and_promote,
+    upsert_collection_submission_vote,
 };
 
 // prefs
-pub use prefs::{
-    ALLOWED_FORMATS, get_user_format_preferences, save_user_format_preferences,
-};
+pub use prefs::{ALLOWED_FORMATS, get_user_format_preferences, save_user_format_preferences};
 
 // visitor
 pub use visitor::{
-    get_visitor_state, upsert_visitor_state, delete_visitor_state,
-    cleanup_stale_visitor_state, merge_visitor_state_into_user,
+    cleanup_stale_visitor_state, delete_visitor_state, get_visitor_state,
+    merge_visitor_state_into_user, upsert_visitor_state,
 };

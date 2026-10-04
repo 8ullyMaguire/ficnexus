@@ -23,8 +23,8 @@ use crate::config::Config;
 use crate::db::queries;
 use crate::error::AppError;
 use crate::meta_store;
-use crate::scrape::wayback::wayback_eligible;
 use crate::scrape::ExtractedTag;
+use crate::scrape::wayback::wayback_eligible;
 use crate::server::AppState;
 
 /// Require admin auth (copied from forum.rs).
@@ -57,7 +57,7 @@ pub struct BackfillBody {
 pub struct BackfillResult {
     pub url_id: String,
     pub title: String,
-    pub outcome: String,       // "tags_added" | "no_data" | "failed"
+    pub outcome: String, // "tags_added" | "no_data" | "failed"
     pub detail: Option<String>,
 }
 
@@ -116,9 +116,7 @@ async fn zero_network(
     // Check if merged metadata is newer than stored fic_info.
     if let Some(merged) = &blob.merged {
         if let Ok(Some(stored)) = queries::get_fic_info(db, url_id).await {
-            let stored_updated = stored
-                .fic_updated
-                .timestamp_millis();
+            let stored_updated = stored.fic_updated.timestamp_millis();
             let merged_updated = merged.updated;
             if merged_updated > stored_updated {
                 let fic_row = crate::db::models::FicInfo {
@@ -170,7 +168,12 @@ async fn zero_network(
     if tags_added > 0 {
         (tags_added, core_updated, "tags_added".into(), None)
     } else {
-        (0, core_updated, "no_data".into(), Some("blob had no tags to persist".into()))
+        (
+            0,
+            core_updated,
+            "no_data".into(),
+            Some("blob had no tags to persist".into()),
+        )
     }
 }
 
@@ -191,7 +194,7 @@ async fn network_path(
                 0,
                 "failed".into(),
                 Some("wayback unavailable or no snapshot found".into()),
-            )
+            );
         }
     };
 
@@ -204,12 +207,13 @@ async fn network_path(
                 0,
                 "failed".into(),
                 Some(format!("wayback parse failed: {}", e)),
-            )
+            );
         }
     };
 
     let wayback_tags: Vec<ExtractedTag> = match scraper.extract_tags_from_html(&html).await {
-        Ok(t) => t.into_iter()
+        Ok(t) => t
+            .into_iter()
             .map(|t| crate::scrape::ExtractedTag {
                 name: t.name,
                 tag_type_id: t.tag_type_id as i16,
@@ -274,7 +278,12 @@ async fn network_path(
     (
         tags_added,
         core_updated,
-        if tags_added > 0 { "tags_added" } else { "no_data" }.into(),
+        if tags_added > 0 {
+            "tags_added"
+        } else {
+            "no_data"
+        }
+        .into(),
         None,
     )
 }
@@ -282,11 +291,11 @@ async fn network_path(
 // Fetch a Wayback Machine snapshot for source_url.
 // Uses the configured WaybackService (respects CDX rate limiter).
 // Returns the cleaned Wayback HTML, or None.
-async fn wayback_snap_for(
-    state: &Arc<AppState>,
-    source_url: &str,
-) -> Option<String> {
-    state.wayback.fetch_snapshot(&state.http_client, source_url).await
+async fn wayback_snap_for(state: &Arc<AppState>, source_url: &str) -> Option<String> {
+    state
+        .wayback
+        .fetch_snapshot(&state.http_client, source_url)
+        .await
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -345,9 +354,7 @@ pub async fn backfill_run(
 
     // Kill-switch.
     if !state.config.tag_topup_enabled {
-        return Err(AppError::Forbidden(
-            "TAG_TOPUP_ENABLED is false".into(),
-        ));
+        return Err(AppError::Forbidden("TAG_TOPUP_ENABLED is false".into()));
     }
 
     let limit = body.limit.unwrap_or(25).max(1).min(100);
@@ -412,14 +419,13 @@ pub async fn backfill_run(
         // Network path: find scraper for this source.
         let scraper = state.scraper_registry.find_specific_or_fff(&source_url);
         match scraper {
-            Some(s) if source_url.parse::<url::Url>().is_ok_and(|u| wayback_eligible(&u)) => {
-                let (ta, cu, outcome, detail) = network_path(
-                    &state,
-                    &url_id,
-                    &source_url,
-                    s.as_ref(),
-                )
-                .await;
+            Some(s)
+                if source_url
+                    .parse::<url::Url>()
+                    .is_ok_and(|u| wayback_eligible(&u)) =>
+            {
+                let (ta, cu, outcome, detail) =
+                    network_path(&state, &url_id, &source_url, s.as_ref()).await;
                 tags_added_total += ta;
                 core_updated_total += cu;
                 if outcome == "failed" {

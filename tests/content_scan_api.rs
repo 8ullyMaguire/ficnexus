@@ -177,12 +177,7 @@ fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
     auth_header_for(user_id, trust_level, username, false)
 }
 
-fn auth_header_for(
-    user_id: i32,
-    trust_level: i16,
-    username: &str,
-    is_admin: bool,
-) -> String {
+fn auth_header_for(user_id: i32, trust_level: i16, username: &str, is_admin: bool) -> String {
     let secret = TEST_JWT_SECRET;
     let user = fichub::routes::auth::User {
         id: user_id,

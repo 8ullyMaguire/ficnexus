@@ -518,7 +518,7 @@ pub async fn run_search(
         ..search_params.clone()
     };
 
-// ── Resolve rating param to an include_tags entry ──────────────────
+    // ── Resolve rating param to an include_tags entry ──────────────────
     // Content ratings are stored as tags (tag_type_id = 7), not columns.
     // If the user passes `rating=Explicit`, look up the tag and add it
     // to include_tags so the existing tag-filter machinery handles it.
@@ -554,7 +554,6 @@ pub async fn run_search(
         // If the rating name doesn't match any tag, silently ignore —
         // the search will return results as if no rating filter was set.
     }
-
 
     // Resolve tag names to expanded tag IDs for synonym-aware filtering
     if !capped_params.include_tags.is_empty() {
@@ -616,7 +615,7 @@ pub async fn run_search(
     .await
     .unwrap_or(false);
 
-        let builder = SearchQueryBuilder::new(
+    let builder = SearchQueryBuilder::new(
         capped_params,
         state.config.tag_hidden_threshold,
         has_comments,

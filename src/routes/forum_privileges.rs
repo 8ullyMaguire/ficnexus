@@ -5,9 +5,9 @@
 
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -15,7 +15,14 @@ use crate::error::AppError;
 use crate::routes::auth::AuthUser;
 use crate::server::AppState;
 
-pub const VALID_PRIVILEGES: &[&str] = &["read", "write", "reply", "moderate", "flag", "manage_membership"];
+pub const VALID_PRIVILEGES: &[&str] = &[
+    "read",
+    "write",
+    "reply",
+    "moderate",
+    "flag",
+    "manage_membership",
+];
 
 pub fn valid_privilege(p: &str) -> bool {
     VALID_PRIVILEGES.contains(&p)
@@ -236,7 +243,14 @@ mod tests {
 
     #[test]
     fn privilege_allowlist_matches_live_check_constraint() {
-        for p in ["read", "write", "reply", "moderate", "flag", "manage_membership"] {
+        for p in [
+            "read",
+            "write",
+            "reply",
+            "moderate",
+            "flag",
+            "manage_membership",
+        ] {
             assert!(valid_privilege(p), "{p} must be accepted");
         }
         for p in ["", "admin", "READ", "post_create", "allow"] {

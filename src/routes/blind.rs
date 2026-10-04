@@ -77,7 +77,11 @@ pub async fn blind_date_handler(
         LIMIT 200
         "#,
     )
-    .bind(if exclude.is_empty() { None } else { Some(&exclude) })
+    .bind(if exclude.is_empty() {
+        None
+    } else {
+        Some(&exclude)
+    })
     .fetch_all(&state.db)
     .await?;
 
@@ -89,10 +93,8 @@ pub async fn blind_date_handler(
     let chosen_idx = (rand::random::<u64>() as usize) % eligible.len();
 
     // Look up the chosen fic's full metadata.
-    let (url_id, description, words, chapters, status) = eligible
-        .into_iter()
-        .nth(chosen_idx)
-        .unwrap();
+    let (url_id, description, words, chapters, status) =
+        eligible.into_iter().nth(chosen_idx).unwrap();
 
     // Log the impression to usage_events (best-effort; never fails the pick).
     let client_id = params.client_id.as_deref().filter(|s| !s.is_empty());

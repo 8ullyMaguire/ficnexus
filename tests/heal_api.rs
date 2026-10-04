@@ -160,12 +160,7 @@ fn auth_header(user_id: i32, trust_level: i16, username: &str) -> String {
     auth_header_for(user_id, trust_level, username, false)
 }
 
-fn auth_header_for(
-    user_id: i32,
-    trust_level: i16,
-    username: &str,
-    is_admin: bool,
-) -> String {
+fn auth_header_for(user_id: i32, trust_level: i16, username: &str, is_admin: bool) -> String {
     let secret = TEST_JWT_SECRET;
     let user = fichub::routes::auth::User {
         id: user_id,
@@ -997,7 +992,11 @@ async fn replay_pending_endpoint_requires_role_10() {
     // Anonymous → 401, not 403. See the note on
     // admin_heal_requires_role_10: no credentials is a different failure from
     // credentials that lack admin.
-    assert_eq!(status, StatusCode::UNAUTHORIZED, "anon must be unauthorized");
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "anon must be unauthorized"
+    );
 
     // Non-admin role 0 → 403 too.
     let user_id = seed_user(&db, "heal_test_low", 0).await;

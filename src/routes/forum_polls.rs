@@ -5,10 +5,10 @@
 //!   forum_poll_options(id, poll_id, text, position, vote_count)
 //!   forum_poll_votes(poll_id, option_id, user_id, created_at)
 
-use axum::extract::{Path, State};
 use axum::Json;
+use axum::extract::{Path, State};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 
 use crate::db::queries;
@@ -87,19 +87,25 @@ pub fn serialize_poll(
 ) -> Value {
     let is_closed = close_at.is_some_and(|ts| ts <= chrono::Utc::now());
 
-    let options = options.into_iter().map(|o| {
-        let votes = match &option_votes {
-            Some(memo) => memo.iter().find_map(|(oid, c)| if *oid == o.id { Some(*c as i32) } else { None }).unwrap_or(0),
-            None => 0,
-        };
-        json!({
-            "id": o.id,
-            "text": o.text,
-            "position": o.position,
-            "vote_count": o.vote_count,
-            "votes": votes,
+    let options = options
+        .into_iter()
+        .map(|o| {
+            let votes = match &option_votes {
+                Some(memo) => memo
+                    .iter()
+                    .find_map(|(oid, c)| if *oid == o.id { Some(*c as i32) } else { None })
+                    .unwrap_or(0),
+                None => 0,
+            };
+            json!({
+                "id": o.id,
+                "text": o.text,
+                "position": o.position,
+                "vote_count": o.vote_count,
+                "votes": votes,
+            })
         })
-    }).collect::<Vec<_>>();
+        .collect::<Vec<_>>();
 
     json!({
         "id": id,
@@ -124,7 +130,14 @@ pub async fn create_poll(
     Json(body): Json<CreatePollBody>,
 ) -> Result<Json<Value>, AppError> {
     let user_id = require_user(&auth)?;
-    trust::assert_staff_or_min_trust(&state.db, Some(user_id), auth.trust_level, PUBLISH_MIN_TRUST, "Creating polls").await?;
+    trust::assert_staff_or_min_trust(
+        &state.db,
+        Some(user_id),
+        auth.trust_level,
+        PUBLISH_MIN_TRUST,
+        "Creating polls",
+    )
+    .await?;
 
     let question = body.question.trim().to_string();
     if question.is_empty() || question.chars().count() > 500 {
@@ -195,15 +208,13 @@ pub async fn create_poll(
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
     for (pos, text) in options.iter().enumerate() {
-        sqlx::query(
-            "INSERT INTO forum_poll_options (poll_id, text, position) VALUES ($1, $2, $3)",
-        )
-        .bind(poll_id)
-        .bind(text)
-        .bind(pos as i32)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+        sqlx::query("INSERT INTO forum_poll_options (poll_id, text, position) VALUES ($1, $2, $3)")
+            .bind(poll_id)
+            .bind(text)
+            .bind(pos as i32)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
     }
     sqlx::query("UPDATE forum_topics SET poll_id = $1 WHERE id = $2")
         .bind(poll_id)
@@ -280,12 +291,11 @@ pub async fn vote_on_poll(
     let user_id = require_user(&auth)?;
 
     // Check poll exists and isn't closed
-    let close_at: Option<Option<chrono::DateTime<chrono::Utc>>> = sqlx::query_scalar(
-        "SELECT close_at FROM forum_polls WHERE id = $1",
-    )
-    .bind(poll_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let close_at: Option<Option<chrono::DateTime<chrono::Utc>>> =
+        sqlx::query_scalar("SELECT close_at FROM forum_polls WHERE id = $1")
+            .bind(poll_id)
+            .fetch_optional(&state.db)
+            .await?;
     let Some(close_at) = close_at else {
         return Err(AppError::Conflict(
             "poll is closed or doesn't exist".to_string(),
@@ -296,13 +306,12 @@ pub async fn vote_on_poll(
     }
 
     // Validate option belongs to this poll
-    let option_exists: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM forum_poll_options WHERE poll_id = $1 AND id = $2",
-    )
-    .bind(poll_id)
-    .bind(body.option_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let option_exists: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM forum_poll_options WHERE poll_id = $1 AND id = $2")
+            .bind(poll_id)
+            .bind(body.option_id)
+            .fetch_optional(&state.db)
+            .await?;
 
     if option_exists.is_none() {
         return Err(AppError::BadRequest("invalid option".into()));
@@ -319,7 +328,9 @@ pub async fn vote_on_poll(
 
     if let Some(existing_option_id) = has_vote {
         if !poll_allow_change(&state.db, poll_id).await? {
-            return Err(AppError::BadRequest("poll does not allow changing votes".into()));
+            return Err(AppError::BadRequest(
+                "poll does not allow changing votes".into(),
+            ));
         }
         // Update existing vote
         sqlx::query("UPDATE forum_poll_votes SET option_id = $1, created_at = NOW() WHERE poll_id = $2 AND user_id = $3")
@@ -339,7 +350,8 @@ pub async fn vote_on_poll(
     }
 
     // Award XP for poll vote
-    let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 3, "poll_voted").await;
+    let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 3, "poll_voted")
+        .await;
 
     // Check for newly unlocked achievements (best-effort)
     let _ = crate::services::achievements::check_and_unlock_achievements(
@@ -349,7 +361,9 @@ pub async fn vote_on_poll(
     )
     .await;
 
-    Ok(Json(json!({ "err": 0, "voted": true, "option_id": body.option_id })))
+    Ok(Json(
+        json!({ "err": 0, "voted": true, "option_id": body.option_id }),
+    ))
 }
 
 /// `POST /api/forum/polls/{pollId}/close`
@@ -393,12 +407,11 @@ pub async fn close_poll(
     .fetch_optional(&state.db)
     .await?;
     if let Some((topic_id, slug_opt, title)) = topic {
-        let voters: Vec<i32> = sqlx::query_scalar(
-            "SELECT DISTINCT user_id FROM forum_poll_votes WHERE poll_id = $1",
-        )
-        .bind(poll_id)
-        .fetch_all(&state.db)
-        .await?;
+        let voters: Vec<i32> =
+            sqlx::query_scalar("SELECT DISTINCT user_id FROM forum_poll_votes WHERE poll_id = $1")
+                .bind(poll_id)
+                .fetch_all(&state.db)
+                .await?;
         let link = match slug_opt {
             Some(slug) => format!("/forum/board/{}.{}", slug, topic_id),
             None => format!("/forum/topic/{}", topic_id),
@@ -554,12 +567,20 @@ mod tests {
     #[test]
     fn serialize_poll_contract_shape() {
         let options = vec![
-            PollOption { id: 1, text: "Yes".into(), position: 1, vote_count: 3 },
-            PollOption { id: 2, text: "No".into(), position: 2, vote_count: 1 },
+            PollOption {
+                id: 1,
+                text: "Yes".into(),
+                position: 1,
+                vote_count: 3,
+            },
+            PollOption {
+                id: 2,
+                text: "No".into(),
+                position: 2,
+                vote_count: 1,
+            },
         ];
-        let ser = serialize_poll(
-            42, 100, "Question?".into(), 1, true, None, options, None,
-        );
+        let ser = serialize_poll(42, 100, "Question?".into(), 1, true, None, options, None);
         // Poll-level keys
         assert_eq!(ser["id"], 42);
         assert_eq!(ser["topic_id"], 100);
@@ -580,8 +601,18 @@ mod tests {
     #[test]
     fn serialize_poll_with_option_votes() {
         let options = vec![
-            PollOption { id: 1, text: "A".into(), position: 1, vote_count: 1 },
-            PollOption { id: 2, text: "B".into(), position: 2, vote_count: 2 },
+            PollOption {
+                id: 1,
+                text: "A".into(),
+                position: 1,
+                vote_count: 1,
+            },
+            PollOption {
+                id: 2,
+                text: "B".into(),
+                position: 2,
+                vote_count: 2,
+            },
         ];
         let votes = vec![(1, 5), (2, 3)];
         let past = Some(chrono::Utc::now() - chrono::Duration::hours(1));

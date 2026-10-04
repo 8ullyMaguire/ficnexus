@@ -38,7 +38,10 @@ use crate::services::trust::PUBLISH_MIN_TRUST;
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/groups", get(list_groups).post(create_group))
-        .route("/groups/{group_id}", get(get_group).patch(update_group).delete(delete_group))
+        .route(
+            "/groups/{group_id}",
+            get(get_group).patch(update_group).delete(delete_group),
+        )
         .route("/groups/{group_id}/join", post(join_group))
         .route("/groups/{group_id}/leave", post(leave_group))
         .route("/groups/{group_id}/invite", post(invite_to_group))
@@ -59,11 +62,7 @@ const FORBIDDEN_NOT_OWNER: &str = "owner or moderator required";
 const FORBIDDEN_NOT_ADMIN: &str = "admin required";
 
 /// Caller is the group owner, a manager, or a site admin (level >= admin_level).
-async fn is_group_admin(
-    db: &PgPool,
-    auth: &AuthUser,
-    group_id: i64,
-) -> Result<bool, AppError> {
+async fn is_group_admin(db: &PgPool, auth: &AuthUser, group_id: i64) -> Result<bool, AppError> {
     if auth.trust_level >= 5 {
         return Ok(true);
     }
@@ -83,12 +82,11 @@ async fn is_group_admin(
 }
 
 async fn group_exists(db: &PgPool, group_id: i64) -> Result<bool, AppError> {
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM forum_groups WHERE id = $1)",
-    )
-    .bind(group_id)
-    .fetch_one(db)
-    .await?;
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM forum_groups WHERE id = $1)")
+            .bind(group_id)
+            .fetch_one(db)
+            .await?;
     Ok(exists)
 }
 
@@ -150,8 +148,7 @@ pub async fn list_groups(
     let caller_uid = auth.user_id.unwrap_or(0);
     let caller_role = auth.trust_level;
     let caller_level = auth.trust_level;
-    let is_staff = caller_level >= 5
-        || caller_role >= 10;
+    let is_staff = caller_level >= 5 || caller_role >= 10;
 
     // Build WHERE per filters and visibility:
     //   - public groups are visible to everyone
@@ -172,13 +169,11 @@ pub async fn list_groups(
                 _ => {
                     return Err(AppError::BadRequest(
                         "type must be one of public|private|system".to_string(),
-                    ))
+                    ));
                 }
             }
         } else if !is_staff {
-            conds.push(
-                "(g.is_system = FALSE AND (g.is_private = FALSE OR member.cnt > 0))",
-            );
+            conds.push("(g.is_system = FALSE AND (g.is_private = FALSE OR member.cnt > 0))");
         }
         if q.search.is_some() {
             // search binding will be $4
@@ -189,10 +184,7 @@ pub async fn list_groups(
         // Staff sees system groups; everyone else only sees public +
         // private groups they're a member of.
         let type_filter: Option<String> = q.r#type.as_deref().map(|t| t.to_string());
-        let search: Option<String> = q
-            .search
-            .as_deref()
-            .map(|s| format!("%{}%", s.trim()));
+        let search: Option<String> = q.search.as_deref().map(|s| format!("%{}%", s.trim()));
 
         let sql = "\
             SELECT g.id, g.name, g.slug, g.description, g.cover_url, g.is_private, g.is_system, \
@@ -456,12 +448,11 @@ pub async fn update_group(
     if !is_group_admin(&state.db, &auth, group_id).await? {
         return Err(AppError::Forbidden(FORBIDDEN_NOT_OWNER.to_string()));
     }
-    let is_system: bool =
-        sqlx::query_scalar("SELECT is_system FROM forum_groups WHERE id = $1")
-            .bind(group_id)
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or_else(|| AppError::NotFound("group not found".to_string()))?;
+    let is_system: bool = sqlx::query_scalar("SELECT is_system FROM forum_groups WHERE id = $1")
+        .bind(group_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("group not found".to_string()))?;
     if is_system && body.name.is_some() {
         return Err(AppError::Forbidden(SYSTEM_PROTECTED_ERR.to_string()));
     }
@@ -541,16 +532,17 @@ pub async fn join_group(
     Path(group_id): Path<i64>,
 ) -> Result<Json<Value>, AppError> {
     let uid = crate::routes::forum::require_user(&auth)?;
-    let g: Option<(bool, bool)> = sqlx::query_as(
-        "SELECT is_private, is_system FROM forum_groups WHERE id = $1",
-    )
-    .bind(group_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let g: Option<(bool, bool)> =
+        sqlx::query_as("SELECT is_private, is_system FROM forum_groups WHERE id = $1")
+            .bind(group_id)
+            .fetch_optional(&state.db)
+            .await?;
     let (is_private, is_system) =
         g.ok_or_else(|| AppError::NotFound("group not found".to_string()))?;
     if is_system {
-        return Err(AppError::Forbidden("system groups are not joinable".to_string()));
+        return Err(AppError::Forbidden(
+            "system groups are not joinable".to_string(),
+        ));
     }
     if is_private {
         return Err(AppError::Forbidden(
@@ -587,13 +579,11 @@ pub async fn leave_group(
             "owner cannot leave; transfer ownership or delete the group".to_string(),
         ));
     }
-    let res = sqlx::query(
-        "DELETE FROM forum_group_members WHERE group_id = $1 AND user_id = $2",
-    )
-    .bind(group_id)
-    .bind(uid)
-    .execute(&state.db)
-    .await?;
+    let res = sqlx::query("DELETE FROM forum_group_members WHERE group_id = $1 AND user_id = $2")
+        .bind(group_id)
+        .bind(uid)
+        .execute(&state.db)
+        .await?;
     if res.rows_affected() == 0 {
         return Err(AppError::NotFound("not a member".to_string()));
     }
@@ -761,13 +751,11 @@ pub async fn remove_group_member(
             "cannot remove owner; transfer ownership first".to_string(),
         ));
     }
-    sqlx::query(
-        "DELETE FROM forum_group_members WHERE group_id = $1 AND user_id = $2",
-    )
-    .bind(group_id)
-    .bind(user_id)
-    .execute(&state.db)
-    .await?;
+    sqlx::query("DELETE FROM forum_group_members WHERE group_id = $1 AND user_id = $2")
+        .bind(group_id)
+        .bind(user_id)
+        .execute(&state.db)
+        .await?;
     Ok(Json(json!({ "err": 0, "removed": true })))
 }
 
@@ -778,10 +766,22 @@ pub async fn remove_group_member(
 /// Returns the slug→id map. Used by the bootstrap step in
 /// `server::chunk_forum_activitypub` and by trust-promotion when adding
 /// the user to `tl3-plus`.
-pub async fn ensure_system_groups(db: &PgPool) -> Result<std::collections::HashMap<String, i64>, AppError> {
+pub async fn ensure_system_groups(
+    db: &PgPool,
+) -> Result<std::collections::HashMap<String, i64>, AppError> {
     const DEFS: &[(&str, &str, &str, bool)] = &[
-        ("administrators", "Administrators", "Full access (role >= 10)", true),
-        ("moderators", "Moderators", "Moderate privilege (TL5+ or role >= 5)", true),
+        (
+            "administrators",
+            "Administrators",
+            "Full access (role >= 10)",
+            true,
+        ),
+        (
+            "moderators",
+            "Moderators",
+            "Moderate privilege (TL5+ or role >= 5)",
+            true,
+        ),
         ("members", "Members", "Base write/reply (TL1+)", false),
         ("tl3-plus", "Trust Level 3+", "Tag creation, etc.", false),
     ];

@@ -744,7 +744,10 @@ mod tests {
             level: 50,
             is_admin: false,
         };
-        assert!(curator.trust_level >= 5, "Curator should pass curator check");
+        assert!(
+            curator.trust_level >= 5,
+            "Curator should pass curator check"
+        );
 
         let admin = AuthUser {
             user_id: Some(3),

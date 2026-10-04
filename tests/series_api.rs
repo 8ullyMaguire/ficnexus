@@ -459,7 +459,11 @@ async fn author_page_renders_with_a_profile_row() {
     let router = app().await;
     let (status, body) = get_json(&router, "/api/authors/SeriesApiTest%20Profiled").await;
 
-    assert_eq!(status, StatusCode::OK, "author page with a profile row: {body}");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "author page with a profile row: {body}"
+    );
     assert_eq!(body["err"], 0);
     assert_eq!(body["author"]["name"], "SeriesApiTest Profiled");
     // The two profile fields that exist must actually come back.

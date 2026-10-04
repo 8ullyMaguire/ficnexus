@@ -81,7 +81,8 @@ fn ensure_env() {
 static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn db_guard() -> std::sync::MutexGuard<'static, ()> {
-    GUARD.get_or_init(|| Mutex::new(()))
+    GUARD
+        .get_or_init(|| Mutex::new(()))
         .lock()
         .unwrap_or_else(|e| e.into_inner())
 }
@@ -104,8 +105,8 @@ async fn pool() -> sqlx::PgPool {
         .expect("connect to Postgres")
 }
 
-use fichub::server::AppState;
 use fichub::routes::auth;
+use fichub::server::AppState;
 
 fn app() -> impl std::future::Future<Output = Router> {
     async {
@@ -176,8 +177,14 @@ fn app() -> impl std::future::Future<Output = Router> {
 
         Router::new()
             .route("/api/uploads", post(fichub::routes::uploads::upload_image))
-            .route("/uploads/forum/{yy}/{mm}/{name}", get(fichub::routes::uploads::serve_upload))
-            .route("/api/uploads/{id}", delete(fichub::routes::uploads::delete_upload))
+            .route(
+                "/uploads/forum/{yy}/{mm}/{name}",
+                get(fichub::routes::uploads::serve_upload),
+            )
+            .route(
+                "/api/uploads/{id}",
+                delete(fichub::routes::uploads::delete_upload),
+            )
             .with_state(state)
     }
 }
@@ -239,15 +246,11 @@ fn auth_header(user_id: i32, username: &str) -> String {
 
 fn png_1x1() -> &'static [u8] {
     &[
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
-        0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41,
-        0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-        0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00,
-        0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae,
-        0x42, 0x60, 0x82,
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f,
+        0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
     ]
 }
 
@@ -266,7 +269,9 @@ fn multipart_body(boundary: &str, filename: &str, content_type: &str, data: &[u8
 }
 
 async fn json_body(resp: axum::response::Response) -> Value {
-    let b = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap_or_default();
+    let b = axum::body::to_bytes(resp.into_body(), 1 << 20)
+        .await
+        .unwrap_or_default();
     serde_json::from_slice(&b).unwrap_or(json!({"err": -1, "msg": "parse fail"}))
 }
 
@@ -452,7 +457,10 @@ async fn upload_png_happy_path_roundtrip() {
         .expect("fetch request should complete");
 
     assert_eq!(fetch_resp.status(), StatusCode::OK);
-    let fetched = axum::body::to_bytes(fetch_resp.into_body(), 1 << 20).await.expect("to_bytes").to_vec();
+    let fetched = axum::body::to_bytes(fetch_resp.into_body(), 1 << 20)
+        .await
+        .expect("to_bytes")
+        .to_vec();
     assert_eq!(&fetched, body_png.as_slice());
 
     // Cleanup: delete the upload

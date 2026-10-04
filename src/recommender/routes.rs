@@ -766,7 +766,11 @@ pub async fn taste_cluster_handler(
 
     let (cluster, affinity) = match top {
         Some((c, a)) => (c, a),
-        None => return Ok(Json(json!({ "cluster": serde_json::Value::Null, "affinity": serde_json::Value::Null, "adjacent": Vec::<i32>::new(), "err": 0 }))),
+        None => {
+            return Ok(Json(
+                json!({ "cluster": serde_json::Value::Null, "affinity": serde_json::Value::Null, "adjacent": Vec::<i32>::new(), "err": 0 }),
+            ));
+        }
     };
 
     // Adjacent clusters: all other distinct cluster ids for this user.

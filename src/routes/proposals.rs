@@ -377,7 +377,13 @@ pub async fn flag_translation(
     )
     .await?;
     // small rep for flagging (capped in xp_source_defs)
-    let _ = crate::db::queries::update_reputation_and_promote(&state.db, user_id, 5, "translation_flagged").await;
+    let _ = crate::db::queries::update_reputation_and_promote(
+        &state.db,
+        user_id,
+        5,
+        "translation_flagged",
+    )
+    .await;
     // re-queue machine translation for a fresh attempt
     if state.config.translate_llm_enabled {
         let mut conn = state.redis.clone();

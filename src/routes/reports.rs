@@ -93,8 +93,14 @@ pub async fn create_report(
 
     // Trust sandbox: TL0 (brand-new) may read but may not flag — flags carry
     // trust-weighted value, so a guest account must first engage.
-    trust::assert_staff_or_min_trust(&state.db, Some(reporter_id), auth.trust_level, 1, "Filing reports")
-        .await?;
+    trust::assert_staff_or_min_trust(
+        &state.db,
+        Some(reporter_id),
+        auth.trust_level,
+        1,
+        "Filing reports",
+    )
+    .await?;
     let reporter_trust = trust::fetch_trust_level(&state.db, Some(reporter_id)).await;
     let weight = flag_weight(reporter_trust);
 
@@ -115,7 +121,8 @@ pub async fn create_report(
         "spam" | "harassment" | "copyright" | "inappropriate" | "other"
     ) {
         return Err(AppError::BadRequest(
-            "category must be one of: spam, harassment, copyright, inappropriate, other".to_string(),
+            "category must be one of: spam, harassment, copyright, inappropriate, other"
+                .to_string(),
         ));
     }
     if reason.chars().count() > 1000 {
@@ -392,7 +399,10 @@ pub async fn list_reports(
         .await
         {
             for (id, slug) in rows {
-                links.insert(format!("forum_topic:{id}"), format!("/forum/board/{slug}.{id}"));
+                links.insert(
+                    format!("forum_topic:{id}"),
+                    format!("/forum/board/{slug}.{id}"),
+                );
             }
         }
     }
@@ -406,7 +416,10 @@ pub async fn list_reports(
         .await
         {
             for (post_id, topic_id, slug) in rows {
-                links.insert(format!("forum_post:{post_id}"), format!("/forum/board/{slug}.{topic_id}"));
+                links.insert(
+                    format!("forum_post:{post_id}"),
+                    format!("/forum/board/{slug}.{topic_id}"),
+                );
             }
         }
     }
@@ -566,16 +579,17 @@ pub async fn create_ban_appeal(
     };
 
     if ban.0 != user_id {
-        return Err(AppError::Forbidden("You can only appeal your own bans".into()));
+        return Err(AppError::Forbidden(
+            "You can only appeal your own bans".into(),
+        ));
     }
 
     // Check for existing pending appeal
-    let existing: Option<(i64,)> = sqlx::query_as(
-        "SELECT id FROM ban_appeals WHERE ban_id = $1 AND status = 'pending'",
-    )
-    .bind(ban_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let existing: Option<(i64,)> =
+        sqlx::query_as("SELECT id FROM ban_appeals WHERE ban_id = $1 AND status = 'pending'")
+            .bind(ban_id)
+            .fetch_optional(&state.db)
+            .await?;
 
     if existing.is_some() {
         return Err(AppError::BadRequest(

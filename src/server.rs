@@ -356,7 +356,9 @@ pub async fn run(config: Config) {
         let redis_client = redis::Client::open(&*config.redis_url)
             .expect("Failed to create Redis client for pubsub");
         tokio::spawn(async move {
-            if let Err(e) = crate::realtime::pubsub::start_redis_pubsub(redis_client, rt_manager).await {
+            if let Err(e) =
+                crate::realtime::pubsub::start_redis_pubsub(redis_client, rt_manager).await
+            {
                 tracing::warn!("Redis pubsub listener failed (single-instance mode): {}", e);
             }
         });
@@ -374,7 +376,6 @@ pub async fn run(config: Config) {
     .expect("Server error");
 }
 
-
 /// Route chunk: Core Api
 fn chunk_core_api() -> impl Into<Router<Arc<AppState>>> {
     Router::new()
@@ -389,20 +390,11 @@ fn chunk_core_api() -> impl Into<Router<Arc<AppState>>> {
         .route("/api/remote", get(remote_handler))
         .route("/api/health", get(routes::health::health_handler))
         // Format list endpoint
-        .route(
-            "/api/formats",
-            get(crate::user_formats::list_formats),
-        )
+        .route("/api/formats", get(crate::user_formats::list_formats))
         // Find-fic: parse "title by author on site" into fielded search
-        .route(
-            "/api/find-fic",
-            post(routes::find_fic::find_fic),
-        )
+        .route("/api/find-fic", post(routes::find_fic::find_fic))
         // Find-fic suggest: did-you-mean for 404 branches
-        .route(
-            "/api/find-fic/suggest",
-            get(routes::find_fic::suggest_fic),
-        )
+        .route("/api/find-fic/suggest", get(routes::find_fic::suggest_fic))
         // Cache download routes
         .route(
             "/cache/{etype}/{url_id}/{fname}",
@@ -422,8 +414,6 @@ fn chunk_core_api() -> impl Into<Router<Arc<AppState>>> {
             get(routes::sitemap::sitemap_works_handler),
         )
 }
-
-
 
 /// Route chunk: Device Download
 fn chunk_device_download() -> impl Into<Router<Arc<AppState>>> {
@@ -542,8 +532,6 @@ fn chunk_device_download() -> impl Into<Router<Arc<AppState>>> {
         )
 }
 
-
-
 /// Route chunk: Tags Curator
 fn chunk_tags_curator() -> impl Into<Router<Arc<AppState>>> {
     Router::new()
@@ -659,8 +647,6 @@ fn chunk_tags_curator() -> impl Into<Router<Arc<AppState>>> {
         )
 }
 
-
-
 /// Route chunk: Series Author
 fn chunk_series_author() -> impl Into<Router<Arc<AppState>>> {
     Router::new()
@@ -720,8 +706,6 @@ fn chunk_series_author() -> impl Into<Router<Arc<AppState>>> {
         // Advanced search route
         .route("/api/search", get(crate::search::routes::search_handler))
 }
-
-
 
 /// Route chunk: Discovery
 fn chunk_discovery() -> impl Into<Router<Arc<AppState>>> {
@@ -785,7 +769,6 @@ fn chunk_discovery() -> impl Into<Router<Arc<AppState>>> {
             axum::routing::post(crate::routes::social::refresh_handler),
         )
         .route("/api/auth/me", get(crate::routes::social::me_handler))
-        
         // Bounty routes (reputation spend for demand-side requests; XP untouched)
         .route("/api/bounties", get(crate::routes::bounties::list_bounties))
         .route(
@@ -836,8 +819,6 @@ fn chunk_discovery() -> impl Into<Router<Arc<AppState>>> {
             axum::routing::delete(crate::routes::subsystems::unblock_user),
         )
 }
-
-
 
 /// Route chunk: Social Kudos
 fn chunk_social_kudos() -> impl Into<Router<Arc<AppState>>> {
@@ -989,8 +970,6 @@ fn chunk_social_kudos() -> impl Into<Router<Arc<AppState>>> {
         )
 }
 
-
-
 /// Route chunk: Dmca Notifications
 fn chunk_dmca_notifications() -> impl Into<Router<Arc<AppState>>> {
     Router::new()
@@ -1080,8 +1059,6 @@ fn chunk_dmca_notifications() -> impl Into<Router<Arc<AppState>>> {
             get(crate::routes::follows::check_follow_handler),
         )
 }
-
-
 
 /// Route chunk: Forum Activitypub
 fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
@@ -1302,15 +1279,12 @@ fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
         )
         .route(
             "/api/forum/categories/{id}/privileges",
-            get(crate::routes::forum_privileges::list_category_privs).post(
-                crate::routes::forum_privileges::grant_category_priv,
-            ),
+            get(crate::routes::forum_privileges::list_category_privs)
+                .post(crate::routes::forum_privileges::grant_category_priv),
         )
         .route(
             "/api/forum/categories/{id}/privileges/{privilegeId}",
-            axum::routing::delete(
-                crate::routes::forum_privileges::revoke_category_priv,
-            ),
+            axum::routing::delete(crate::routes::forum_privileges::revoke_category_priv),
         )
         // ── Lane B: polls ────────────────────────────────────────
         // (FicHub forum-nodebb spec §1.4; see contracts/forum-polls-events.md)
@@ -1336,10 +1310,7 @@ fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
         )
         // ── Lane 1: site-wide drafts ──────────────────────────────
         // (FicHub forum-nodebb spec §3.1 — uses forum_drafts table from 077)
-        .route(
-            "/api/drafts",
-            get(crate::routes::drafts::list_drafts),
-        )
+        .route("/api/drafts", get(crate::routes::drafts::list_drafts))
         .route(
             "/api/drafts/{context}/{ref}",
             axum::routing::put(crate::routes::drafts::upsert_draft)
@@ -1350,8 +1321,7 @@ fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
         // canonical site `blocked_users`)
         .route(
             "/api/messages/rooms",
-            get(crate::routes::messages::list_rooms)
-                .post(crate::routes::messages::create_dm_room),
+            get(crate::routes::messages::list_rooms).post(crate::routes::messages::create_dm_room),
         )
         .route(
             "/api/messages/rooms/{roomId}/messages",
@@ -1415,8 +1385,6 @@ fn chunk_forum_activitypub() -> impl Into<Router<Arc<AppState>>> {
             get(crate::activitypub::ap_status),
         )
 }
-
-
 
 /// Route chunk: Requests Translate
 fn chunk_requests_translate() -> impl Into<Router<Arc<AppState>>> {
@@ -1511,8 +1479,6 @@ fn chunk_requests_translate() -> impl Into<Router<Arc<AppState>>> {
             get(crate::routes::follows::get_followers_handler),
         )
 }
-
-
 
 /// Route chunk: Collections Status
 fn chunk_collections_status() -> impl Into<Router<Arc<AppState>>> {
@@ -1772,8 +1738,6 @@ fn chunk_collections_status() -> impl Into<Router<Arc<AppState>>> {
         )
 }
 
-
-
 /// Route chunk: Content Translation
 fn chunk_content_translation() -> impl Into<Router<Arc<AppState>>> {
     Router::new()
@@ -1850,8 +1814,6 @@ fn chunk_content_translation() -> impl Into<Router<Arc<AppState>>> {
             get(crate::routes::fandom::get_fandom),
         )
 }
-
-
 
 /// Route chunk: Comments Upload
 fn chunk_comments_upload() -> impl Into<Router<Arc<AppState>>> {
@@ -1941,8 +1903,6 @@ fn chunk_comments_upload() -> impl Into<Router<Arc<AppState>>> {
         )
 }
 
-
-
 /// Route chunk: Feeds Admin
 fn chunk_feeds_admin() -> impl Into<Router<Arc<AppState>>> {
     Router::new()
@@ -1992,8 +1952,6 @@ fn chunk_feeds_admin() -> impl Into<Router<Arc<AppState>>> {
         )
         .route("/api/admin/digest", get(crate::routes::trust::admin_digest))
 }
-
-
 
 /// Route chunk: Customization Redirects
 fn chunk_customization_redirects() -> impl Into<Router<Arc<AppState>>> {
@@ -2288,15 +2246,18 @@ fn chunk_customization_redirects() -> impl Into<Router<Arc<AppState>>> {
         )
         .route(
             "/api/me/prefs",
-            get(routes::user_preferences::get_user_prefs).put(routes::user_preferences::set_user_prefs),
+            get(routes::user_preferences::get_user_prefs)
+                .put(routes::user_preferences::set_user_prefs),
         )
         .route(
             "/api/me/layout/{page}",
-            get(routes::user_preferences::get_user_layout).put(routes::user_preferences::set_user_layout),
+            get(routes::user_preferences::get_user_layout)
+                .put(routes::user_preferences::set_user_layout),
         )
         .route(
             "/api/me/views",
-            get(routes::user_preferences::get_user_views).post(routes::user_preferences::create_user_view),
+            get(routes::user_preferences::get_user_views)
+                .post(routes::user_preferences::create_user_view),
         )
         .route(
             "/api/me/views/{id}",
@@ -2349,8 +2310,6 @@ fn chunk_customization_redirects() -> impl Into<Router<Arc<AppState>>> {
         )
 }
 
-
-
 /// Build the Axum router with all routes.
 /// Lane 4: site-wide uploads.
 ///
@@ -2376,7 +2335,10 @@ fn chunk_uploads() -> impl Into<Router<Arc<AppState>>> {
 fn chunk_realtime() -> impl Into<Router<Arc<AppState>>> {
     Router::new()
         .route("/ws", axum::routing::get(crate::realtime::ws::ws_handler))
-        .route("/events", axum::routing::get(crate::realtime::sse::sse_handler))
+        .route(
+            "/events",
+            axum::routing::get(crate::realtime::sse::sse_handler),
+        )
 }
 
 /// Route chain split into domain chunks (Task 14 refactor).
@@ -2401,8 +2363,8 @@ async fn build_router(state: Arc<AppState>) -> Router {
         .merge(chunk_uploads().into())
         .merge(chunk_realtime().into());
 
-    merged.with_state(state.clone())
-
+    merged
+        .with_state(state.clone())
         .fallback_service(
             crate::frontend::cache_headers::CacheHeadersLayer.layer(
                 ServeDir::new(&state.config.frontend_dir)
@@ -2422,7 +2384,6 @@ async fn build_router(state: Arc<AppState>) -> Router {
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
 }
-
 
 /// Remote info handler: GET /api/remote
 async fn remote_handler(

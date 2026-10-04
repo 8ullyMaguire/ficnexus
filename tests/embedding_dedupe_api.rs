@@ -121,8 +121,22 @@ async fn test_candidate_pairs_finds_similar_works() {
     // work_id IS NULL, because there is nothing to merge into.
     let w1 = seed_work(&pool, "DedupeTest_SimilarA").await;
     let w2 = seed_work(&pool, "DedupeTest_SimilarB").await;
-    let f1 = seed_fic(&pool, "dedupetest-similara", "DedupeTest SimilarA", "Author A", Some(w1)).await;
-    let f2 = seed_fic(&pool, "dedupetest-similarb", "DedupeTest SimilarB", "Author B", Some(w2)).await;
+    let f1 = seed_fic(
+        &pool,
+        "dedupetest-similara",
+        "DedupeTest SimilarA",
+        "Author A",
+        Some(w1),
+    )
+    .await;
+    let f2 = seed_fic(
+        &pool,
+        "dedupetest-similarb",
+        "DedupeTest SimilarB",
+        "Author B",
+        Some(w2),
+    )
+    .await;
 
     // Close vectors, so cosine similarity is well above the threshold.
     seed_embedding(&pool, &f1, &vec384(1.00)).await;
@@ -172,8 +186,22 @@ async fn test_run_dedupe_auto_merges_high_similarity() {
 
     let w1 = seed_work(&pool, "DedupeTest_MergeA").await;
     let w2 = seed_work(&pool, "DedupeTest_MergeB").await;
-    let f1 = seed_fic(&pool, "dedupetest-mergea", "DedupeTest MergeA", "Author A", Some(w1)).await;
-    let f2 = seed_fic(&pool, "dedupetest-mergeb", "DedupeTest MergeB", "Author A", Some(w2)).await;
+    let f1 = seed_fic(
+        &pool,
+        "dedupetest-mergea",
+        "DedupeTest MergeA",
+        "Author A",
+        Some(w1),
+    )
+    .await;
+    let f2 = seed_fic(
+        &pool,
+        "dedupetest-mergeb",
+        "DedupeTest MergeB",
+        "Author A",
+        Some(w2),
+    )
+    .await;
 
     // Near-identical: above AUTO_MERGE_THRESHOLD (0.98), so run_dedupe merges.
     seed_embedding(&pool, &f1, &vec384(1.000)).await;
@@ -183,18 +211,20 @@ async fn test_run_dedupe_auto_merges_high_similarity() {
         fichub::services::embedding_dedupe::run_dedupe(&pool, 1, 0.5, 100).await;
 
     assert_eq!(examined, 1, "expected exactly one candidate pair");
-    assert_eq!(proposed, 0, "high-similarity pairs merge rather than propose");
+    assert_eq!(
+        proposed, 0,
+        "high-similarity pairs merge rather than propose"
+    );
     assert_eq!(merged, 1, "high-similarity pair should auto-merge");
 
     // execute_merge repoints fic_info.work_id, so the merge is observable.
-    let remaining: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM fic_info WHERE id = $1 AND work_id = $2",
-    )
-    .bind(&f1)
-    .bind(w2)
-    .fetch_one(&pool)
-    .await
-    .expect("verify merge");
+    let remaining: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM fic_info WHERE id = $1 AND work_id = $2")
+            .bind(&f1)
+            .bind(w2)
+            .fetch_one(&pool)
+            .await
+            .expect("verify merge");
     assert_eq!(remaining, 1, "{f1} should now point at works row {w2}");
 
     cleanup(&pool).await;

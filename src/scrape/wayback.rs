@@ -193,9 +193,7 @@ pub fn wayback_eligible(url: &url::Url) -> bool {
         return false;
     }
     // Archive.org and its mirrors are excluded (already archived).
-    if url.host_str() == Some("web.archive.org")
-        || url.host_str() == Some("archive.org")
-    {
+    if url.host_str() == Some("web.archive.org") || url.host_str() == Some("archive.org") {
         return false;
     }
     // forum.questionablequesting.com is always eligible (primary source).

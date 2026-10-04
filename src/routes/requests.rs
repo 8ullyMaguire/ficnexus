@@ -137,13 +137,12 @@ pub async fn create_request(
                     .collect::<Vec<_>>()
                     .join(",")
             );
-            let _ = sqlx::query(
-                r#"UPDATE fic_requests SET body_embedding = $1::vector WHERE id = $2"#,
-            )
-            .bind(&lit)
-            .bind(req_id_for_embed)
-            .execute(&state3.db)
-            .await;
+            let _ =
+                sqlx::query(r#"UPDATE fic_requests SET body_embedding = $1::vector WHERE id = $2"#)
+                    .bind(&lit)
+                    .bind(req_id_for_embed)
+                    .execute(&state3.db)
+                    .await;
         });
     }
 
@@ -181,9 +180,7 @@ pub async fn create_request(
     let query_text = format!("{} {}", title, body.body.trim());
     let parsed = crate::routes::find_fic::parse_find_query(&query_text);
     if parsed.title.is_some() || parsed.author.is_some() {
-        if let Ok(matches) = crate::routes::find_fic::find_matches(
-            &state, &parsed, 5, 10,
-        ).await {
+        if let Ok(matches) = crate::routes::find_fic::find_matches(&state, &parsed, 5, 10).await {
             if !matches.is_empty() {
                 response["matches"] = json!(matches);
             }

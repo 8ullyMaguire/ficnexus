@@ -22,7 +22,7 @@
 //! two diverged in the first place.
 
 use fichub::routes::auth::AuthUser;
-use fichub::services::trust::{require_curator, CURATOR_MIN_TRUST};
+use fichub::services::trust::{CURATOR_MIN_TRUST, require_curator};
 
 fn user_with_trust(trust_level: i16) -> AuthUser {
     AuthUser {

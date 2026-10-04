@@ -311,9 +311,7 @@ where
 
         if let Some(header_val) = auth_header {
             if let Some(token) = header_val.strip_prefix("Bearer ") {
-                if let Some(user) =
-                    auth_user_from_token_with_secret(token, state.jwt_secret())
-                {
+                if let Some(user) = auth_user_from_token_with_secret(token, state.jwt_secret()) {
                     return Ok(user);
                 }
             }

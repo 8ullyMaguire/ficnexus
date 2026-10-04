@@ -139,15 +139,33 @@ pub async fn approve_upload(
     .await?;
     if w >= 5000 {
         if let Some(ref uid) = url_id {
-            let _ = crate::db::queries::update_reputation_and_promote(&state.db, uploader_id, 10, "work_publish").await;
+            let _ = crate::db::queries::update_reputation_and_promote(
+                &state.db,
+                uploader_id,
+                10,
+                "work_publish",
+            )
+            .await;
         } else {
-            let _ = crate::db::queries::update_reputation_and_promote(&state.db, uploader_id, 10, "work_publish").await;
+            let _ = crate::db::queries::update_reputation_and_promote(
+                &state.db,
+                uploader_id,
+                10,
+                "work_publish",
+            )
+            .await;
         }
         // Completion bonus for long works
-    if status.as_deref() == Some("complete") && w >= 10000 {
-        let bonus = 25 + (w / 1000);
-        let _ = crate::db::queries::update_reputation_and_promote(&state.db, uploader_id, bonus as i32, "work_complete_bonus").await;
-    }
+        if status.as_deref() == Some("complete") && w >= 10000 {
+            let bonus = 25 + (w / 1000);
+            let _ = crate::db::queries::update_reputation_and_promote(
+                &state.db,
+                uploader_id,
+                bonus as i32,
+                "work_complete_bonus",
+            )
+            .await;
+        }
     }
     // Retain legacy reputation path for a single transitional sprint.
     let _ = crate::db::queries::update_reputation_and_promote(
@@ -516,7 +534,8 @@ pub async fn rep_award_handler(
         req.user_id,
         10,
         &req.event_type,
-    ).await; // 
+    )
+    .await; // 
     // Badge side-effect: admin-granted event types (e.g. marathon_writer)
     // should also issue the matching user_badges record. check_and_award_badges
     // is keyed on event_type matching badge_definitions.trigger, so the same
@@ -534,11 +553,12 @@ pub async fn rep_award_handler(
             ("event_type", json!(req.event_type)),
             ("source_ref", json!(req.source_ref)),
             ("note", json!(req.note)),
-            
         ],
     )
     .await;
-    Ok(Json(json!({ "err": 0, "ok": true, "reputation_awarded": true })))
+    Ok(Json(
+        json!({ "err": 0, "ok": true, "reputation_awarded": true }),
+    ))
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -256,7 +256,6 @@ pub async fn similar_by_bookmarks(
     })))
 }
 
-
 /// GET /api/search/chips — personalized "For You" search chips.
 ///
 /// Auth-optional: logged-out users get static chips; logged-in users get chips
@@ -327,7 +326,11 @@ pub async fn search_chips_handler(
     .unwrap_or_default();
 
     let chips: Vec<String> = if top_tags.is_empty() {
-        vec!["Popular".to_string(), "Updated Today".to_string(), "Completed".to_string()]
+        vec![
+            "Popular".to_string(),
+            "Updated Today".to_string(),
+            "Completed".to_string(),
+        ]
     } else {
         top_tags
             .into_iter()
@@ -380,10 +383,9 @@ fn compute_centroid(texts: &[String]) -> Vec<f32> {
     sum
 }
 
-
 #[cfg(test)]
 mod tests {
-    use super::{parse_vector, compute_centroid};
+    use super::{compute_centroid, parse_vector};
 
     #[test]
     fn parse_vector_parses_pgvector_literal() {

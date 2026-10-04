@@ -14,8 +14,8 @@
 //!
 //! Routes are site-level, sibling of notifications.rs.
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::FromRow;
@@ -96,11 +96,7 @@ fn message_to_json(m: &MessageRow) -> serde_json::Value {
 }
 
 /// Active membership (left_at IS NULL). Non-member → 404 per repo convention.
-async fn require_membership(
-    db: &sqlx::PgPool,
-    room_id: i64,
-    user_id: i32,
-) -> Result<(), AppError> {
+async fn require_membership(db: &sqlx::PgPool, room_id: i64, user_id: i32) -> Result<(), AppError> {
     let is_member: bool = sqlx::query_scalar(
         r#"SELECT EXISTS(SELECT 1 FROM forum_room_members
            WHERE room_id = $1 AND user_id = $2 AND left_at IS NULL)"#,
@@ -133,11 +129,7 @@ async fn is_blocked(db: &sqlx::PgPool, a: i32, b: i32) -> Result<bool, AppError>
 
 /// DM flood gate: same FORUM_POST_DELAY_SECS config as forum posts, measured
 /// from the sender's most recent DM. Staff bypass.
-async fn check_dm_flood(
-    state: &AppState,
-    auth: &AuthUser,
-    sender_id: i32,
-) -> Result<(), AppError> {
+async fn check_dm_flood(state: &AppState, auth: &AuthUser, sender_id: i32) -> Result<(), AppError> {
     if auth.trust_level >= 5 {
         return Ok(());
     }
@@ -145,13 +137,12 @@ async fn check_dm_flood(
     if delay <= 0 {
         return Ok(());
     }
-    let last: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
-        "SELECT MAX(created_at) FROM forum_messages WHERE author_id = $1",
-    )
-    .bind(sender_id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
+    let last: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT MAX(created_at) FROM forum_messages WHERE author_id = $1")
+            .bind(sender_id)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
     if let Some(last_ts) = last {
         let elapsed = chrono::Utc::now()
             .signed_duration_since(last_ts)
@@ -251,18 +242,17 @@ pub async fn create_dm_room(
             "Cannot create a DM with yourself".to_string(),
         ));
     }
-    let target_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
-        .bind(target_id)
-        .fetch_one(&state.db)
-        .await
-        .map_err(|e| AppError::Database(e.to_string()))?;
+    let target_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+            .bind(target_id)
+            .fetch_one(&state.db)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
     if !target_exists {
         return Err(AppError::NotFound("User not found".to_string()));
     }
     if is_blocked(&state.db, caller_id, target_id).await? {
-        return Err(AppError::Forbidden(
-            "Cannot message this user".to_string(),
-        ));
+        return Err(AppError::Forbidden("Cannot message this user".to_string()));
     }
 
     // Check-then-insert inside one transaction; re-check after BEGIN so two
@@ -288,7 +278,9 @@ pub async fn create_dm_room(
         tx.rollback()
             .await
             .map_err(|e| AppError::Database(e.to_string()))?;
-        return Ok(Json(json!({ "err": 0, "room_id": room_id, "existing": true })));
+        return Ok(Json(
+            json!({ "err": 0, "room_id": room_id, "existing": true }),
+        ));
     }
 
     let room_id: i64 = sqlx::query_scalar(
@@ -407,9 +399,7 @@ pub async fn send_message(
     // Block check up front: a blocked sender is rejected, not silently sent.
     for member_id in &members {
         if is_blocked(&state.db, sender_id, *member_id).await? {
-            return Err(AppError::Forbidden(
-                "Cannot message this user".to_string(),
-            ));
+            return Err(AppError::Forbidden("Cannot message this user".to_string()));
         }
     }
 
@@ -554,8 +544,7 @@ mod tests {
 
     #[test]
     fn test_prefs_payload_defaults_empty() {
-        let p: UpdateRoomPrefsPayload =
-            serde_json::from_value(json!({})).expect("empty payload");
+        let p: UpdateRoomPrefsPayload = serde_json::from_value(json!({})).expect("empty payload");
         assert!(p.mute.is_none());
         assert!(p.notify_level.is_none());
         assert!(p.leave.is_none());

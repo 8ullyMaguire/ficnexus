@@ -226,7 +226,12 @@ fn auth_header_level(user_id: i32, username: &str, trust_level: i16, level: i16)
     format!("Bearer {token}")
 }
 
-async fn post_json(app: &Router, path: &str, body: Value, auth: Option<&str>) -> (StatusCode, Value) {
+async fn post_json(
+    app: &Router,
+    path: &str,
+    body: Value,
+    auth: Option<&str>,
+) -> (StatusCode, Value) {
     let mut req = Request::builder().method("POST").uri(path);
     if let Some(a) = auth {
         req = req.header("authorization", a);
@@ -237,7 +242,9 @@ async fn post_json(app: &Router, path: &str, body: Value, auth: Option<&str>) ->
         .unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     let s = res.status();
-    let b = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
+    let b = axum::body::to_bytes(res.into_body(), 1 << 20)
+        .await
+        .unwrap();
     let v: Value = if b.is_empty() {
         Value::Null
     } else {
@@ -389,7 +396,10 @@ async fn can_denies_outsider_default() {
     let allowed_anon = can(&db, None, 0, 0, cat_id, "write")
         .await
         .expect("can anon");
-    assert!(!allowed_anon, "anonymous without a global row must be denied");
+    assert!(
+        !allowed_anon,
+        "anonymous without a global row must be denied"
+    );
 
     // cleanup
     let _ = sqlx::query("DELETE FROM forum_categories WHERE id = $1")
