@@ -1,0 +1,28 @@
+# ficnexus routing budget
+#
+# What `docs/goal-check.py`'s "handlers routed" clause measures: `pub async fn` under
+# src/ that the router in src/server.rs does not name. Measured 2026-10-05.
+#
+#   854 handlers defined
+#   519 reachable from the router
+#   335 not referenced by it
+#
+# The unrouted handlers are not dead code. ficnexus is a port of a Go original whose
+# route table is larger, and the handlers exist because the API surface is specified
+# before it is wired. Deleting them would delete the specification.
+#
+# So this file records the gap rather than treating it as a failure. What the clause
+# prevents is the number drifting upward without anyone noticing: raise `unrouted=`
+# deliberately, with a reason in a comment here, or the clause fails.
+#
+# To re-measure after adding routes, lower this number only if the count actually fell.
+
+unrouted=335
+
+# Lowering this to the true value is how the ratchet works. Raising it needs a reason
+# that survives review -- "I ran out of time" is not one, because the clause is
+# measuring something a commit can move.
+#
+# Known-unrouted examples (all API surface specified, not yet wired):
+#   add_collection_item, add_reading_list_item, add_work_to_shelf, approve_collection_item,
+#   active_channels, all_signals, acquisition_links

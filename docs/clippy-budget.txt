@@ -1,0 +1,36 @@
+# ficnexus clippy budget
+#
+# What `docs/goal-check.py`'s "clippy clean" clause counts: findings from
+# `cargo clippy --all-targets --message-format short`, excluding dead-code categories
+# ("never used", "never read") and the per-crate "generated N warnings" summary lines.
+#
+# Measured 2026-10-05: 596.
+#
+# ficnexus does not deny warnings -- there is no [workspace.lints] and no clippy.toml --
+# so this file records reality rather than an aspiration. The clause is a ratchet:
+# findings may fall, never rise.
+#
+# The distribution, for whoever wants to work it down:
+#
+#     299  collapsible if            -- mostly mechanical, `cargo clippy --fix` territory
+#      40  complex type              -- wants a type alias each; a judgement call
+#      27  clamp-like pattern        -- mechanical
+#      21  doc list indentation      -- mechanical
+#      16  needless borrow           -- mechanical
+#      16  field assignment after Default::default()   -- mechanical but touches many files
+#      14  needless reference        -- mechanical
+#      12  unused variable           -- real, needs a decision per site
+#      10  redundant #[must_use]
+#       8  redundant closure
+#       8  same-type cast
+#       8  assertion with constant value     -- some of these are the tautological tests
+#                                          -- audit_tier_literals.rs checks for
+#
+# About that last row: `this assertion has a constant value` overlaps with a test-quality
+# problem rather than a style one, so if any of those 8 are in tests/ they should be
+# treated as the bug they are, not as lint noise.
+#
+# Lower this number as you clear findings. Raising it needs a reason that survives
+# review.
+
+max_findings=596

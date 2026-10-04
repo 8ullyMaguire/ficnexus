@@ -9,9 +9,18 @@ set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 PW="${FICHUB_TEST_PW:-fichub}"
 DB="ficnexus_test"
-ADMIN="postgres://postgres:${PGPASSWORD:-postgres}@127.0.0.1/postgres"
-ADMIN_DB="postgres://postgres:${PGPASSWORD:-postgres}@127.0.0.1/$DB"
-APP="postgres://fichub:${PW}@127.0.0.1/$DB"
+# Host, port and credentials are overridable because this script is not the only
+# Postgres in the environment: several repos share an instance that is not on 5432, and
+# the hardcoded DSN made this script fail there with "connection refused" while the
+# symptom looked like "the database is absent". Standard PG* vars, so PGHOST/PGPORT are
+# enough and no edit to this file is needed to point it elsewhere.
+PGHOST="${PGHOST:-127.0.0.1}"
+PGPORT="${PGPORT:-5432}"
+PGUSER="${PGUSER:-postgres}"
+PGPASSWORD="${PGPASSWORD:-$PW}"
+ADMIN="postgres://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/postgres"
+ADMIN_DB="postgres://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/$DB"
+APP="postgres://fichub:${PW}@${PGHOST}:${PGPORT}/$DB"
 
 # The migrations run `ALTER TABLE ... OWNER TO fichub`, so the role must exist
 # before any migration runs.
