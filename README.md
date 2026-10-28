@@ -175,6 +175,28 @@ The release binary runs from `/opt/fichub/fichub` (local disk, not the NFS
 repo) under the `fichub.service` unit. See `infra/docker/` for a container
 layout (app + Calibre).
 
+## Stack and language policy
+
+What this repo is: a Rust (edition 2024) service — axum 0.8 on tokio for the
+HTTP surface, sqlx 0.9 against PostgreSQL for the cache of fetched works and
+built files, format writers in this workspace and a Calibre sidecar for MOBI,
+PDF and AZW3. No accounts, no reader, no recommendations: those are darkhold's
+job.
+
+The estate default for new work is an axum + Postgres core, a SvelteKit front
+end, the shared design tokens for anything that draws a UI, and contracts
+between services — work-manifest v1, OpenAPI, RSS/ActivityPub — instead of a
+shared database. Services read each other's published contracts; they do not
+read each other's tables.
+
+This repo is the default, on its server side. Its only UI is a small
+server-rendered page around the paste-a-URL form, so the SvelteKit and design
+token parts of the default do not apply; the contract part does, and the
+cache is the only thing it owns.
+
+The rules that apply to every repo in the estate are in
+`10-Projects/estate-master-prompt.md` in the secondbrain vault.
+
 ## License
 
 AGPL-3.0-only.
