@@ -26,8 +26,6 @@ pub async fn create_work(
     Ok(row.0)
 }
 
-
-
 /// Get work by source url_id (via fic_info.work_id)
 pub async fn get_work_by_source(pool: &PgPool, url_id: &str) -> AppResult<Option<WorkRow>> {
     let row = sqlx::query_as::<_, WorkRow>(
@@ -41,7 +39,6 @@ pub async fn get_work_by_source(pool: &PgPool, url_id: &str) -> AppResult<Option
     .await?;
     Ok(row)
 }
-
 
 /// Find work by exact title+author match (for auto-merge)
 pub async fn find_work_by_title_author(
@@ -85,8 +82,6 @@ pub async fn get_work_sources(pool: &PgPool, work_id: i32) -> AppResult<Vec<FicI
     .await?;
     Ok(rows)
 }
-
-
 
 /// Log an auto-merge
 pub async fn log_auto_merge(

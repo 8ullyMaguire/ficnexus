@@ -3,7 +3,6 @@ use sqlx::PgPool;
 
 // ── Tag-related queries (v3) ─────────────────────────────────────────────
 
-
 /// Look up an alias, returning the canonical tag ID
 pub async fn lookup_alias(pool: &PgPool, alias_name: &str) -> AppResult<Option<i32>> {
     let row = sqlx::query_scalar::<_, i32>(

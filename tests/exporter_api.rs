@@ -61,7 +61,10 @@ fn mock_ficmeta() -> FicMetadata {
 
 #[test]
 fn slug_basic() {
-    assert_eq!(generate_slug("Harry Potter", "abc123"), "Harry_Potter-abc123");
+    assert_eq!(
+        generate_slug("Harry Potter", "abc123"),
+        "Harry_Potter-abc123"
+    );
 }
 
 #[test]

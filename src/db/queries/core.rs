@@ -2,10 +2,6 @@ use crate::db::models::*;
 use crate::error::AppResult;
 use sqlx::PgPool;
 
-
-
-
-
 /// Upsert a fic_info record (INSERT ON CONFLICT UPDATE)
 pub async fn upsert_fic_info(pool: &PgPool, fic: &FicInfo) -> AppResult<()> {
     sqlx::query(
@@ -49,8 +45,6 @@ pub async fn upsert_fic_info(pool: &PgPool, fic: &FicInfo) -> AppResult<()> {
     .await?;
     Ok(())
 }
-
-
 
 /// Get fic_info by ID
 pub async fn get_fic_info(pool: &PgPool, id: &str) -> AppResult<Option<FicInfo>> {
@@ -121,9 +115,6 @@ pub async fn insert_request_log(
     .await?;
     Ok(())
 }
-
-
-
 
 pub async fn find_export_log(
     pool: &PgPool,
@@ -204,6 +195,5 @@ pub async fn get_fic_version_bump(pool: &PgPool, url_id: &str) -> AppResult<Opti
         .await?;
     Ok(row.and_then(|r| r.value))
 }
-
 
 // ── Tag-related queries (v3) ─────────────────────────────────────────────
