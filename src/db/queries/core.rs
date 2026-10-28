@@ -1,99 +1,10 @@
-use super::SiteCredRow;
 use crate::db::models::*;
 use crate::error::AppResult;
-use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
-/// Upsert a user's site credentials (encrypted password). Resets the
-/// 30-day expiry clock on re-save.
-pub async fn set_site_credentials(
-    pool: &PgPool,
-    user_id: i32,
-    domain: &str,
-    username: &str,
-    password_enc: &str,
-    expires_at: DateTime<Utc>,
-) -> AppResult<()> {
-    sqlx::query(
-        r#"INSERT INTO user_site_credentials (user_id, domain, username, password_enc, created_at, expires_at)
-           VALUES ($1, $2, $3, $4, now(), $5)
-           ON CONFLICT (user_id, domain) DO UPDATE
-           SET username = EXCLUDED.username,
-               password_enc = EXCLUDED.password_enc,
-               created_at = now(),
-               expires_at = EXCLUDED.expires_at"#,
-    )
-    .bind(user_id)
-    .bind(domain.trim().to_lowercase())
-    .bind(username)
-    .bind(password_enc)
-    .bind(expires_at)
-    .execute(pool)
-    .await?;
-    // Opportunistic lazy-expiry cleanup for this user.
-    let _ =
-        sqlx::query("DELETE FROM user_site_credentials WHERE user_id = $1 AND expires_at <= now()")
-            .bind(user_id)
-            .execute(pool)
-            .await;
-    Ok(())
-}
 
-/// List the user's non-expired site credentials. Passwords are NEVER
-/// selected here — callers (and the API) only ever see domain/username/expiry.
-pub async fn get_user_site_credentials(pool: &PgPool, user_id: i32) -> AppResult<Vec<SiteCredRow>> {
-    let rows = sqlx::query_as::<_, (String, String, DateTime<Utc>)>(
-        r#"SELECT domain, username, expires_at
-           FROM user_site_credentials
-           WHERE user_id = $1 AND expires_at > now()
-           ORDER BY domain"#,
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows
-        .into_iter()
-        .map(|(domain, username, expires_at)| SiteCredRow {
-            domain,
-            username,
-            expires_at,
-        })
-        .collect())
-}
 
-/// Fetch one non-expired credential (username + encrypted password) for the
-/// download path. Returns `None` when the user has no (valid) creds for the
-/// domain — the caller then falls back to anonymous AuthRequired behavior.
-pub async fn get_user_site_credential(
-    pool: &PgPool,
-    user_id: i32,
-    domain: &str,
-) -> AppResult<Option<(String, String)>> {
-    let row = sqlx::query_as::<_, (String, String)>(
-        r#"SELECT username, password_enc
-           FROM user_site_credentials
-           WHERE user_id = $1 AND domain = $2 AND expires_at > now()"#,
-    )
-    .bind(user_id)
-    .bind(domain.trim().to_lowercase())
-    .fetch_optional(pool)
-    .await?;
-    Ok(row)
-}
 
-/// Remove a user's credential for a domain. Idempotent.
-pub async fn delete_user_site_credential(
-    pool: &PgPool,
-    user_id: i32,
-    domain: &str,
-) -> AppResult<()> {
-    sqlx::query("DELETE FROM user_site_credentials WHERE user_id = $1 AND domain = $2")
-        .bind(user_id)
-        .bind(domain.trim().to_lowercase())
-        .execute(pool)
-        .await?;
-    Ok(())
-}
 
 /// Upsert a fic_info record (INSERT ON CONFLICT UPDATE)
 pub async fn upsert_fic_info(pool: &PgPool, fic: &FicInfo) -> AppResult<()> {
@@ -139,34 +50,7 @@ pub async fn upsert_fic_info(pool: &PgPool, fic: &FicInfo) -> AppResult<()> {
     Ok(())
 }
 
-/// Hide a fic_info row (sets hidden = true). Used by the quality filter
-/// to quarantine suspicious works from public view.
-pub async fn hide_fic_info(pool: &PgPool, url_id: &str) -> AppResult<()> {
-    sqlx::query("UPDATE fic_info SET hidden = true WHERE id = $1")
-        .bind(url_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
 
-/// Create a curator quorum proposal for reviewing a quarantined work.
-pub async fn create_curator_quorum_proposal(
-    pool: &PgPool,
-    url_id: &str,
-    proposal_type: &str,
-    reason: &str,
-) -> AppResult<()> {
-    sqlx::query(
-        "INSERT INTO curator_quorum_proposals (url_id, proposal_type, reason, status)
-         VALUES ($1, $2, $3, 'pending')",
-    )
-    .bind(url_id)
-    .bind(proposal_type)
-    .bind(reason)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
 
 /// Get fic_info by ID
 pub async fn get_fic_info(pool: &PgPool, id: &str) -> AppResult<Option<FicInfo>> {
@@ -238,76 +122,8 @@ pub async fn insert_request_log(
     Ok(())
 }
 
-/// Log a search query for analytics (best-effort — callers must not fail
-/// the search request if this insert fails).
-pub async fn insert_search_query(
-    pool: &PgPool,
-    query: &str,
-    total_results: i64,
-    main_char_attr: Option<&str>,
-    client_id: Option<&str>,
-    user_id: Option<i32>,
-) -> AppResult<()> {
-    sqlx::query(
-        r#"INSERT INTO search_queries (query, total_results, main_char_attr, client_id, user_id)
-           VALUES ($1, $2, $3, $4, $5)"#,
-    )
-    .bind(query)
-    .bind(total_results)
-    .bind(main_char_attr)
-    .bind(client_id)
-    .bind(user_id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
 
-/// Return the signed-in user's top-8 most frequent search queries.
-/// Used by `GET /api/search/history/chips`.
-pub async fn recent_search_chips(
-    pool: &PgPool,
-    user_id: Option<i32>,
-) -> AppResult<Vec<(String, i64)>> {
-    let Some(uid) = user_id else {
-        return Ok(Vec::new());
-    };
-    let rows: Vec<(String, i64)> = sqlx::query_as(
-        r#"SELECT query, COUNT(*)::bigint as cnt
-           FROM search_queries
-           WHERE user_id = $1 AND query <> ''
-           GROUP BY query
-           ORDER BY cnt DESC, MAX(ts) DESC
-           LIMIT 8"#,
-    )
-    .bind(uid)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows)
-}
 
-/// Find export log entry (cache hit check)
-/// Most recent export_log row for (url_id, version, etype) regardless of
-/// input_hash. Used by the reader to find legacy HTML exports whose input_hash
-/// was recorded as `epub:<hash>` rather than the fic's content hash.
-pub async fn latest_export_log(
-    pool: &PgPool,
-    url_id: &str,
-    version: i32,
-    etype: &str,
-) -> AppResult<Option<ExportLog>> {
-    let row = sqlx::query_as::<_, ExportLog>(
-        r#"SELECT * FROM export_log
-           WHERE url_id = $1 AND version = $2 AND etype = $3
-           ORDER BY created DESC
-           LIMIT 1"#,
-    )
-    .bind(url_id)
-    .bind(version)
-    .bind(etype)
-    .fetch_optional(pool)
-    .await?;
-    Ok(row)
-}
 
 pub async fn find_export_log(
     pool: &PgPool,
@@ -389,18 +205,5 @@ pub async fn get_fic_version_bump(pool: &PgPool, url_id: &str) -> AppResult<Opti
     Ok(row.and_then(|r| r.value))
 }
 
-/// Search similar fics (for "did you mean?" suggestions)
-pub async fn search_similar_fics(pool: &PgPool, query: &str) -> AppResult<Vec<FicInfo>> {
-    let rows = sqlx::query_as::<_, FicInfo>(
-        r#"SELECT * FROM fic_info
-           WHERE title ILIKE $1 OR author ILIKE $2
-           LIMIT 5"#,
-    )
-    .bind(format!("%{}%", query))
-    .bind(format!("%{}%", query))
-    .fetch_all(pool)
-    .await?;
-    Ok(rows)
-}
 
 // ── Tag-related queries (v3) ─────────────────────────────────────────────

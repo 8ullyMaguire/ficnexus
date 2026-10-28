@@ -1,6 +1,5 @@
 pub mod models;
 pub mod queries;
-pub mod reviews;
 
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
