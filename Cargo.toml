@@ -1,6 +1,6 @@
 [package]
 name = "fichub"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2024"
 description = "Fanfiction exporter: give it a story URL, get an EPUB/HTML/MOBI/PDF/AZW3/TXT/Markdown file"
 # The web server (src/main.rs) is the binary `cargo run` should pick when no

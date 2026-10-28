@@ -8,7 +8,7 @@ use serde_json::json;
 pub async fn api_docs_handler() -> impl IntoResponse {
     Json(json!({
         "name": "ficnexus exporter",
-        "version": "0.3.0",
+        "version": env!("CARGO_PKG_VERSION"),
         "description": "Give it a story URL, get a downloadable file.",
         "endpoints": {
             "/api/epub": {

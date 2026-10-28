@@ -84,7 +84,7 @@ pub async fn health_handler(
         status,
         db: db_ok,
         redis: redis_ok,
-        version: "0.2.0".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
     };
 
     (status_code, Json(response))
@@ -100,14 +100,14 @@ mod tests {
             status: "ok".to_string(),
             db: true,
             redis: true,
-            version: "0.2.0".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
         assert_eq!(json["status"], "ok");
         assert_eq!(json["db"], true);
         assert_eq!(json["redis"], true);
-        assert_eq!(json["version"], "0.2.0");
+        assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
     }
 
     #[test]
@@ -116,7 +116,7 @@ mod tests {
             status: "degraded".to_string(),
             db: true,
             redis: false,
-            version: "0.2.0".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
@@ -131,7 +131,7 @@ mod tests {
             status: "error".to_string(),
             db: false,
             redis: false,
-            version: "0.2.0".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
