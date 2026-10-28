@@ -23,7 +23,6 @@ pub struct Config {
     /// Defaults to `<body_cache_dir>/../meta`.
     pub meta_dir: PathBuf,
     pub app_port: u16,
-    pub frontend_dir: PathBuf,
     pub trusted_proxies: Vec<String>,
     pub ip_tag_sources: Vec<(String, String, String)>,
     /// Path to a MaxMind GeoLite2-ASN `.mmdb` file for datacenter-IP blocking.
@@ -415,7 +414,6 @@ impl Config {
             calibre_container: String::new(),
             tmp_dir: meta_dir.clone(),
             body_cache_dir: meta_dir.clone(),
-            frontend_dir: meta_dir.clone(),
             app_port: 0,
             meta_dir: meta_dir,
             trusted_proxies: Vec::new(),
@@ -632,9 +630,6 @@ impl Config {
             .unwrap_or_else(|_| "3000".to_string())
             .parse()
             .unwrap_or(3000);
-
-        let frontend_dir =
-            std::env::var("FRONTEND_DIR").unwrap_or_else(|_| "./frontend/build".to_string());
 
         let trusted_proxies = std::env::var("TRUSTED_PROXIES")
             .unwrap_or_default()
@@ -1283,7 +1278,6 @@ impl Config {
             body_cache_dir: PathBuf::from(body_cache_dir),
             meta_dir,
             app_port,
-            frontend_dir: PathBuf::from(frontend_dir),
             trusted_proxies,
             ip_tag_sources,
             maxmind_db,
@@ -1542,7 +1536,6 @@ mod tests {
             "CALIBRE_CONTAINER",
             "TMP_DIR",
             "PORT",
-            "FRONTEND_DIR",
             "TRUSTED_PROXIES",
             "IP_TAG_SOURCES",
             "MAXMIND_DB",
@@ -1657,7 +1650,6 @@ mod tests {
         assert_eq!(config.calibre_container, "");
         assert_eq!(config.tmp_dir, PathBuf::from("./tmp"));
         assert_eq!(config.app_port, 3000);
-        assert_eq!(config.frontend_dir, PathBuf::from("./frontend/build"));
         assert!(config.trusted_proxies.is_empty());
         assert!(config.ip_tag_sources.is_empty());
         assert!(config.rec_site_rate_limits.is_empty());
@@ -1844,7 +1836,6 @@ mod tests {
         guard.set("CALIBRE_CONTAINER", "calibre-srv");
         guard.set("TMP_DIR", "/alt/tmp");
         guard.set("PORT", "9090");
-        guard.set("FRONTEND_DIR", "/alt/frontend");
         guard.set("TRUSTED_PROXIES", "10.0.0.1, 10.0.0.2");
         guard.set("IP_TAG_SOURCES", "/p1,type1,tag1\n/p2,type2,tag2");
         guard.set("MAXMIND_DB", "/opt/fichub/GeoLite2-ASN.mmdb");
@@ -1891,7 +1882,6 @@ mod tests {
         assert_eq!(config.calibre_container, "calibre-srv");
         assert_eq!(config.tmp_dir, PathBuf::from("/alt/tmp"));
         assert_eq!(config.app_port, 9090);
-        assert_eq!(config.frontend_dir, PathBuf::from("/alt/frontend"));
         assert_eq!(
             config.trusted_proxies,
             vec!["10.0.0.1".to_string(), "10.0.0.2".to_string()]

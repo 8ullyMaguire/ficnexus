@@ -243,19 +243,10 @@ pub async fn epub_handler(
             return Err(AppError::BadRequest(format!("work rejected: {reason}")));
         }
         crate::scrape::quality::QualityVerdict::Suspicious(reason) => {
-            tracing::info!(url_id = %meta.url_id, reason, "quarantined suspicious work — curator review");
-            // Insert hidden + create curator quorum proposal (best-effort).
-            let _ = crate::db::queries::hide_fic_info(&state.db, &meta.url_id).await;
-            let _ = crate::db::queries::create_curator_quorum_proposal(
-                &state.db,
-                &meta.url_id,
-                "quality_filter",
-                reason,
-            )
-            .await;
-            return Err(AppError::BadRequest(format!(
-                "work held for review: {reason}"
-            )));
+            // Curation used to quarantine these and open a curator quorum
+            // proposal. Curation is darkhold's job; an exporter serves the
+            // file and says what looked odd.
+            tracing::info!(url_id = %meta.url_id, reason, "exporting suspicious-looking work");
         }
         crate::scrape::quality::QualityVerdict::Accept => {}
     }
@@ -688,11 +679,6 @@ pub async fn epub_handler(
         &epub_hash,
     )
     .await?;
-
-    // Notify work followers if this is an update (work was previously exported)
-    if version_bump > 0 {
-        let _ = queries::notify_work_followers(&state.db, work_id, &meta.title).await;
-    }
 
     // Generate HTML bundle
     let (html_path, html_hash) =

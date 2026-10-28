@@ -1,84 +1,61 @@
 use axum::{Json, response::IntoResponse};
 use serde_json::json;
 
-/// API docs page: GET /api/
+/// API description: GET /api/
+///
+/// This is the whole public surface of the service. If an endpoint is not
+/// listed here it is not served — see `docs/EXPORTER-SCOPE.md`.
 pub async fn api_docs_handler() -> impl IntoResponse {
     Json(json!({
-        "name": "ficnexus API",
-        "version": "0.2.0",
+        "name": "ficnexus exporter",
+        "version": "0.3.0",
+        "description": "Give it a story URL, get a downloadable file.",
         "endpoints": {
             "/api/epub": {
                 "method": "GET",
-                "params": { "q": "URL of the fanfiction" },
-                "description": "Fetch metadata and download links for a fanfiction"
+                "params": {
+                    "q": "URL of the fanfiction (or a fic hash previously returned)",
+                    "format": "optional output format (default epub); see /api/formats"
+                },
+                "description": "Scrape the work, build the file and return its download links"
+            },
+            "/api/epub/convert": {
+                "method": "GET",
+                "params": {
+                    "q": "URL of the fanfiction",
+                    "format": "epub|html|txt|md|pdf|mobi|azw3|kepub|docx|fb2"
+                },
+                "description": "Build a specific output format directly"
             },
             "/api/meta": {
                 "method": "GET",
                 "params": { "q": "URL of the fanfiction" },
-                "description": "Fetch metadata only (no download links)"
+                "description": "Metadata only (title, author, words, chapters, tags, status)"
             },
-            "/api/remote": {
+            "/api/formats": {
                 "method": "GET",
-                "description": "Get request source information"
+                "description": "Supported output formats and which need Calibre"
             },
-            "/api/search": {
+            "/api/health": {
                 "method": "GET",
-                "params": {
-                    "q": "search query",
-                    "include_tags": "tags to include (AND)",
-                    "exclude_tags": "tags to exclude",
-                    "min_words": "minimum word count",
-                    "max_words": "maximum word count",
-                    "sort": "sort order (kudos, comments, words, updated)"
-                },
-                "description": "Advanced search with tag filters, word count, and sort options"
+                "description": "Health check (database + Redis ping)"
             },
-            "/api/auth/register": {
+            "/cache/{etype}/{url_id}": {
+                "method": "GET",
+                "params": { "h": "content hash from /api/epub" },
+                "description": "Download a built file from the cache"
+            },
+            "/cache/{etype}/{url_id}/{fname}": {
+                "method": "GET",
+                "description": "Download a built file, hash verified against the filename"
+            },
+            "/api/pow/challenge": {
+                "method": "GET",
+                "description": "Proof-of-work challenge for rate-limited clients"
+            },
+            "/api/pow/solve": {
                 "method": "POST",
-                "params": { "username": "username", "password": "password" },
-                "description": "Register a new user account"
-            },
-            "/api/auth/login": {
-                "method": "POST",
-                "params": { "username": "username", "password": "password" },
-                "description": "Login and get JWT token"
-            },
-            "/api/auth/me": {
-                "method": "GET",
-                "auth": "Bearer token",
-                "description": "Get current user info"
-            },
-            "/api/bookmarks": {
-                "method": "GET/POST/DELETE",
-                "auth": "Bearer token",
-                "description": "Manage user bookmarks"
-            },
-            "/api/ratings": {
-                "method": "GET/POST",
-                "auth": "Bearer token",
-                "description": "Rate works (1=like, -1=dislike)"
-            },
-            "/api/works/{url_id}/comments": {
-                "method": "GET/POST",
-                "description": "Threaded comments for a work"
-            },
-            "/api/tags": {
-                "method": "GET",
-                "params": { "url_id": "fic URL ID" },
-                "description": "Get tags for a fic"
-            },
-            "/api/recommendations": {
-                "method": "GET",
-                "params": { "url_id": "fic URL ID", "n": "number of recommendations" },
-                "description": "Get recommendations based on a fic"
-            },
-            "/cache/{type}/{url_id}": {
-                "method": "GET",
-                "description": "Download cached export file (epub, html, mobi, pdf)"
-            },
-            "/opds": {
-                "method": "GET",
-                "description": "OPDS catalog root"
+                "description": "Submit a solved proof-of-work challenge"
             }
         }
     }))

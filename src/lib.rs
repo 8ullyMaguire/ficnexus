@@ -4,7 +4,6 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod export;
-pub mod frontend;
 pub mod heal;
 pub mod limiter;
 pub mod routes;

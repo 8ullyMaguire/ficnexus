@@ -3,12 +3,7 @@ use axum::{
     routing::{get, post},
 };
 use std::sync::Arc;
-use tower::Layer;
-use tower_http::{
-    cors::CorsLayer,
-    services::{ServeDir, ServeFile},
-    trace::TraceLayer,
-};
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 use crate::cache::CacheSemaphores;
 use crate::config::Config;
@@ -159,6 +154,8 @@ fn chunk_export() -> impl Into<Router<Arc<AppState>>> {
         // Proof-of-work challenge for shadowbanned clients (anti-bot).
         .route("/api/pow/challenge", get(routes::pow::challenge_handler))
         .route("/api/pow/solve", post(routes::pow::solve_handler))
+        // The entire UI: a URL box and a format picker.
+        .route("/", get(routes::landing::landing))
 }
 
 /// Build the exporter router.
@@ -171,13 +168,6 @@ pub async fn build_router(state: Arc<AppState>) -> Router {
     chunk_export()
         .into()
         .with_state(state.clone())
-        .fallback_service(
-            crate::frontend::cache_headers::CacheHeadersLayer.layer(
-                ServeDir::new(&state.config.frontend_dir)
-                    .append_index_html_on_directories(true)
-                    .fallback(ServeFile::new(state.config.frontend_dir.join("index.html"))),
-            ),
-        )
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
 }

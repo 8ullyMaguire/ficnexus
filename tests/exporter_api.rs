@@ -130,6 +130,57 @@ fn supported_export_formats_are_declared() {
     assert_eq!(versions.get("epub"), Some(&1));
 }
 
+/// The exporter's core promise, tested without a network or a database:
+/// metadata + chapters in, a real EPUB file out.
+#[tokio::test]
+async fn epub_is_built_from_chapters() {
+    use fichub::scrape::Chapter;
+
+    let tmp = std::env::temp_dir().join(format!("ficnexus-epub-test-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).expect("tmp dir");
+
+    let chapters = vec![
+        Chapter {
+            chapter_id: 1,
+            title: "Chapter One".into(),
+            content: "<p>The ring was, in fact, a test fixture.</p>".into(),
+        },
+        Chapter {
+            chapter_id: 2,
+            title: "Chapter Two".into(),
+            content: "<p>And it passed.</p>".into(),
+        },
+    ];
+
+    let (path, hash) = export::epub::create_epub(&mock_ficmeta(), &chapters, &tmp)
+        .await
+        .expect("epub build succeeded");
+
+    let bytes = std::fs::read(&path).expect("epub file exists");
+    assert!(bytes.len() > 500, "epub looks empty: {} bytes", bytes.len());
+    assert_eq!(&bytes[..2], b"PK", "an EPUB is a zip archive");
+    assert_eq!(
+        hash,
+        fichub::cache::disk::file_md5(&path).expect("md5"),
+        "returned hash must match the file"
+    );
+
+    // The container really is an EPUB: mimetype is the first entry and the
+    // package document lists both chapters.
+    let reader = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).expect("valid zip");
+    let names: Vec<String> = reader.file_names().map(|s| s.to_string()).collect();
+    assert!(
+        names.iter().any(|n| n == "mimetype"),
+        "no mimetype entry: {names:?}"
+    );
+    assert!(
+        names.iter().any(|n| n.contains("content.opf")),
+        "no package document: {names:?}"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 #[test]
 fn compute_version_sums_components() {
     assert_eq!(export::compute_version(2, 1, 3), 6);
@@ -236,6 +287,7 @@ async fn exporter_routes_are_mounted() {
     let app = app().await;
 
     for uri in [
+        "/",
         "/api/",
         "/api/health",
         "/api/formats",
