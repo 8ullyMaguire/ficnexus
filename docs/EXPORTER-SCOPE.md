@@ -241,7 +241,7 @@ Live server (Postgres 18 + Redis, scratch database built from `migrations/`):
 
 ```text
 $ curl -s localhost:8099/api/health
-{"status":"ok","db":true,"redis":true,"version":"0.2.0"}
+{"status":"ok","db":true,"redis":true,"version":"0.3.0"}
 
 $ curl -s 'localhost:8099/api/epub?q=deadexport01'
 {"err":0,"url_id":"deadexport01",

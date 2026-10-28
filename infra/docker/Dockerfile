@@ -1,4 +1,4 @@
-# FicHub — Docker image with Rust binary + FanFicFare
+# ficnexus — Docker image for the exporter binary
 # Multi-stage build for minimal image size
 
 # Stage 1: Build the Rust binary
@@ -16,20 +16,13 @@ RUN cargo build --release
 # Stage 2: Runtime image
 FROM debian:bookworm-slim
 
-# Install runtime dependencies
+# Install runtime dependencies (no Python: the FanFicFare fallback adapter is
+# gone — every supported site is a native Rust adapter in crates/scrapers)
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     libssl3 \
     curl \
-    python3 \
-    python3-pip \
-    python3-venv \
     && rm -rf /var/lib/apt/lists/*
-
-# Install FanFicFare via pip in a virtual environment
-RUN python3 -m venv /opt/fanficfare \
-    && /opt/fanficfare/bin/pip install --no-cache-dir fanficfare \
-    && ln -s /opt/fanficfare/bin/fanficfare /usr/local/bin/fanficfare
 
 # Copy the built binary from builder
 COPY --from=builder /app/target/release/fichub /usr/local/bin/fichub
@@ -39,8 +32,7 @@ COPY --from=builder /app/migrations /app/migrations
 
 # Create cache and temp directories
 RUN mkdir -p /public/literature/fanfiction/archive/fichub/cache \
-    && mkdir -p /public/literature/fanfiction/archive/fichub/tmp \
-    && mkdir -p /tmp/fichub_fff
+    && mkdir -p /public/literature/fanfiction/archive/fichub/tmp
 
 # Environment variables
 ENV DATABASE_URL=postgres://fichub:password@localhost:5432/fichub

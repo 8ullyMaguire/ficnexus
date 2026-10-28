@@ -18,9 +18,7 @@ services:
       TMP_DIR: /app/tmp
       CALIBRE_CONTAINER: calibre
       PORT: 8004
-      FRONTEND_DIR: /app/frontend
       RUST_LOG: info,fichub=debug
-      JWT_SECRET: bbcc90f26b1985701d4e0e183d1013e747995ad7f9f06482fd7a9a0f72c105750ad4a5ec8ba610babd13f9031458064883574318477d92130a1764c19ce9a6cc
     volumes:
       - cache:/app/cache
       - tmp:/app/tmp

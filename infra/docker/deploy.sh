@@ -21,13 +21,12 @@ GAMINGPC="${GAMINGPC:-gamingpc}"
 SERVICE=fichub
 BIN=target/release/fichub
 BIN_DIR=/opt/fichub
-FRONTEND=frontend/build
 
 echo "==> $(date) FicHub deploy"
 
 if [ "${1:-}" != "--skip-build" ]; then
   echo "==> Building release on $GAMINGPC (shared NFS tree)..."
-  ssh "$GAMINGPC" "cd /personal/documents/code/rust/fichub && unset CARGO_TARGET_DIR && cargo build --release --bin fichub --bin migrate --bin publish-scheduled" || {
+  ssh "$GAMINGPC" "cd /personal/documents/code/rust/fichub && unset CARGO_TARGET_DIR && cargo build --release --bin fichub --bin migrate" || {
     echo "ERROR: build on $GAMINGPC failed"; exit 1
   }
 fi
@@ -47,19 +46,6 @@ sudo systemctl start "$SERVICE"
 sleep 2
 ./target/release/migrate || { echo "ERROR: migrate failed"; exit 1; }
 
-echo "==> Copying publish-scheduled binary..."
-cp target/release/publish-scheduled "$BIN_DIR/publish-scheduled" 2>/dev/null || true
-chmod +x "$BIN_DIR/publish-scheduled" 2>/dev/null || true
-
-# Install systemd timer if unit files exist
-if [ -f infra/systemd/publish-scheduled.service ] && [ -f infra/systemd/publish-scheduled.timer ]; then
-  sudo cp infra/systemd/publish-scheduled.service /etc/systemd/system/
-  sudo cp infra/systemd/publish-scheduled.timer /etc/systemd/system/
-  sudo systemctl daemon-reload
-  sudo systemctl enable --now publish-scheduled.timer
-  echo "publish-scheduled timer enabled (runs every minute)"
-fi
-
 echo "==> Restarting $SERVICE..."
 sudo systemctl restart "$SERVICE"
 sleep 3
@@ -67,9 +53,7 @@ systemctl is-active --quiet "$SERVICE" || { echo "ERROR: $SERVICE not active"; e
 
 echo "==> Health check..."
 curl -sf -o /dev/null -w 'root: %{http_code}\n' http://localhost:8000/ || { echo "ERROR: root not serving"; exit 1; }
-curl -sf -o /dev/null -w 'sw.js: %{http_code}\n' http://localhost:8000/sw.js || true
-
-echo "==> Running QA (post-deploy)..."
-./qa.sh 2>&1 | tail -20 || echo "WARN: QA exited non-zero (check qa/bugs.db)"
+curl -sf http://localhost:8000/api/health || { echo "ERROR: /api/health not OK"; exit 1; }
+echo
 
 echo "==> Deploy OK"
