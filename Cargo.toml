@@ -2,26 +2,18 @@
 name = "fichub"
 version = "0.1.0"
 edition = "2024"
-description = "Self-hosted fanfiction download server (fichub.net replacement)"
+description = "Fanfiction exporter: give it a story URL, get an EPUB/HTML/MOBI/PDF/AZW3/TXT/Markdown file"
 # The web server (src/main.rs) is the binary `cargo run` should pick when no
-# --bin is given. The [[bin]] entries below are one-shot CLI tools. Explicit
-# default-run keeps `cargo run` (and the hermes verify boot phase) from
-# erroring on multiple binaries.
+# --bin is given. `migrate` is the one remaining one-shot CLI tool.
 default-run = "fichub"
 
 [workspace]
-members = [
-    "crates/consensus",
-    "crates/scrapers",
-    "crates/forum-core",
-    "crates/forum-import",
-]
+members = ["crates/scrapers"]
 resolver = "2"
 
 [dependencies]
 # Web framework & runtime
 axum = { version = "0.8", features = ["multipart", "ws"] }
-cookie = { version = "0.18", features = ["percent-encode", "signed"] }
 time = "0.3"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -45,9 +37,6 @@ scraper = "0.27"
 
 # Fanfiction scraping library (general-purpose, AGPL-3.0)
 fanfic-scrapers = { path = "crates/scrapers" }
-
-# Forum engine core (generic, AGPL-3.0)
-forum-core = { path = "crates/forum-core" }
 
 # EPUB generation
 epub-builder = "0.8"
@@ -73,7 +62,7 @@ axum-prometheus = "0.10"
 # UUIDs
 uuid = { version = "1", features = ["v4", "serde"] }
 
-# HTTP types (used by visitor consent check)
+# HTTP types
 http = "1"
 
 # Hashing
@@ -101,85 +90,21 @@ sanitize-filename = "0.5"
 hex = "0.4"
 regex-lite = "0.1"
 rand = "0.8"
-rand_distr = { version = "0.4", features = ["std_math"] }
 ipnetwork = "0.20"
 urlencoding = "2"
 
-fichub-consensus = { path = "crates/consensus", default-features = false, features = ["sqlx-store"] }
-# Stored-secret encryption (AES-256-GCM for user-supplied site credentials)
-aes-gcm = "0.10"
 base64 = "0.22"
 anyhow = "1"
 url = "2"
 
-# ActivityPub federation (pure-Rust RSA, no OpenSSL sys dep)
-rsa = { version = "0.9", features = ["pem"] }
-
-
-# v2: Auth
-jsonwebtoken = "9"
-bcrypt = "0.16"
-axum-extra = { version = "0.10", features = ["typed-header"] }
-
-# Email (Send-to-Kindle)
-lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "tokio1"] }
 quick-xml = "0.41.0"
 docx-rs = "0.4"
-
-[[bin]]
-name = "compute-stats"
-path = "src/bin/compute_stats.rs"
-
-[[bin]]
-name = "compute-leaderboards"
-path = "src/bin/compute_leaderboards.rs"
-
-[[bin]]
-name = "bot-scorer"
-path = "src/bin/bot_scorer.rs"
-
-[[bin]]
-name = "backfill-scores"
-path = "src/bin/backfill_scores.rs"
-
-[[bin]]
-name = "backfill_body_search"
-path = "src/bin/backfill_body_search.rs"
-
-[[bin]]
-name = "publish-scheduled"
-path = "src/bin/publish_scheduled.rs"
-
-[[bin]]
-name = "seed-roadmap"
-path = "src/bin/seed_roadmap.rs"
-
-[[bin]]
-name = "saved-search-watcher"
-path = "src/bin/saved_search_watcher.rs"
-
-[[bin]]
-name = "trust-promote"
-path = "src/bin/trust_promote.rs"
-
-[[bin]]
-name = "weekly-digest"
-path = "src/bin/weekly_digest.rs"
 
 [dev-dependencies]
 # Testing
 axum-test = "16"
-tokio-tungstenite = "0.24"
-jsonwebtoken = "9"
 
-# Integration tests unzip the user-export archive with the same crate the
-# server uses (already in [dependencies]; this just makes it linkable from
-# tests/ without touching the lockfile).
+# Integration tests unzip an exported archive with the same crate the server
+# uses (already in [dependencies]; this just makes it linkable from tests/
+# without touching the lockfile).
 zip = { version = "8", package = "zip" }
-
-[features]
-# Implicit matrix factorization (ALS) strategy. OFF by default: the `mf`
-# strategy then registers a stub that reports "not enough data", so configs
-# mentioning `mf` degrade gracefully instead of crashing. Enable with:
-#   cargo build --features rec-mf
-rec-mf = []

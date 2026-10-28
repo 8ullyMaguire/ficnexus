@@ -1,18 +1,4 @@
-pub mod achievements;
-pub mod auto_tagger;
-pub mod bookmark_import;
-pub mod bounties;
-pub mod comment_triage;
-pub mod content_scan;
-pub mod customization;
-pub mod embedding_dedupe;
-pub mod extensions;
-pub mod leveling;
-pub mod mailer;
+//! Services used by the export path: the proof-of-work anti-bot helper and
+//! the Ollama client for author-link resolution in `/api/meta`.
 pub mod ollama;
 pub mod pow;
-pub mod proposals;
-pub mod recipes;
-pub mod search_mining;
-pub mod translation;
-pub mod trust;

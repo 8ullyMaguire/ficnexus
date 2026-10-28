@@ -658,20 +658,8 @@ pub async fn epub_handler(
             tracing::warn!("html_cache save failed for {}: {e}", meta.url_id);
         }
 
-        // ── Auto-moderation: classify the fic in the background ──────
-        // Non-blocking — the fic is available immediately. If classified as
-        // noise with high confidence, it gets flagged for curator review
-        // with a 72h grace period before auto-deletion.
-        {
-            let db = state.db.clone();
-            let ollama = state.ollama.clone();
-            let config = state.config.clone();
-            let url_id = meta.url_id.clone();
-            tokio::spawn(async move {
-                crate::services::content_scan::scan_single_fic(&db, &ollama, &config, &url_id)
-                    .await;
-            });
-        }
+        // (Auto-moderation / noise classification used to run here; it is
+        // curator tooling and now belongs to darkhold, not the exporter.)
 
         fetched
     };
