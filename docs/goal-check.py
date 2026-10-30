@@ -290,7 +290,7 @@ def clause_dead_constants() -> None:
 
     `audit_dead_constants.py` sweeps every repo under ~/code, not just ficnexus, which is
     what makes it useful as a cross-repo sweep and wrong as a ficnexus clause: all six
-    remaining findings belong to lorehaven (owner-excluded), streakforge and tessera.
+    remaining findings belong to darkhold (owner-excluded), streakforge and tessera.
     Filtering here rather than in the script, because the sweep is the script's job and
     the scoping is this clause's.
 
