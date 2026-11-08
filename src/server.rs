@@ -176,6 +176,9 @@ pub async fn build_router(state: Arc<AppState>) -> Router {
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
+        // Outermost: a refusal axum emits before a handler (an unparseable body, a wrong content type) never reaches
+        // the handlers that render the envelope, so only a layer above them can give it a body a client can read.
+        .layer(axum::middleware::from_fn(crate::error::envelope_refusals))
 }
 
 /// Liveness: the process can answer, nothing else is claimed.

@@ -467,3 +467,114 @@ mod envelope_tests {
         assert_ne!(a["error"]["request_id"], b["error"]["request_id"]);
     }
 }
+
+/// Give a refusal the framework emits before a handler the estate's envelope (M72-04).
+///
+/// axum answers an unparseable body or a wrong content type from its own extractor rejections, in `text/plain`,
+/// before any handler runs — so the handlers that render the envelope never see it. Measured on the sibling
+/// products 2026-11-08 (ascend: `422 text/plain: missing field username`).
+///
+/// Only `/api` paths, only non-JSON answers, and the status is kept: the framework chose it, and this layer's job
+/// is the body. A page or a file stream is not a refusal.
+pub async fn envelope_refusals(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let is_api = request.uri().path().starts_with("/api/");
+    let response = next.run(request).await;
+    if !is_api || response.status().is_success() || response.status().is_redirection() {
+        return response;
+    }
+    let already_json = response
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("application/json"));
+    if already_json {
+        return response;
+    }
+
+    let status = response.status();
+    let code = match status.as_u16() {
+        400 => "BAD_REQUEST",
+        401 => "AUTH_REQUIRED",
+        403 => "FORBIDDEN",
+        404 => "NOT_FOUND",
+        405 => "METHOD_NOT_ALLOWED",
+        408 => "REQUEST_TIMEOUT",
+        409 => "CONFLICT",
+        413 => "PAYLOAD_TOO_LARGE",
+        415 => "UNSUPPORTED_MEDIA_TYPE",
+        422 => "UNPROCESSABLE_ENTITY",
+        429 => "RATE_LIMITED",
+        503 => "UNAVAILABLE",
+        _ => "INTERNAL",
+    };
+    refusal(
+        status,
+        code,
+        status.canonical_reason().unwrap_or("refused").to_owned(),
+        -1,
+    )
+}
+
+#[cfg(test)]
+mod envelope_layer_tests {
+    use super::*;
+    use axum::routing::get;
+    use axum::Router;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn a_text_plain_refusal_on_an_api_path_gets_the_envelope() {
+        let app = Router::new()
+            .route(
+                "/api/v1/strict",
+                get(|| async { (StatusCode::UNPROCESSABLE_ENTITY, "missing field `value`") }),
+            )
+            .layer(axum::middleware::from_fn(envelope_refusals));
+
+        let resp = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/api/v1/strict")
+                    .body(axum::body::Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let content_type = resp
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        assert!(content_type.starts_with("application/json"), "got {content_type:?}");
+
+        let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.expect("body");
+        let body: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(body["error"]["code"], "UNPROCESSABLE_ENTITY");
+        assert!(body["error"]["request_id"].as_str().is_some_and(|id| !id.is_empty()));
+    }
+
+    #[tokio::test]
+    async fn a_page_refusal_is_left_alone() {
+        let app = Router::new()
+            .route("/landing", get(|| async { (StatusCode::NOT_FOUND, "no such page") }))
+            .layer(axum::middleware::from_fn(envelope_refusals));
+
+        let resp = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/landing")
+                    .body(axum::body::Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        let bytes = axum::body::to_bytes(resp.into_body(), 4096).await.expect("body");
+        assert_eq!(&bytes[..], b"no such page");
+    }
+}
