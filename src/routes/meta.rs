@@ -225,3 +225,19 @@ async fn handle_hash_lookup_meta(
         "notes": notes,
     })))
 }
+
+/// The estate's product document (M72-05), distinct from `meta_handler`, which previews a story URL.
+///
+/// `base_url` comes from configuration because this service is reached through a tunnel and its own bind
+/// address is `127.0.0.1` — publishing the bind address would be a lie that a federation document would
+/// then copy.
+pub async fn estate_meta_handler(State(state): State<Arc<AppState>>) -> Json<Value> {
+    Json(json!({
+        "name": "ficnexus",
+        "version": env!("CARGO_PKG_VERSION"),
+        "build": env!("CARGO_PKG_VERSION"),
+        "api_version": "v1",
+        "environment": if cfg!(debug_assertions) { "development" } else { "production" },
+        "base_url": state.config.public_origin.trim_end_matches('/'),
+    }))
+}

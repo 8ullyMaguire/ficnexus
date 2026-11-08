@@ -130,6 +130,12 @@ fn chunk_export() -> impl Into<Router<Arc<AppState>>> {
     Router::new()
         // What this service is, as JSON.
         .route("/api/", get(routes::api_docs::api_docs_handler))
+        // The estate contract (M72-05): `/api/v1/meta` on every product, `/api/meta` kept because it is the
+        // address this product's own callers already read.
+        .route("/api/v1/meta", get(routes::meta::estate_meta_handler))
+        // Liveness, JSON, no database and no cache: a health check that fails when the database is down gets a
+        // perfectly healthy process restarted by a supervisor that reads liveness as "restart me".
+        .route("/healthz", get(liveness))
         // The export endpoints (EPUB by default, `format=` for the rest).
         .route("/api/epub", get(routes::export::epub_handler))
         .route(
@@ -170,4 +176,12 @@ pub async fn build_router(state: Arc<AppState>) -> Router {
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
+}
+
+/// Liveness: the process can answer, nothing else is claimed.
+async fn liveness() -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
 }
