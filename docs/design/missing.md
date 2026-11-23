@@ -24,6 +24,7 @@ the reactions don't look the same theme as archive style site
 there's this showing up that probably shouldn't show up:  // Translate-PageButton: collects untranslated visible items via the // pending-registry in $lib/api/translate (TranslatedText registers its key // there when a fetch resolves to null) and enqueues them for the machine // tier. AO3 .action button look to match the archive skin. 
 
 update roadmap with an idea for users to be able to choose the forum categories and subcategories through consensus
+> **Refused 2026-11-23 (delegated best judgement):** this is a consensus/governance surface, and Concord already owns consensus for the estate. FicNexus keeps its own forum moderation and leveling; do not add a parallel consensus mechanism here. Reopen only with an owner decision that names what Concord cannot serve. Estate decision recorded in `~/secondbrain/10-Projects/polaris-estate-backlog.md` row 511.
 
 after clicking create collection on /collections route I see some form that doens't fit the new archive style.
 
@@ -69,6 +70,7 @@ the reactions don't look the same theme as archive style site
 there's this showing up that probably shouldn't show up:  // Translate-PageButton: collects untranslated visible items via the // pending-registry in $lib/api/translate (TranslatedText registers its key // there when a fetch resolves to null) and enqueues them for the machine // tier. AO3 .action button look to match the archive skin. 
 
 update roadmap with an idea for users to be able to choose the forum categories and subcategories through consensus
+> **Refused 2026-11-23 (delegated best judgement):** this is a consensus/governance surface, and Concord already owns consensus for the estate. FicNexus keeps its own forum moderation and leveling; do not add a parallel consensus mechanism here. Reopen only with an owner decision that names what Concord cannot serve. Estate decision recorded in `~/secondbrain/10-Projects/polaris-estate-backlog.md` row 511.
 
 after clicking create collection on /collections route I see some form that doens't fit the new archive style.
 
