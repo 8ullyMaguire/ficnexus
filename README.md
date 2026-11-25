@@ -208,6 +208,6 @@ Inspired by [fichub.net](https://fichub.net) and
 `crates/scrapers` follow FanFicFare's site coverage.
 
 
-## Canonical scraper dependency (2026-11-26)
+## Canonical scraper dependency (2026-11-26, commit a5ae736)
 
 `crates/scrapers` was the newer copy of the family library and has been moved upstream into `../../fanfic-scrapers`. Ficnexus now path-depends on that single crate; a second vendored parser tree is not kept.
