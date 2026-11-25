@@ -206,3 +206,8 @@ AGPL-3.0-only.
 Inspired by [fichub.net](https://fichub.net) and
 [FanFicFare](https://github.com/JimmXinu/FanFicFare) — the site adapters in
 `crates/scrapers` follow FanFicFare's site coverage.
+
+
+## Canonical scraper dependency (2026-11-26)
+
+`crates/scrapers` was the newer copy of the family library and has been moved upstream into `../../fanfic-scrapers`. Ficnexus now path-depends on that single crate; a second vendored parser tree is not kept.

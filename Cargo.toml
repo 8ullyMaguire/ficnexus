@@ -8,7 +8,7 @@ description = "Fanfiction exporter: give it a story URL, get an EPUB/HTML/MOBI/P
 default-run = "fichub"
 
 [workspace]
-members = ["crates/scrapers"]
+members = []
 resolver = "2"
 
 [dependencies]
@@ -36,7 +36,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 scraper = "0.27"
 
 # Fanfiction scraping library (general-purpose, AGPL-3.0)
-fanfic-scrapers = { path = "crates/scrapers" }
+fanfic-scrapers = { path = "../fanfic-scrapers" }
 
 # EPUB generation
 epub-builder = "0.8"
